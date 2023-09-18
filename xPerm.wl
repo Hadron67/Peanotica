@@ -34,7 +34,7 @@ You should have received a copy of the GNU General Public License along
 
 (* :Brief Discussion:
     - Notations for permutations: It is not clear which one is better,
-      so that four are encoded: Perm, Images, Cycles and Rules.
+      so that four are encoded: Perm, Images, SCycles and Rules.
     - Permutations act on the right of lists or other permutations.
       This is the choice in GAP and Butler's book.
     - We follow Portugal's notation: permutations map slots to indices.
@@ -81,15 +81,12 @@ You should have received a copy of the GNU General Public License along
 
 (************************ 1. Begin package ***********************)
 
-Scan[Unprotect@#; ClearAll@#; &, DeleteCases[Join[Names["Peanotica`xPerm`*"],Names["Peanotica`xPerm`Private`*"]],"$Version"|"xAct`xPerm`$Version"]];
-
-Peanotica`xPerm`Cycles;
 Peanotica`xPerm`RightCosetRepresentative;
 
-System`Cycles;
-Off[System`Cycles::shdw];
-
 BeginPackage["Peanotica`xPerm`"];
+
+
+Scan[Unprotect@#; ClearAll@#; &, DeleteCases[Join[Names["Peanotica`xPerm`*"],Names["Peanotica`xPerm`Private`*"]],"$Version"|"xAct`xPerm`$Version"]];
 
 Off[General::shdw]
 Peanotica`xPerm`Disclaimer[]:=Print["These are points 11 and 12 of the General Public License:\n\nBECAUSE THE PROGRAM IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM `AS IS\.b4 WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.\n\nIN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR REDISTRIBUTE THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES."]
@@ -97,15 +94,14 @@ On[General::shdw]
 
 (* Notations and translation *)
 Perm::usage="Perm is the head for permutation lists of the form Perm[{n1, ..., nk}]. Example: Perm[{6, 3, 2, 1, 5, 4}] means that the object in the first place goes to the fourth place and so on. Perm[{}] represents the identity.";
-Cycles::usage="Cycles is the head for permutations expressed in disjoint cyclic notation. Singletons are not included. Example: Cycles[{1, 4, 6}, {2, 3}] represents the exchange of points 2 and 3, and the cycle 1->4->6->1. Cycles[] represents the identity.";
+SCycles::usage="SCycles is the head for permutations expressed in disjoint cyclic notation. Singletons are not included. Example: SCycles[{1, 4, 6}, {2, 3}] represents the exchange of points 2 and 3, and the cycle 1->4->6->1. SCycles[] represents the identity.";
 Rules::usage="Rules is the head for permutations expressed in rule notation. Singletons are not included. Example: Rules[1->4, 4->6, 6->1, 2->3, 3->2]. Rules[] represents the identity.";
 Images::usage="Images is the head for permutations expressed as a list of images. Example: Images[{4, 3, 2, 6, 5, 1}]. Images[{}] represents the identity.";
-PermQ::usage="PermQ[ Perm[{n1, ..., nk}] ] yields True if the list {n1, ..., nk} of length k is a rearrangement of the numbers {1, ..., k}. PermQ[ Cycles[cyc1, cyc2, ...] ] gives True if there are no repeated points among cycles cyci. PermQ[ Rules[i1->i2, ...] ] gives True if the rules map a set of integers to itself. PermQ[ Images[{n1, ..., nk}] ] yields True if the list {n1, ..., nk} of length k is a rearrangement of the numbers {1, ..., k}. PermQ[ID] gives True. PermQ gives True on a linear combination of valid permutations. PermQ returns False otherwise.";
+PermQ::usage="PermQ[ Perm[{n1, ..., nk}] ] yields True if the list {n1, ..., nk} of length k is a rearrangement of the numbers {1, ..., k}. PermQ[ SCycles[cyc1, cyc2, ...] ] gives True if there are no repeated points among cycles cyci. PermQ[ Rules[i1->i2, ...] ] gives True if the rules map a set of integers to itself. PermQ[ Images[{n1, ..., nk}] ] yields True if the list {n1, ..., nk} of length k is a rearrangement of the numbers {1, ..., k}. PermQ[ID] gives True. PermQ gives True on a linear combination of valid permutations. PermQ returns False otherwise.";
 ID::usage="ID represents the identity in all notations. ID[perm] gives the identity permutation in the notation used by perm.";
 NotationOfPerm::usage="NotationOfPerm[perm] gives the notation of permutation perm. It can be one of {Perm, length}, {Images, length}, Cyles or Rules.";
-TranslatePerm::usage="TranslatePerm[perm, notation] translates permutation perm, in any format, to the given notation, which must be one of Perm, {Perm, length}, Cycles, Rules, Images or {Images, length}. TranslatePerm[set, notation] returns the set (with head GenSet, StrongGenSet, Group or Coset) with all its permutations translated to notation.";
+TranslatePerm::usage="TranslatePerm[perm, notation] translates permutation perm, in any format, to the given notation, which must be one of Perm, {Perm, length}, SCycles, Rules, Images or {Images, length}. TranslatePerm[set, notation] returns the set (with head GenSet, StrongGenSet, Group or Coset) with all its permutations translated to notation.";
 RandomPerm::usage="RandomPerm[deg] gives a random permutation in Perm notation. RandomPerm[deg, notation] constructs RandomPerm[deg] and then translates it to the given notation using TranslatePerm[perm, notation].";
-
 
 (* Operations with permutations *)
 PermLength::usage="PermLength[perm] gives the so-called length of permutation perm. If expressed in Perm or Images notation, the length of perm is the length of the list of points. In other cases, it returns PermDeg[perm].";
@@ -165,14 +161,14 @@ DeleteRedundantGenerators::usage="DeleteRedundantGenerators[SGS] returns an equi
 SchreierSims::usage="SchreierSims[initbase, GS, deg] generates a strong generating set for the group generated by GS (permutations of degree deg), using list initbase as the first points for the base. The final SGS is not reduced in general.";
 UseRules::usage="UseRules is an option for SchreierSims giving a set of rules replacing the permutations by strings. By default it is {}.";
 xPermVerbose::usage="xPermVerbose is an option for SchreierSims, RightCosetRepresentative, DoubleCosetRepresentative and CanonicalPerm. xPermVerbose->True gives lots of information about the intermediate status of the process.";
-
+JoinSGS::usage = "JoinSGS[...]";
 
 (* Canonicalization *)
 RightCosetRepresentative::usage="RightCosetRepresentative[perm, n, SGS] for an unsigned permutation perm of degree n and a SGS for group S gives a canonical representative of the right coset S.perm of perm with respect to subgroup S of the symmetric group Sn. The criterium is the minimization of images of points of the base of SGS under the elements of the coset, following the order given by the base. A fourth argument can be used to give additional priority to some points (the free slots in the tensorial context)..";
 DummySet::usage="DummySet is the head of expressions DummySet[manifold, {{d1u, d1d}, {d2u, d2d}, ...}, metricsym] denoting a set of pairs of (names of) dummies {diu, did} on manifold, whose metric has symmetry metricsym (an integer with value 1 if the metric is symmetric, -1 if the metric is antisymmetric, or 0 if there is no metric).";
 RepeatedSet::usage="RepeatedSet[{i1, i2, ...}] represents a list of names of repeated indices in the canonical configuration.";
 JoinSGS::usage="JoinSGS[StrongGenSet[base1, GS1], StrongGenSet[base2, GS2]] gives a strong generating set having base Join[base1, base2] (with base1 and base2 assumed to be disjoint) and generating set Union[GS1, GS2] (with GS1 and GS2 assumed to move disjoint sets of points).";
-SGSOfDummySet::usage="SGSOfDummySet[ DummySet[...] ] gives a Strong Generating Set for the group of permutations associated to the given DummySet. There are always permutations coming from the exchange of dummies. There are permutations coming from the exchange of up/down indices in a pair if there is a metric for those indices. The GS is given in Cycles notation. See notes for DummySet.";
+SGSOfDummySet::usage="SGSOfDummySet[ DummySet[...] ] gives a Strong Generating Set for the group of permutations associated to the given DummySet. There are always permutations coming from the exchange of dummies. There are permutations coming from the exchange of up/down indices in a pair if there is a metric for those indices. The GS is given in SCycles notation. See notes for DummySet.";
 DoubleCosetRepresentative2::usage="DoubleCosetRepresentative2[perm, n, SGS, dummysets] returns a canonical representative of the double coset S.perm.D, where S is generated by the strong generating set SGS and D is the group of symmetries of the dummysets. The criterium is the sequential sorting of slots of permutation perm (from first to last), choosing the least index not yet used consistent with the symmetries S and D. The indices are chosen assuming that indices are numbered according to their canonical order.";
 DoubleCosetRepresentative::usage = "DoubleCosetRepresentative[perm, n, S, D] returns a canonical representative of the double coset S.perm.D.";
 CanonicalPerm::usage="CanonicalPerm[perm, n, GS, {f1, f2, ...}, dummysets] gives a canonical representative of the double coset S.perm.D, where S is generated by GS and D is the group of symmetries of the dummysets of dummies. The algorithm RightCosetRepresentative is first applied to canonicalize free indices f1, f2, ..., and then algorithm DoubleCosetRepresentative is applied on the result of the latter.";
@@ -193,15 +189,14 @@ Antisymmetric::usage="Antisymmetric[{p1, p2, ...}] represents the symmetry of a 
 Symmetric::usage=Symmetric::usage<>"\n\nxAct extension:\nSymmetric[{p1, p2, ...}, notation] returns a strong generating set for the symmetric group on the set of points pi, using the indicated notation for signed permutations.";
 Antisymmetric::usage=Antisymmetric::usage<>"\n\nxAct extension:\nAntisymmetric[{p1, p2, ...}, notation] returns a strong generating set for the antisymmetric group on the set of points pi, using the indicated notation for signed permutations.";
 ];
-PairSymmetric::usage="PairSymmetric[{{p1a, p1b}, {p2a, p2b}, ...}, sym1, sym2, notation] returns a Strong Generating Set for the symmetric (if sym1=1) or antisymmetric (if sym1=-1) group of permutations of the pairs {pia, pib}. The switch sym is an integer: 1 adds permutations Cycles[{pia, pib}]; -1 adds permutations -Cycles[{pia, pib}]; other values do nothing. The result is given in the using the indicated notation (Cycles by default).";
-RiemannSymmetric::usage="RiemannSymmetric[{p1, p2, p3, p4}, notation] gives a strong generating set implementing the symmetries of the Riemann tensor R_{p1,p2,p3,p4}, using the indicated notation for signed permutations (Cycles by default).";
+PairSymmetric::usage="PairSymmetric[{{p1a, p1b}, {p2a, p2b}, ...}, sym1, sym2, notation] returns a Strong Generating Set for the symmetric (if sym1=1) or antisymmetric (if sym1=-1) group of permutations of the pairs {pia, pib}. The switch sym is an integer: 1 adds permutations SCycles[{pia, pib}]; -1 adds permutations -SCycles[{pia, pib}]; other values do nothing. The result is given in the using the indicated notation (SCycles by default).";
+RiemannSymmetric::usage="RiemannSymmetric[{p1, p2, p3, p4}, notation] gives a strong generating set implementing the symmetries of the Riemann tensor R_{p1,p2,p3,p4}, using the indicated notation for signed permutations (SCycles by default).";
 RiemannSymmetry::usage="RiemannSymmetry = RiemannSymmetric. Kept for backward compatibility.";
 
 (* Transversals *)
 RightTransversal::usage="RightTransversal[SGS, deg] returns a sorted list of permutations containing the canonical representative of each right coset of SGS in the symmetric group of degree deg. The choice of representative is based in the order induced on the permutations by the base of the SGS. RightTransversal[GS, deg] returns the same thing by first using SchreierSims.";
 LeftTransversal::usage="LeftTransversal[SGS, deg] returns a sorted list of permutations containing the canonical representative of each left coset of SGS in the symmetric group of degree deg. The choice of representative is based in the order induced on the **inverse** of the permutations by the base of the SGS. Efectively the transversal is simply the inverse of the corresponding right transversal. LeftTransversal[GS, deg] returns the same thing by first using SchreierSims.";
 DoubleTransversal::usage="DoubleTransversal[SGS, dummysets] returns a sorted list of permutations containing the canonical representative of each double coset of SGS and the D-group of the dummysets in the symmetric group of degree deg.";
-
 
 Begin["`Private`"]
 
@@ -219,14 +214,14 @@ If[System`$VersionNumber<8.,
 
 PermutationListQ[list_]:=SameQ[Sort[list],Range[Length[list]]];
 
-PermutationCyclesQ[System`Cycles[{cycs___}]]:=Union[cycs]===Sort[Join[cycs]];
+PermutationCyclesQ[Cycles[{cycs___}]]:=Union[cycs]===Sort[Join[cycs]];
 
 lastFalse[{___,{pos_}}]:=pos;
 lastFalse[{}]:=0;
 PermutationMax[list_List]:=lastFalse[Position[Inner[SameQ,list,Sort[list],List],False]];
 
 InversePermutation[list_List]:=Ordering[list];
-InversePermutation[System`Cycles[cyclist_List]]:=System`Cycles[Reverse/@cyclist];
+InversePermutation[Cycles[cyclist_List]]:=Cycles[Reverse/@cyclist];
 ]
 
 
@@ -241,11 +236,11 @@ True,expr9
 IfMathematica789[
 (* Mathematica 7*)
 addsingletons[cycs_,length_]:=Join[cycs,Partition[Complement[Range@length,Flatten@cycs],1]];PermutationFromCycles[cycs_List]:=Last/@Sort@Transpose[Flatten/@{RotateRight/@cycs,cycs}];
-PermList[System`Cycles[cycslist_List],length_]:=PermutationFromCycles[addsingletons[cycslist,length]],
+PermList[Cycles[cycslist_List],length_]:=PermutationFromCycles[addsingletons[cycslist,length]],
 (* Mathematica 8 *)
-PermList[System`Cycles[cycslist_List], length_]:=PermutationList[System`Cycles[Reverse/@cycslist],length],
+PermList[Cycles[cycslist_List], length_]:=PermutationList[Cycles[Reverse/@cycslist],length],
 (* Mathematica 9 *)
-PermList[perm_System`Cycles,length_]:=PermutationList[perm,length]
+PermList[perm_Cycles,length_]:=PermutationList[perm,length]
 ]
 
 
@@ -262,7 +257,7 @@ PermList[list_List,length_]:=PermutationList[list,length]
 IfMathematica789[
 (* Mathematica 7 *)
 ToCycles[list_List]:=Take[#,Position[Rest@#,First@#][[1,1]]]&/@Fold[If[MemberQ[Flatten@#1,#2],#1,Append[#1,NestList[list[[#1]]&,#2,Length@list]]]&,{},list];
-PermCycles[list_List]:=System`Cycles[Reverse/@ToCycles[Ordering@list]],
+PermCycles[list_List]:=Cycles[Reverse/@ToCycles[Ordering@list]],
 (* Mathematica 8 *)
 PermCycles[list_List]:=Map[Reverse,PermutationCycles[list],{2}],
 (* Mathematica 9 *)
@@ -272,7 +267,7 @@ PermCycles[list_List]:=PermutationCycles[list]
 
 IfMathematica789[
 (* Mathematica 7 *)
-PermutationProduct[System`Cycles[cycslist1_],System`Cycles[cycslist2_]]:=System`Cycles[List@@TranslatePerm[PermProduct[TranslatePerm[Cycles@@cycslist1,Rules],TranslatePerm[Cycles@@cycslist2,Rules]],Cycles]],
+PermutationProduct[Cycles[cycslist1_],Cycles[cycslist2_]]:=Cycles[List@@TranslatePerm[PermProduct[TranslatePerm[SCycles@@cycslist1,Rules],TranslatePerm[SCycles@@cycslist2,Rules]],SCycles]],
 (* Mathematica 8 *)
 Null,
 (* Mathematica 9 *)
@@ -296,14 +291,14 @@ MathToxPermSym[sym:(_Symmetric|_Antisymmetric)]:=SchreierSims[{},sym];
 MathToxPermSym[gs:{___List}]:=SchreierSims[{},GenSet@@(MathToxPermGen/@gs)];
 
 
-MathToxPermGen[{System`Cycles[{cycs___}],sign_}]:=sign Cycles[cycs];
+MathToxPermGen[{Cycles[{cycs___}],sign_}]:=sign SCycles[cycs];
 
 
 xPermToMathSym[sym:(_Symmetric|_Antisymmetric)]:=sym;
 xPermToMathSym[StrongGenSet[base_List,GS_GenSet]]:={xPermToMathGen/@List@@GS,base};
 
 
-xPermToMathGen[sign_. Cycles[cycs___]]:={System`Cycles[{cycs}],sign};
+xPermToMathGen[sign_. SCycles[cycs___]]:={Cycles[{cycs}],sign};
 
 
 PermQ[ID]:=True;
@@ -315,7 +310,7 @@ PermQ[Perm[list:{___Integer}]]:=PermutationListQ[list];
 PermQ[Images[list:{___Integer}]]:=PermutationListQ[list];
 
 
-PermQ[Cycles[cycs:{___Integer?Positive}...]]:=PermutationCyclesQ[System`Cycles[{cycs}]];
+PermQ[SCycles[cycs:{___Integer?Positive}...]]:=PermutationCyclesQ[Cycles[{cycs}]];
 
 
 PermQ[Rules[rules:Rule[_Integer?Positive,_Integer?Positive]..]]:=Apply[Union[#1]===Sort[Join[#2]]&,Transpose[{rules}/.Rule->List]
@@ -331,34 +326,28 @@ PermQ[_]:=False;
 
 Protect[PermQ];
 
-
-Cycles[cycs1___,{},cycs2___]:=Cycles[cycs1,cycs2];
-Cycles[cycs1___,{_},cycs2___]:=Cycles[cycs1,cycs2];
-
+SCycles[cycs1___,{},cycs2___]:=SCycles[cycs1,cycs2];
+SCycles[cycs1___,{_},cycs2___]:=SCycles[cycs1,cycs2];
 
 Rules[rules1___,HoldPattern[x_->x_],rules2___]:=Rules[rules1,rules2];
 
+Protect[Perm,SCycles,Rules,Images];
 
-Protect[Perm,Cycles,Rules,Images];
-
-
-SortCycles[perm_Cycles]:=Sort[SortCycle/@perm];
+SortCycles[perm_SCycles]:=Sort[SortCycle/@perm];
 SortCycle[cyc_List]:=Nest[RotateLeft,cyc,Position[cyc,Min[cyc]][[1,1]]-1];
-SortCycles[expr_]:=expr/.perm_Cycles:>SortCycles[perm];
+SortCycles[expr_]:=expr/.perm_SCycles:>SortCycles[perm];
 
 
-(* Unprotect[Cycles];
-MakeBoxes[Cycles[],StandardForm]:=xAct`xTensor`Private`interpretbox[Cycles[],"id"];
+(* Unprotect[SCycles];
+MakeBoxes[SCycles[],StandardForm]:=xAct`xTensor`Private`interpretbox[SCycles[],"id"];
 formatcycle[cyc_List]:=RowBox@Join[{"("},Riffle[MakeBoxes/@cyc,","],{")"}];
-MakeBoxes[-Cycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[-Cycles[cycs],RowBox[Prepend[formatcycle/@{cycs},"-"]]];
-MakeBoxes[coeff_?NumberQ Cycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[coeff Cycles[cycs],RowBox[Prepend[formatcycle/@{cycs},MakeBoxes[coeff,StandardForm]]]];
-MakeBoxes[Cycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[Cycles[cycs],RowBox[formatcycle/@{cycs}]];
-Protect[Cycles]; *)
-
+MakeBoxes[-SCycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[-SCycles[cycs],RowBox[Prepend[formatcycle/@{cycs},"-"]]];
+MakeBoxes[coeff_?NumberQ SCycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[coeff SCycles[cycs],RowBox[Prepend[formatcycle/@{cycs},MakeBoxes[coeff,StandardForm]]]];
+MakeBoxes[SCycles[cycs__List],StandardForm]:=xAct`xTensor`Private`interpretbox[SCycles[cycs],RowBox[formatcycle/@{cycs}]];
+Protect[SCycles]; *)
 
 PermLength[Perm[list_List]]:=Length[list];
 PermLength[Images[list_List]]:=Length[list];
-
 
 PermLength[group_Group]:=Max[0,PermLength/@List@@group]
 PermLength[GS_GenSet]:=Max[0,PermLength/@List@@GS];
@@ -373,7 +362,7 @@ Protect[PermLength];
 
 PermDeg[Perm[list_List]]:=PermutationMax[list];
 PermDeg[Images[list_List]]:=PermutationMax[list];
-PermDeg[Cycles[cycs___List]]:=Max[0,cycs];
+PermDeg[SCycles[cycs___List]]:=Max[0,cycs];
 PermDeg[Rules[rules___Rule]]:=Max[0,Apply[List,{rules},{1}]];
 PermDeg[ID]:=0;
 
@@ -396,14 +385,14 @@ Protect[PermDeg];
 NotationOfPerm[-g_]:=NotationOfPerm[g];
 NotationOfPerm[g:Perm[_List]]:={Perm,PermLength[g]};
 NotationOfPerm[g:Images[_List]]:={Images,PermLength[g]};
-NotationOfPerm[Cycles[___List]]:=Cycles;
+NotationOfPerm[SCycles[___List]]:=SCycles;
 NotationOfPerm[Rules[___Rule]]:=Rules;
-NotationOfPerm[GenSet[]]:=Cycles;
+NotationOfPerm[GenSet[]]:=SCycles;
 NotationOfPerm[GenSet[perm_,___]]:=NotationOfPerm[perm];
 NotationOfPerm[StrongGenSet[_,GS_]]:=NotationOfPerm[GS];
 (* Arbitrary decision *)
-NotationOfPerm[Symmetric[list_]]:=Cycles;
-NotationOfPerm[Antisymmetric[list_]]:=Cycles;
+NotationOfPerm[Symmetric[list_]]:=SCycles;
+NotationOfPerm[Antisymmetric[list_]]:=SCycles;
 
 NotationOfPerm::undef = "Unknown permutation `1`.";
 NotationOfPerm[x_]:= Null /; (Message[NotationOfPerm::undef, x]; False);
@@ -412,12 +401,12 @@ Protect[NotationOfPerm];
 
 ID[Perm[list_List]]:=Perm[Sort@list];
 ID[Images[list_List]]:=Images[Sort@list];
-ID[Cycles[___List]]:=Cycles[];
+ID[SCycles[___List]]:=SCycles[];
 ID[Rules[___Rule]]:=Rules[];
 ID[ID]:=ID;
 
 
-ID[x_?NumericQ perm_]:=ID[perm];
+ID[x_?NumericQ * perm_]:=ID[perm];
 
 ID::undef = "Unknown permutation `1`.";
 ID[x_] := Null /; (Message[ID::undef, x]; False);
@@ -440,29 +429,27 @@ TranslatePerm[perm_,Images]:=TranslatePerm[perm,{Images,PermLength@perm}];
 
 TranslatePerm[ID,{Perm,length_Integer}]:=Perm[Range[length]];
 TranslatePerm[ID,{Images,length_Integer}]:=Images[Range[length]];
-TranslatePerm[ID,Cycles]:=Cycles[];
+TranslatePerm[ID,SCycles]:=SCycles[];
 TranslatePerm[ID,Rules]:=Rules[];
 
-
-TranslatePerm[perm:Cycles[___List],Cycles]:=Cycles@@First[System`Cycles[List@@perm]];
-
-
-TranslatePerm[Cycles[cycs___List],Rules]:=Inner[Rule,Flatten[{cycs}],Flatten[RotateLeft/@{cycs}],Rules];
+TranslatePerm[perm:SCycles[___List],SCycles]:=SCycles@@First[Cycles[List@@perm]];
 
 
-TranslatePerm[Cycles[cycs___List],{Perm,length_Integer}]:=Perm@PermList[System`Cycles[Reverse/@{cycs}],length]
+TranslatePerm[SCycles[cycs___List],Rules]:=Inner[Rule,Flatten[{cycs}],Flatten[RotateLeft/@{cycs}],Rules];
 
 
-TranslatePerm[perm:Cycles[cycs___List],{Images,length_Integer}]:=Images@PermList[System`Cycles[{cycs}],length];
+TranslatePerm[SCycles[cycs___List],{Perm,length_Integer}]:=Perm@PermList[Cycles[Reverse/@{cycs}],length];
+
+TranslatePerm[perm:SCycles[cycs___List],{Images,length_Integer}]:=Images@PermList[Cycles[{cycs}],length];
 
 
 TranslatePerm[Perm[list_List],{Perm,length_Integer}]:=Perm@PermList[list,length];
 
 
-TranslatePerm[Perm[list_List],Cycles]:=Cycles@@(Reverse/@First[PermCycles[list]]);
+TranslatePerm[Perm[list_List],SCycles]:=SCycles@@(Reverse/@First[PermCycles[list]]);
 
 
-TranslatePerm[perm:Perm[_List],Rules]:=TranslatePerm[TranslatePerm[perm,Cycles],Rules];
+TranslatePerm[perm:Perm[_List],Rules]:=TranslatePerm[TranslatePerm[perm,SCycles],Rules];
 
 
 TranslatePerm[Perm[list_List],{Images,length_Integer}]:=Images[Take[Ordering[list]~Join~Range[Length[list]+1,length],length]];
@@ -476,7 +463,7 @@ m1c[{n_,other__,n_},_]:={n,other};
 m1c[{other___,n_},rules_]:=m1c[{other,n,n/.rules},rules];
 mcs[{n_,other___},rules_,{cycs___}]:=With[{cyc=m1c[{n},rules]},mcs[Complement[{other},cyc],rules,{cycs,cyc}]];
 mcs[{},_,cycs_]:=cycs;
-TranslatePerm[Rules[rules___Rule],Cycles]:=Cycles@@mcs[Range[PermDeg[Rules[rules]]],{rules},{}];
+TranslatePerm[Rules[rules___Rule],SCycles]:=SCycles@@mcs[Range[PermDeg[Rules[rules]]],{rules},{}];
 
 
 TranslatePerm[Rules[rules___Rule],{Perm,length_Integer}]:=Perm@ReplacePart[Range@length,First/@{rules},({#[[2]]}&/@{rules})/.{}->{{}},Partition[Range[Length[{rules}]],1]/.{}->{{}}]
@@ -491,14 +478,14 @@ TranslatePerm[Images[list_List],{Images,length_Integer}]:=Images[Take[list~Join~
 TranslatePerm[Images[list_List],{Perm,length_}]:=Perm[Take[Ordering[list]~Join~Range[Length[list]+1,length],length]];
 
 
-TranslatePerm[Images[list_List],Cycles]:=Cycles@@First[PermCycles[list]];
+TranslatePerm[Images[list_List],SCycles]:=SCycles@@First[PermCycles[list]];
 
 
 TranslatePerm[Images[perm_List],Rules]:=Inner[Rule,Sort[perm],perm,Rules];
 
 TranslatePerm::unknown = "Unknown notation `1`.";
 TranslatePerm::invalid = "Invalid permutation `1`.";
-TranslatePerm[perm_,Cycles|Rules|Perm|Images|{Perm,_Integer}|{Images,_Integer}] := Null /; (Message[TranslatePerm::invalid,perm,"permutation"]; False);
+TranslatePerm[perm_,SCycles|Rules|Perm|Images|{Perm,_Integer}|{Images,_Integer}] := Null /; (Message[TranslatePerm::invalid,perm,"permutation"]; False);
 TranslatePerm[_,notation_] := Null /; (Message[TranslatePerm::unknown, notation]; False);
 Protect[TranslatePerm];
 
@@ -525,9 +512,9 @@ OnPoints[p_Integer,Perm[{___}]]:=p;
 OnPoints[p_Integer,Rules[rules___Rule]]:=p/.{rules};
 
 
-OnPoints[p_Integer,Cycles[___List,{___,p_,q_,___},___List]]:=q;
-OnPoints[p_Integer,Cycles[___List,{q_,___,p_},___List]]:=q;
-OnPoints[p_Integer,Cycles[___List]]:=p;
+OnPoints[p_Integer,SCycles[___List,{___,p_,q_,___},___List]]:=q;
+OnPoints[p_Integer,SCycles[___List,{q_,___,p_},___List]]:=q;
+OnPoints[p_Integer,SCycles[___List]]:=p;
 
 
 OnPoints[p_Integer,Images[list:{___,p_,___}]]:=list[[p]];
@@ -568,9 +555,9 @@ PermProduct[Perm[list1_List],Perm[list2_List]]:=Perm[list1[[list2]]];
 PermProduct[Rules[r1___Rule],Rules[r2___Rule]]:=Inner[Rule,#,#/.{r1}/.{r2},Rules]&@Union[Level[{r1,r2},{-1}]]
 
 
-PermProduct[Cycles[],perm:Cycles[___List]]:=perm;
-PermProduct[perm:Cycles[___List],Cycles[]]:=perm;
-PermProduct[Cycles[cycs1___],Cycles[cycs2___]]:=Apply[Cycles,First@PermutationProduct[System`Cycles[{cycs1}],System`Cycles[{cycs2}]]];
+PermProduct[SCycles[],perm:SCycles[___List]]:=perm;
+PermProduct[perm:SCycles[___List],SCycles[]]:=perm;
+PermProduct[SCycles[cycs1___],SCycles[cycs2___]]:=Apply[SCycles,First@PermutationProduct[Cycles[{cycs1}],Cycles[{cycs2}]]];
 
 
 PermProduct[Images[list1_List],Images[list2_List]]:=Images[Union[list1,list2]/.Inner[Rule,Sort[list1],list1,List]/.Inner[Rule,Sort[list2],list2,List]];
@@ -585,7 +572,7 @@ Protect[PermProduct];
 
 InversePerm[Perm[list_List]]:=Perm[InversePermutation[list]];
 InversePerm[Images[list_List]]:=Images[InversePermutation[list]];
-InversePerm[Cycles[cycs___List]]:=Apply[Cycles,First@InversePermutation[System`Cycles[{cycs}]]];
+InversePerm[SCycles[cycs___List]]:=Apply[SCycles,First@InversePermutation[Cycles[{cycs}]]];
 InversePerm[Rules[rules___Rule]]:=Reverse/@Rules[rules];
 InversePerm[ID]:=ID;
 InversePerm[x_?NumericQ * perm_]:=1/x InversePerm[perm];
@@ -615,8 +602,8 @@ Protect[RandomPerm];
 PermSignature[Perm[list_List]]:=Signature[list];
 PermSignature[Images[list_List]]:=Signature[list];
 signofcycle[cyc_List]:=-(-1)^Length[cyc];
-PermSignature[perm_Cycles]:=Apply[Times,signofcycle/@perm];
-PermSignature[perm_Rules]:=PermSignature[TranslatePerm[perm,Cycles]];
+PermSignature[perm_SCycles]:=Apply[Times,signofcycle/@perm];
+PermSignature[perm_Rules]:=PermSignature[TranslatePerm[perm,SCycles]];
 PermSignature[-perm_]:=-PermSignature[perm];
 Protect[PermSignature];
 
@@ -702,8 +689,8 @@ GenSet[StrongGenSet[_,GS_GenSet]]:=GS;
 
 
 GenSet[(Symmetric|Antisymmetric)[{}|{_}]]:=GenSet[];
-GenSet[Symmetric[list_List]]:=DeleteDuplicates@GenSet[Cycles[list[[{1,2}]]],Cycles[list]];
-GenSet[Antisymmetric[list_List]]:=DeleteDuplicates@GenSet[-Cycles[list[[{1,2}]]],-(-1)^Length[list]Cycles[list]];
+GenSet[Symmetric[list_List]]:=DeleteDuplicates@GenSet[SCycles[list[[{1,2}]]],SCycles[list]];
+GenSet[Antisymmetric[list_List]]:=DeleteDuplicates@GenSet[-SCycles[list[[{1,2}]]],-(-1)^Length[list]SCycles[list]];
 
 
 Protect[GenSet];
@@ -1132,8 +1119,8 @@ If[verb,Print["Finished check of H(",i+1,") with base ",Drop[newB,i]," and SGS "
 (* Main driver *)
 Options[SchreierSims]={MathLink:>$xpermQ,UseRules:>{},Method->"Butler3",xPermVerbose->False};
 SchreierSims[n_Integer,other__]:=SchreierSims[Range[n],other];
-SchreierSims[B_List,Symmetric[inds_List,not_:Peanotica`xPerm`Cycles],options___]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(Peanotica`xPerm`Cycles/@Partition[Sort@inds,2,1]),not]];
-SchreierSims[B_List,Antisymmetric[inds_List,not_:Peanotica`xPerm`Cycles],options___]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(-Peanotica`xPerm`Cycles[#]&/@Partition[Sort@inds,2,1]),not]];
+SchreierSims[B_List,Symmetric[inds_List,not_:Peanotica`xPerm`SCycles],options___]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(Peanotica`xPerm`SCycles/@Partition[Sort@inds,2,1]),not]];
+SchreierSims[B_List,Antisymmetric[inds_List,not_:Peanotica`xPerm`SCycles],options___]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(-Peanotica`xPerm`SCycles[#]&/@Partition[Sort@inds,2,1]),not]];
 SchreierSims[_,GenSet[],len_Integer,options___]:=StrongGenSet[{},GenSet[]];
 SchreierSims[B_List,GS_GenSet,options___?OptionQ]:=SchreierSims[B,GS,PermLength[StrongGenSet[B,GS]],options];
 SchreierSims[B_List,GS_GenSet,len_Integer,options:OptionsPattern[]]:=If[OptionValue[MathLink],MathLinkSchreierSims,MathSchreierSims][B,GS,len,options];
@@ -1165,27 +1152,27 @@ StrongGenSet[DeleteCases[base,0],genset/.rules]
 
 
 Unprotect[Symmetric];
-Symmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(Cycles/@Partition[Sort@inds,2,1]),not]];
+Symmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(SCycles/@Partition[Sort@inds,2,1]),not]];
 Symmetric[{},_]:=StrongGenSet[{},GenSet[]];
 Protect[Symmetric];
 
 
 Unprotect[Antisymmetric];
-Antisymmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(-Cycles[#]&/@Partition[Sort@inds,2,1]),not]];
+Antisymmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(-SCycles[#]&/@Partition[Sort@inds,2,1]),not]];
 Antisymmetric[{},_]:=StrongGenSet[{},GenSet[-ID]];
 Protect[Antisymmetric];
 
 
-RiemannSymmetric[inds:{i1_,i2_,i3_,i4_},not_:Cycles]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet[Cycles[{i1,i3},{i2,i4}],-Cycles[{i1,i2}],-Cycles[{i3,i4}]],not]]
+RiemannSymmetric[inds:{i1_,i2_,i3_,i4_},not_:SCycles]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet[SCycles[{i1,i3},{i2,i4}],-SCycles[{i1,i2}],-SCycles[{i3,i4}]],not]]
 RiemannSymmetry=RiemannSymmetric;
 
 
-addperm[sign:(1|-1)][{p1a_,p1b_},{p2a_,p2b_}]:=GenSet[sign Cycles[{p1a,p2a},{p1b,p2b}]]
-addperm[sign:(1|-1)][pair_List,pairs__List]:=GenSet[sign^Length[{pairs}] Cycles@@Transpose@RotateRight[{pair,pairs}],addperm[sign][pairs]]
+addperm[sign:(1|-1)][{p1a_,p1b_},{p2a_,p2b_}]:=GenSet[sign SCycles[{p1a,p2a},{p1b,p2b}]]
+addperm[sign:(1|-1)][pair_List,pairs__List]:=GenSet[sign^Length[{pairs}] SCycles@@Transpose@RotateRight[{pair,pairs}],addperm[sign][pairs]]
 addperm[_][__]:=GenSet[]
 
 
-PairSymmetric[pairs:{{_,_}...},sym1_,sym2_,not_:Cycles]:=StrongGenSet[Sort[Flatten@pairs],TranslatePerm[GenSet[addperm[sym1]@@pairs,Switch[sym2,1,GenSet@@Map[Cycles,pairs],-1,GenSet@@Map[-Cycles[#]&,pairs],_,GenSet[]]],not]];
+PairSymmetric[pairs:{{_,_}...},sym1_,sym2_,not_:SCycles]:=StrongGenSet[Sort[Flatten@pairs],TranslatePerm[GenSet[addperm[sym1]@@pairs,Switch[sym2,1,GenSet@@Map[SCycles,pairs],-1,GenSet@@Map[-SCycles[#]&,pairs],_,GenSet[]]],not]];
 
 
 Stabilizer[points_List,SGS_]:=Stabilizer[points,SGS,PermLength[SGS]];
@@ -1271,12 +1258,12 @@ Protect[Peanotica`xPerm`RightCosetRepresentative];
 
 SGSOfDummySet[DummySet[_,pairs_List,metricQ_Integer]]:=StrongGenSet[First/@pairs,
 GenSet@@Join[Switch[metricQ,
-1,Cycles/@pairs,
--1,Minus/@Cycles/@pairs,
+1,SCycles/@pairs,
+-1,Minus/@SCycles/@pairs,
 0,{},
 _,Throw[Print["Invalid value for metricQ in SGSOfDummySet."]]
 ],
-Flatten[Cycles@@#&/@Transpose/@Partition[pairs,2,1]]]];
+Flatten[SCycles@@#&/@Transpose/@Partition[pairs,2,1]]]];
 Protect[DummySet];
 
 
@@ -1332,8 +1319,8 @@ with repeated indices. Each set is associated with a manifold ;
 *)
 DoubleCosetRepresentative2[permutation_?PermQ,len_Integer,StrongGenSet[base_List,GS_GenSet],dummysets:{(_DummySet|_RepeatedSet)...},options:OptionsPattern[]]:=Module[{n,perm,notation,F1,F2,bS,SGSS,SGSD,i,TAB,ALPHA={{}},nuS,Deltab,DeltaD,IMAGES,p,nuD,Deltap,s,d,NEXT,j,jj,s1,d1,L1,tmp,alphaindices,KS=GS,result,dummyindices,newdummysets=dummysets,dummyslots,bi,pi,ob=OptionValue[CanonicalPerm,{options},OrderedBase],verb=OptionValue[xPermVerbose],bSsort},
 
-(* 1. The routine works in the notation given by permutation. If it is ID, change to Cycles[] *)
-perm=permutation/.ID->Peanotica`xPerm`Cycles[];
+(* 1. The routine works in the notation given by permutation. If it is ID, change to SCycles[] *)
+perm=permutation/.ID->Peanotica`xPerm`SCycles[];
 (* Note that perm is always kept fixed *)
 notation=NotationOfPerm[perm];
 If[verb,Print["DOUBLE-COSET-REPRESENTATIVE ALGORITHM for ",permutation]];
@@ -1464,7 +1451,7 @@ If[verb,Print["New SGS of D: ",SGSD]];
 (* 9. Result *)
 Switch[result,
 0,0,
-_,F2[ALPHA[[1]],TAB,perm]/.If[permutation===ID,Cycles[]->ID,{}]
+_,F2[ALPHA[[1]],TAB,perm]/.If[permutation===ID,SCycles[]->ID,{}]
 ]
 
 ];
@@ -1484,8 +1471,8 @@ DoubleCosetRepresentative[
 ] := Module[
     {n,perm,notation,F1,F2,bS,SGSS,SGSD = SGSD0,i,TAB,ALPHA={{}},nuS,Deltab,DeltaD,IMAGES,p,nuD,Deltap,s,d,NEXT,j,jj,s1,d1,L1,tmp,alphaindices,KS=GS,result,dummyindices,newdummysets=dummysets,dummyslots,bi,pi,ob=OptionValue[CanonicalPerm,{options},OrderedBase],verb=OptionValue[xPermVerbose],bSsort},
 
-    (* 1. The routine works in the notation given by permutation. If it is ID, change to Cycles[] *)
-    perm=permutation/.ID->Peanotica`xPerm`Cycles[];
+    (* 1. The routine works in the notation given by permutation. If it is ID, change to SCycles[] *)
+    perm = permutation /. ID-> SCycles[];
     (* Note that perm is always kept fixed *)
     notation=NotationOfPerm[perm];
     If[verb,Print["DOUBLE-COSET-REPRESENTATIVE ALGORITHM for ",permutation]];
@@ -1603,7 +1590,7 @@ DoubleCosetRepresentative[
     (* 9. Result *)
     Switch[result,
         0,0,
-        _,F2[ALPHA[[1]],TAB,perm]/.If[permutation===ID,Cycles[]->ID,{}]
+        _,F2[ALPHA[[1]],TAB,perm]/.If[permutation===ID,SCycles[]->ID,{}]
     ]
 ];
 SyntaxInformation@DoubleCosetRepresentative = {"ArgumentsPattern" -> {_, _, _, _, OptionsPattern[]}};
@@ -1743,15 +1730,15 @@ CheckDeadLink[expr_]:=Check[expr,Print["Failed computing ",Hold[expr]];$xpermQ=x
 
 ToSign[perm:Perm[list_],len_]:=If[OnPoints[len+1,perm]===len+1,1,-1]Perm[Drop[list,-2]];
 ToSign[perm_Rules,len_]:=If[OnPoints[len+1,perm]===len+1,1,-1]DeleteCases[perm,_[___,len+1,___]];
-ToSign[perm_Cycles,len_]:=If[OnPoints[len+1,perm]===len+1,1,-1]DeleteCases[perm,{___,len+1,___}];
+ToSign[perm_SCycles,len_]:=If[OnPoints[len+1,perm]===len+1,1,-1]DeleteCases[perm,{___,len+1,___}];
 ToSign[perm:Images[list_],len_]:=If[OnPoints[len+1,perm]===len+1,1,-1]Images[Drop[list,-2]];
 ToSign[GS_GenSet,len_]:=ToSign[#,len]&/@GS;
 ToSign[StrongGenSet[base_,GS_],len_]:=StrongGenSet[DeleteCases[base,(len+1)|(len+2)],ToSign[GS,len]];
 
 
-FromSign[s_. Perm[perm_],len_]:=Perm[perm~Join~(len+If[s>0,{1,2},{2,1}])];
+FromSign[s_. * Perm[perm_],len_]:=Perm[perm~Join~(len+If[s>0,{1,2},{2,1}])];
 FromSign[s_. Rules[rules___],len_]:=Rules@@If[s<0,{rules,len+1->len+2,len+2->len+1},{rules}];
-FromSign[s_. Cycles[cycs___],len_]:=Cycles@@If[s<0,{cycs,len+{1,2}},{cycs}];
+FromSign[s_. SCycles[cycs___],len_]:=SCycles@@If[s<0,{cycs,len+{1,2}},{cycs}];
 FromSign[s_. Images[perm_],len_]:=Images[perm~Join~(len+If[s>0,{1,2},{2,1}])];
 FromSign[GS_GenSet,len_]:=FromSign[#,len]&/@GS;
 FromSign[StrongGenSet[base_,GS_],len_]:=StrongGenSet[If[!FreeQ[GS,-1],Append[base,len+1],base],FromSign[GS,len]];
@@ -1768,7 +1755,7 @@ MathLinkSchreierSims[initbase_List,GS_GenSet,len_Integer,options___]:=TranslateP
 
 
 Unprotect[StrongGenSet];
-StrongGenSet[base:{___Integer},GS:{___Integer},len_Integer]:=(If[Select[base,#>len&]=!={},Print["Computed SGS contains -Cycles[]."]];StrongGenSet[base,GenSet@@(Images/@Partition[GS,len])]);
+StrongGenSet[base:{___Integer},GS:{___Integer},len_Integer]:=(If[Select[base,#>len&]=!={},Print["Computed SGS contains -SCycles[]."]];StrongGenSet[base,GenSet@@(Images/@Partition[GS,len])]);
 Protect[StrongGenSet];
 
 
@@ -1809,11 +1796,10 @@ CheckDeadLink[Apply[MLSetStabilizer,tmp]]/.Images[{(0)..}]->0
 ],
 len],NotationOfPerm[sgs]];
 
-
 End[];
 
 
 EndPackage[];
 
-
-On[System`Cycles::shdw];
+(* Print@Context@Cycles; *)
+(* Remove@Peanotica`xPerm`Cycles; *)
