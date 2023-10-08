@@ -886,6 +886,7 @@ OrderOfGroup[StrongGenSet[{___},GenSet[]],options___]:=1;
 OrderOfGroup[StrongGenSet[{},GS_GenSet]]:=(Message[OrderOfGroup::nobase,GS];0);
 OrderOfGroup[StrongGenSet[base_List,GS_GenSet],options___]:=Length[Orbit[First[base],GS,options]]OrderOfGroup[StrongGenSet[Rest[base],Stabilizer[{First[base]},GS]],options];
 OrderOfGroup[(Symmetric|Antisymmetric)[list_List]]:=Length[list]!;
+OrderOfGroup[(e_List | e_GenSet)] := OrderOfGroup@SchreierSims[{}, GenSet @@ e];
 Protect[OrderOfGroup];
 
 
@@ -1150,20 +1151,8 @@ StrongGenSet[DeleteCases[base,0],genset/.rules]
 
 ];
 
-
-Unprotect[Symmetric];
-Symmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(SCycles/@Partition[Sort@inds,2,1]),not]];
-Symmetric[{},_]:=StrongGenSet[{},GenSet[]];
-Protect[Symmetric];
-
-
-Unprotect[Antisymmetric];
-Antisymmetric[inds_List,not_]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet@@(-SCycles[#]&/@Partition[Sort@inds,2,1]),not]];
-Antisymmetric[{},_]:=StrongGenSet[{},GenSet[-ID]];
-Protect[Antisymmetric];
-
-
-RiemannSymmetric[inds:{i1_,i2_,i3_,i4_},not_:SCycles]:=StrongGenSet[Sort@inds,TranslatePerm[GenSet[SCycles[{i1,i3},{i2,i4}],-SCycles[{i1,i2}],-SCycles[{i3,i4}]],not]]
+RiemannSymmetric[inds_] := RiemannSymmetric[inds, SCycles];
+RiemannSymmetric[inds:{i1_,i2_,i3_,i4_},not_:SCycles]:=StrongGenSet[Sort@{i1, i3},TranslatePerm[GenSet[SCycles[{i1,i3},{i2,i4}],-SCycles[{i1,i2}],-SCycles[{i3,i4}]],not]]
 RiemannSymmetry=RiemannSymmetric;
 
 
@@ -1304,159 +1293,7 @@ Join[Cases[base,Alternatives@@dummyslots],otherdummyslots]
 orbitof[i_Integer,h_[___,list:{___,i_,___},___]]:=list
 orbitof[i_Integer,_[___]]:={}
 
-
-Options[DoubleCosetRepresentative2]:={
-xPermVerbose->False,
-MathLink:>$xpermQ
-};
-(*
-permutation: degree deg;
-base={b1, ..., bk}: base of group S ;
-GS: strong generating set of S relative to base ;
-dummysets : list of sets (head DummySet or RepeatedSet) of pairs of names
-(positions in the canonical configuration) of dummies, or a single list
-with repeated indices. Each set is associated with a manifold ;
-*)
-DoubleCosetRepresentative2[permutation_?PermQ,len_Integer,StrongGenSet[base_List,GS_GenSet],dummysets:{(_DummySet|_RepeatedSet)...},options:OptionsPattern[]]:=Module[{n,perm,notation,F1,F2,bS,SGSS,SGSD,i,TAB,ALPHA={{}},nuS,Deltab,DeltaD,IMAGES,p,nuD,Deltap,s,d,NEXT,j,jj,s1,d1,L1,tmp,alphaindices,KS=GS,result,dummyindices,newdummysets=dummysets,dummyslots,bi,pi,ob=OptionValue[CanonicalPerm,{options},OrderedBase],verb=OptionValue[xPermVerbose],bSsort},
-
-(* 1. The routine works in the notation given by permutation. If it is ID, change to SCycles[] *)
-perm=permutation/.ID->Peanotica`xPerm`SCycles[];
-(* Note that perm is always kept fixed *)
-notation=NotationOfPerm[perm];
-If[verb,Print["DOUBLE-COSET-REPRESENTATIVE ALGORITHM for ",permutation]];
-
-(* 2. Dummies and repeated indices go into the D group *)
-If[verb,Print["index-dummysets: ",dummysets]];
-dummyindices=Flatten[dummysets/.{DummySet[_,dums_,_]->dums,RepeatedSet[list_]->list}];
-If[verb,Print["dummyindices: ",dummyindices]];
-dummyslots=OnPoints[dummyindices,InversePerm[perm]];
-If[verb,Print["dummyslots: ",dummyslots]];
-newdummysets=dummysets;
-
-(* 3. Extend base. base contains some of the dummy slots, but not all. We must cover all slots of dummies, keeping the order of the points of the original base *)
-bS=ExtendBase[base,Sort@dummyslots,ob];
-If[verb,Print["Extended ",base," to ",bS]];
-SGSS=StrongGenSet[bS,GS];
-If[verb,Print["Initial SGSS: ",SGSS]];
-(* Initialize base images *)
-p=0 bS;
-
-(* 4. Adapt base for sorting of dummy indices. This is a particular choice, for aesthetical reasons *)
-bSsort=bS/.Inner[Rule,Sort[bS],Sort[dummyindices],List];
-If[verb,Print["base for sorting: ",bSsort]];
-
-(* 5. Initialize TAB *)
-TAB[{}]:={ID[perm],ID[perm]};
-
-(* 6. Subroutines. Note that elements of TAB are {s, d} *)
-F2[L_,TAB_,g_]:=PermProduct[TAB[L][[1]],g,TAB[L][[2]]];
-F1[L_,TAB_,DeltaD_,Deltab_,g_]:=Module[{sgd=F2[L,TAB,g],list},
-If[verb,Print["With L=",L," we get sgd: ",sgd]];
-list=OnPoints[Deltab,sgd];
-If[verb,Print["which maps slots in Deltab to indices list: ",list]];
-list=Union[Flatten[Cases[DeltaD,x_/;Intersection[x,list]=!={}]]];
-If[verb,Print["whose points belong to orbits ",list]];
-list
-];
-
-(* 7. Strong Generating Set of group D *)
-SGSD=TranslatePerm[JoinSGS@@(SGSOfDummySet/@dummysets),notation];
-If[verb,Print["Initial SGSD: ",SGSD]];
-
-(* 8. Main loop on the slots of bS *)
-For[i=1,i<=Length[bS],++i,
-If[verb,Print["******************* Loop i= ",i," *********************"]];
-bi=bS[[i]];
-If[verb,Print["Analyzing slot ",bi," of tensor"]];
-
-(* A. Schreier vector of S *)
-nuS=SchreierOrbits[SGSS,len];
-(* Orbits are ordered according to base of SGSS, which has bi as first element *)
-If[verb,Print["nuS: ",nuS," with first element ",bi]];
-Deltab=orbitof[bi,Drop[List@@nuS,-2]];
-If[verb,Print["Under S, slot ",bi," can go to slots Deltab: ",Deltab]];
-
-(* B. Orbits of D *)
-DeltaD=Orbits[SGSD[[2]],len];
-If[verb,Print["Orbits of indices under D: DeltaD: ",DeltaD]];
-
-(* C. Images of bi under elements of S.perm.D *)
-IMAGES=Union[Flatten[Map[F1[#,TAB,DeltaD,Deltab,perm]&,ALPHA]]];
-If[verb,Print["Therefore at slot ",bi," we can have indices IMAGES: ",IMAGES]];
-(* The minimal element is taken with respect to bSsort *)
-p[[i]]=pi=MinB[IMAGES,bSsort];
-If[verb,Print["The least of them is p[[",i,"]]: ",pi]];
-
-(* D. Rearrange SGS of D. Now pi will be the first element of the base *)
-newdummysets=MovePairOf[pi,#]&/@newdummysets;
-If[verb,Print["Moved pairs ",newdummysets]];
-(* Full reconstruction of the SGSD starting from the new dummysets, with reordered indices *)
-SGSD=TranslatePerm[JoinSGS@@(SGSOfDummySet/@newdummysets),notation];
-If[verb,Print["New SGS of D: ",SGSD]];
-(* Schreier vector of D *)
-nuD=SchreierOrbits[SGSD,len];
-If[verb,Print["with Schreier vector nuD: ",nuD]];
-(* Orbit of pi under D *)
-Deltap=orbitof[pi,Drop[List@@nuD,-2]];
-If[verb,Print["In particular, the orbit of index ",pi," is Deltap: ",Deltap]];
-
-(* E. Calculate ALPHA and TAB. Inner double loop *)
-If[verb,Print["Now looking for all permutations sgd that move index ",pi," to slot ",bi]];
-alphaindices={};
-For[l=1,l<=Length[ALPHA],++l,
-If[verb,Print["Loop with l=",l]];
-L=ALPHA[[l]];
-If[verb,Print["L= ",L]];
-s=TAB[L][[1]];
-d=TAB[L][[2]];
-If[verb,Print["TAB[L] = {s, d} = ",{s,d}]];
-If[verb,Print["Calculating NEXT. We need the intersection of sets of slots ", OnPoints[Deltab,s]," and ",OnPoints[Deltap,InversePerm[PermProduct[perm,d]]]]];
-NEXT=Intersection[OnPoints[Deltab,s],OnPoints[Deltap,InversePerm[PermProduct[perm,d]]]];
-If[verb,Print["Intermediate slots NEXT= ",NEXT]];
-For[jj=1,jj<=Length[NEXT],++jj,
-j=NEXT[[jj]];
-s1=PermProduct[TraceSchreier[OnPoints[j,InversePerm@s],nuS],s];
-If[verb,Print["From slot ",bi," to intermediate slot ",j," use s1=", s1]];
-d1=PermProduct[d,InversePerm@TraceSchreier[OnPoints[j,PermProduct[perm,d]],nuD]];
-If[verb,Print["d1= ",d1]];
-L1=Append[L,j];
-If[verb,Print["L1= ",L1]];
-TAB[L1]={s1,d1};
-AppendTo[alphaindices,L1];
-If[verb,Print["This gives us the new index configuration: ",TranslatePerm[InversePerm[F2[L1,TAB,perm]],{Perm,len}]]];
-(* Checks *)
-For[ii=1,ii<=i,++ii,If[OnPoints[bS[[ii]],PermProduct[s1,perm,d1]]=!=p[[ii]],Print["WRONG check of slot ",bS[[ii]]," with point ",p[[ii]]]]
-]];
-TAB[L]=.;
-];
-ALPHA=alphaindices;
-If[verb,Print["New ALPHA: ",ALPHA]];
-
-(* F. Verify if there are 2 equal permutations of opposite sign in S.perm.D *)
-tmp=Map[InversePerm[F2[#,TAB,perm]]&,ALPHA];
-If[verb,Print["Checking consistency in set ",tmp]];
-If[Intersection[tmp,-tmp]=!={},result=0;Break[]];
-
-(* G. Find the stabilizers S^(i+1) and D^(i+1) *)
-SGSS=StrongGenSet[Drop[SGSS[[1]],1],Stabilizer[{bi},SGSS[[2]]]];
-If[verb,Print["Removing permutations from SGS of S that move slot ",bi]];
-If[verb,Print["New SGS of S: ",SGSS]];
-(* Construct new SGSD from the new dummysets, and not by stabilization *)
-newdummysets=RemovePairOf[pi,#]&/@newdummysets;
-SGSD=TranslatePerm[JoinSGS@@(SGSOfDummySet/@newdummysets),notation];
-If[verb,Print["Removing permutations from SGS of D that move index ",pi]];
-If[verb,Print["New SGS of D: ",SGSD]];
-]; (* End of main loop *);
-
-(* 9. Result *)
-Switch[result,
-0,0,
-_,F2[ALPHA[[1]],TAB,perm]/.If[permutation===ID,SCycles[]->ID,{}]
-]
-
-];
-Protect[DoubleCosetRepresentative2];
-
+mergeBases[b1_, b2_];
 
 Options[DoubleCosetRepresentative] = {
     xPermVerbose -> False,
@@ -1491,7 +1328,7 @@ DoubleCosetRepresentative[
     If[verb,Print["base for sorting: ",bSsort]];
 
     (* 5. Initialize TAB *)
-    TAB = <|{} -> {ID@perm, ID@perm}|>;
+    TAB = <|{} -> {#, #}|> &@ID@perm;
 
     (* 6. Subroutines. Note that elements of TAB are {s, d} *)
     F2[L_,TAB_,g_]:=PermProduct[TAB[L][[1]],g,TAB[L][[2]]];
@@ -1798,8 +1635,4 @@ len],NotationOfPerm[sgs]];
 
 End[];
 
-
 EndPackage[];
-
-(* Print@Context@Cycles; *)
-(* Remove@Peanotica`xPerm`Cycles; *)

@@ -4,11 +4,11 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{"Peanotica`Core`*"}];
 
 ISum::usage = "ISum[expr, {i1, ...}, {i2, ...}, ...] represents a summation expression with dummy indices i1, i2...";
 IProd::usage = "";
+RemoveNoneIndexType::usage = "";
 DummyIndexScope::usage = "";
 DummyIndexScopeQ::usage = "";
 SymmetryGroupOfExpression::usage = "";
 IndexSlot::usage = "";
-ToxPermSGS::usage = "";
 CommutivityQ::usage = "";
 TensorProductHeadQ::usage = "";
 PhaseOfOrdering::usage = "";
@@ -24,7 +24,7 @@ NRange::usage = "VRange[min, max] represents the range of a dummy index.";
 
 LabelI::usage = "LabelI[...] represents a label (generic) index.";
 DI::usage = "DI[...] represents a down index.";
-FindDummyIndices::usage = "";
+MultiI::usage = "MultiI[i1, i2, ...] glues multiple indices together, making them behave like a single index.";
 AllowedIndexPositions::usage = "";
 IndexOfCompoundIndex::usage = "";
 IndexPosition::usage = "";
@@ -41,6 +41,8 @@ NoDollar::usage = "";
 UniqueTempSymbol::usage = "";
 UniqueIndexSpec::usage = "";
 
+TensorMContract::usage = "TensorMContract[tensor, {{s1, s2, ...}...}] is similar to TensorContract, but allows contracting other than 2 slots.";
+
 DeltaTensor::usage = "";
 
 (* canonicalization *)
@@ -52,12 +54,13 @@ SymmetryOfSortedObject::usage = "";
 ISortedObject::usage = "";
 ISortedIndex::usage = "";
 ISortedOther::usage = "";
-SCycles::usage = "";
 FindDummies::usage = "";
 SameDummies::usage = "";
 IndexReduce::usage = "";
 IndexExpand::usage = "";
 DistributivePairQ::usage = "";
+
+GetIndicesFromType::usage = "";
 
 Begin["`Private`"];
 
@@ -70,6 +73,9 @@ MapIndexName[fn_, {a_, info_}] := {fn@a, info};
 MapIndexName[fn_, a_] := fn@a;
 SetIndexSpecName[{_, info_}, n_] := {n, info};
 SetIndexSpecName[_, n_] := n;
+
+RemoveNoneIndexType[{c_, None}] := c;
+RemoveNoneIndexType[t_List] := t;
 
 DI[DI[a_]] := a;
 SyntaxInformation@DI = {"ArgumentsPattern" -> {__}};
@@ -98,8 +104,6 @@ SyntaxInformation@SymmetryGroupOfExpression = {"ArgumentsPattern" -> {_}};
 
 MaxSCycleNum[SCycles[a__]] := Max @@ Join[a];
 MaxSCycleNum[-SCycles[a__]] := Max @@ Join[a];
-ToxPermSGS[gs_] := StrongGenSet[Max @@ (MaxSCycleNum /@ gs), GenSet @@ (gs /. SCycles -> Peanotica`xPerm`Cycles)];
-SyntaxInformation@ToxPermSGS = {"ArgumentsPattern" -> {_}};
 
 CommutivityQ[Times | Plus | Wedge] = True;
 CommutivityQ[_] = False;
@@ -160,16 +164,13 @@ OrderlessDummyScopeQ@IProd ^= True;
 FlattenedISum[{inds___}, terms___] := ISum[Times[terms], inds];
 SyntaxInformation@FlattenedISum = {"ArgumentsPattern" -> {__}};
 
-FindDummyIndices[ISum[expr_, inds__]] := Union[FindDummyIndices[expr], IndexName /@ {inds}];
-SetAttributes[FindDummyIndices, HoldFirst];
-SyntaxInformation@FindDummyIndices = {"ArgumentsPattern" -> {_}};
-
 AllowedIndexPositions[_IndexBarrier] = {};
 AllowedIndexPositions[_[args___]] := Thread@{Range[0, Length@{args}]};
 SetAttributes[AllowedIndexPositions, HoldAll];
 SyntaxInformation@AllowedIndexPositions = {"ArgumentsPattern" -> {_}};
 
 IndexOfCompoundIndex[DI[a_]] := a;
+IndexOfCompoundIndex[-a_] := a;
 IndexOfCompoundIndex[_] = None;
 SetAttributes[IndexOfCompoundIndex, HoldAll];
 SyntaxInformation@IndexOfCompoundIndex = {"ArgumentsPattern" -> {_}};
@@ -345,7 +346,7 @@ ToSortableIObject[inds_][expr_] := With[{
     indsPos = IndexPosition[expr, inds]
 }, {
     expr,
-    OrderOfGroup@ToxPermSGS@SymmetryGroupOfExpression@expr,
+    OrderOfGroup@SymmetryGroupOfExpression@expr,
     indsPos,
     RemoveIObjectIndices[expr, indsPos]
 }];
@@ -477,6 +478,8 @@ SyntaxInformation@SameDummies = {"ArgumentsPattern" -> {_}};
 
 DistributivePairQ[Times | NonCommutativeMultiply | Wedge, Plus] = True;
 SyntaxInformation@DistributivePairQ = {"ArgumentsPattern" -> {_, _}};
+
+(* GetIndicesFromType[_, n_] = If[n < ]; *)
 
 End[];
 
