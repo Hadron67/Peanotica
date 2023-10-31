@@ -2,7 +2,11 @@
 
 SymmetryGroupOfExpression@F[a__] ^:= {-SCycles@{1, 2}};
 SymmetryGroupOfExpression@RiemannTensor[___, Repeated[IndexSlot, {4}]] ^= {-SCycles@{1, 2}, -SCycles@{3, 4}, SCycles[{1, 3}, {2, 4}]};
+StructureOfExpression@F[_, _] ^= IObjectHead[IIndexSlot, IIndexSlot];
+SymmetryGroupOfExpression@F[_, _] ^= {-SCycles@{1, 2}};
+StructureOfExpression@RicciTensor[_, _] ^= IObjectHead[IIndexSlot, IIndexSlot];
 SymmetryGroupOfExpression@RicciTensor[___, Repeated[IndexSlot, {2}]] ^= {SCycles@{1, 2}};
+StructureOfExpression@Pd[_][_] ^= IObjectHead[IIndexSlot][IFunctionSlot[1]];
 
 VerificationTest[
     SymmetryOfSortedObject[ISort[ISum[a[i, i] a[j, j] b[k] b[l], i, j, k, l]]],
