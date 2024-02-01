@@ -38,15 +38,26 @@ struct InstantArray {
     }
 };
 
+struct Unit {};
+
 template<typename T>
 struct OptionalInt {
     OptionalInt(): val(0) {}
     explicit OptionalInt(T val): val(val + 1) {}
+    OptionalInt(T val, Unit u): val(val) {}
+    static OptionalInt<T> fromRaw(T val) { return OptionalInt<T>(val, Unit{}); }
     bool isPresent() const {
         return this->val != 0;
     }
     T get() const {
         return this->val - 1;
+    }
+    T getRaw() const { return this->val; }
+    bool operator == (OptionalInt<T> other) const {
+        return this->val == other.val;
+    }
+    bool operator != (OptionalInt<T> other) const {
+        return this->val != other.val;
     }
     private:
     T val;
@@ -115,14 +126,14 @@ struct Array {
 struct Trees {
     template<typename PtrType>
     struct InsertionPoint {
-        PtrType node;
+        OptionalInt<PtrType> node;
         int dir;
         static constexpr int SELF_DIR = 2;
         static InsertionPoint<PtrType> nil() {
-            return InsertionPoint<PtrType>{0, 2};
+            return InsertionPoint<PtrType>{OptionalInt<PtrType>(), 2};
         }
         bool isNodePresent() const {
-            return this->dir == SELF_DIR && this->node != 0;
+            return this->dir == SELF_DIR && this->node.isPresent();
         }
     };
     template<typename Tree, typename PtrType>
@@ -138,60 +149,61 @@ struct Trees {
     }
     template<typename Tree, typename PtrType>
     static void rotate(Tree &tree, PtrType selfPtr, int dir) {
-        auto &self = tree.getNode(selfPtr - 1);
-        PtrType parentPtr = self.getParent();
-        PtrType rightPtr = self.child[1 - dir];
-        auto &right = tree.getNode(rightPtr - 1);
-        PtrType rightLeftPtr = right.child[dir];
+        auto &self = tree.getNode(selfPtr);
+        OptionalInt<PtrType> parentPtr = self.getParent();
+        OptionalInt<PtrType> rightPtr = self.child[1 - dir];
+        auto &right = tree.getNode(rightPtr.get());
+        OptionalInt<PtrType> rightLeftPtr = right.child[dir];
         self.child[1 - dir] = rightLeftPtr;
-        if (rightLeftPtr != 0) {
-            tree.getNode(rightLeftPtr - 1).setParent(selfPtr);
+        if (rightLeftPtr.isPresent()) {
+            tree.getNode(rightLeftPtr.get()).setParent(OptionalInt<PtrType>(selfPtr));
         }
-        right.child[dir] = selfPtr;
+        right.child[dir] = OptionalInt<PtrType>(selfPtr);
         self.setParent(rightPtr);
         right.setParent(parentPtr);
-        if (parentPtr != 0) {
-            auto &parent = tree.getNode(parentPtr - 1);
-            parent.child[selfPtr == parent.child[0] ? 0 : 1] = rightPtr;
+        if (parentPtr.isPresent()) {
+            auto &parent = tree.getNode(parentPtr.get());
+            parent.child[OptionalInt<PtrType>(selfPtr) == parent.child[0] ? 0 : 1] = rightPtr;
         } else {
             tree.setRoot(rightPtr);
         }
     }
     template<typename Tree, typename PtrType>
-    static void swap(Tree &tree, PtrType n1, PtrType n2) {
-        auto &node1 = tree.getNode(n1 - 1), &node2 = tree.getNode(n2 - 1);
-        PtrType p1 = node1.getParent(), p2 = node2.getParent();
-        if (p1 != 0) {
+    static void swap(Tree &tree, PtrType pn1, PtrType pn2) {
+        auto &node1 = tree.getNode(pn1), &node2 = tree.getNode(pn2);
+        OptionalInt<PtrType> n1 = OptionalInt<PtrType>(pn1), n2 = OptionalInt<PtrType>(pn2);
+        OptionalInt<PtrType> p1 = node1.getParent(), p2 = node2.getParent();
+        if (p1.isPresent()) {
             if (p1 != n2) {
-                auto &p1Node = tree.getNode(p1 - 1);
+                auto &p1Node = tree.getNode(p1.get());
                 p1Node.child[p1Node.child[0] == n1 ? 0 : 1] = n2;
             }
         } else {
             tree.setRoot(n2);
         }
-        if (p2 != 0) {
+        if (p2.isPresent()) {
             if (p2 != n1) {
-                auto &p2Node = tree.getNode(p2 - 1);
+                auto &p2Node = tree.getNode(p2.get());
                 p2Node.child[p2Node.child[0] == n2 ? 0 : 1] = n1;
             }
         } else {
             tree.setRoot(n1);
         }
-        if (node1.child[0] != 0 && node1.child[0] != n2) {
-            tree.getNode(node1.child[0] - 1).setParent(n2);
+        if (node1.child[0].isPresent() && node1.child[0] != n2) {
+            tree.getNode(node1.child[0].get()).setParent(n2);
         }
-        if (node1.child[1] != 0 && node1.child[1] != n2) {
-            tree.getNode(node1.child[1] - 1).setParent(n2);
+        if (node1.child[1].isPresent() && node1.child[1] != n2) {
+            tree.getNode(node1.child[1].get()).setParent(n2);
         }
-        if (node2.child[0] != 0 && node2.child[0] != n1) {
-            tree.getNode(node2.child[0] - 1).setParent(n1);
+        if (node2.child[0].isPresent() && node2.child[0] != n1) {
+            tree.getNode(node2.child[0].get()).setParent(n1);
         }
-        if (node2.child[1] != 0 && node2.child[1] != n1) {
-            tree.getNode(node2.child[1] - 1).setParent(n1);
+        if (node2.child[1].isPresent() && node2.child[1] != n1) {
+            tree.getNode(node2.child[1].get()).setParent(n1);
         }
         node1.setParent(p2 != n1 ? p2 : n2);
         node2.setParent(p1 != n2 ? p1 : n1);
-        PtrType tmp = node1.child[0];
+        OptionalInt<PtrType> tmp = node1.child[0];
         node1.child[0] = node2.child[0] != n1 ? node2.child[0] : n2;
         node2.child[0] = tmp != n2 ? tmp : n1;
         tmp = node1.child[1];
@@ -199,22 +211,24 @@ struct Trees {
         node2.child[1] = tmp != n2 ? tmp : n1;
     }
     template<typename Tree, typename K, typename PtrType>
-    static InsertionPoint<PtrType> find(Tree &tree, const K &key, PtrType node) {
-        if (node == 0) {
+    static InsertionPoint<PtrType> find(Tree &tree, const K &key, OptionalInt<PtrType> node) {
+        if (!node.isPresent()) {
             return InsertionPoint<PtrType>::nil();
         }
         int dir = 0;
+        PtrType node2 = node.get();
         while (1) {
-            int cmp = key.compare(tree, node - 1);
+            int cmp = key.compare(tree, node2);
             if (cmp == 0) {
-                return InsertionPoint<PtrType>{node, InsertionPoint<PtrType>::SELF_DIR};
+                return InsertionPoint<PtrType>{OptionalInt<PtrType>(node2), InsertionPoint<PtrType>::SELF_DIR};
             }
             dir = cmp < 0 ? 0 : 1;
-            PtrType nextNode = tree.getNode(node - 1).child[dir];
-            if (nextNode == 0) {
-                return InsertionPoint<PtrType>{node, dir};
+            OptionalInt<PtrType> nextNode = tree.getNode(node2).child[dir];
+            if (!nextNode.isPresent()) {
+                return InsertionPoint<PtrType>{OptionalInt<PtrType>(node2), dir};
+            } else {
+                node2 = nextNode.get();
             }
-            node = nextNode;
         }
     }
 };
@@ -227,8 +241,8 @@ struct AVLNode {
         int height;
     };
     void clear() {
-        this->child[0] = 0;
-        this->child[1] = 0;
+        this->child[0] = OptionalInt<PtrType>();
+        this->child[1] = OptionalInt<PtrType>();
         this->parentAndBalancing = 1;
     }
     int balancingFactor() const {
@@ -237,20 +251,20 @@ struct AVLNode {
     void setBalancingFactor(int factor) {
         this->parentAndBalancing = (this->parentAndBalancing & ~static_cast<PtrType>(3)) | (PtrType(factor + 1) & 3);
     }
-    PtrType getParent() const {
-        return this->parentAndBalancing >> 2;
+    OptionalInt<PtrType> getParent() const {
+        return OptionalInt<PtrType>::fromRaw(this->parentAndBalancing >> 2);
     }
-    void setParent(PtrType parent) {
-        this->parentAndBalancing = (this->parentAndBalancing & 3) | (parent << 2);
+    void setParent(OptionalInt<PtrType> parent) {
+        this->parentAndBalancing = (this->parentAndBalancing & 3) | (parent.getRaw() << 2);
     }
     template<typename Tree>
-    static void rebalance(Tree &tree, PtrType node, int dir, int deltaHeight) {
-        while (node != 0 && deltaHeight != 0) {
-            AVLNode<PtrType> &nodeData = tree.getNode(node - 1);
-            PtrType parent = nodeData.getParent();
+    static void rebalance(Tree &tree, OptionalInt<PtrType> node, int dir, int deltaHeight) {
+        while (node.isPresent() && deltaHeight != 0) {
+            AVLNode<PtrType> &nodeData = tree.getNode(node.get());
+            OptionalInt<PtrType> parent = nodeData.getParent();
             int nextDir;
-            if (parent != 0) {
-                AVLNode<PtrType> &parentData = tree.getNode(parent - 1);
+            if (parent.isPresent()) {
+                AVLNode<PtrType> &parentData = tree.getNode(parent.get());
                 nextDir = node == parentData.child[0] ? 0 : 1;
             }
             int bf = nodeData.balancingFactor();
@@ -263,14 +277,14 @@ struct AVLNode {
             }
             if (newBf == 2 || newBf == -2) {
                 int ubDir = newBf == 2 ? 0 : 1;
-                PtrType ubChild = nodeData.child[ubDir];
-                AVLNode<PtrType> &ubChildData = tree.getNode(ubChild - 1);
+                PtrType ubChild = nodeData.child[ubDir].get();
+                AVLNode<PtrType> &ubChildData = tree.getNode(ubChild);
                 int ubChildBf = ubChildData.balancingFactor();
                 if ((ubDir == 1 ? 1 : -1) == ubChildBf) {
-                    PtrType ubChildChild = ubChildData.child[1 - ubDir];
-                    AVLNode<PtrType> &ubChildChildData = tree.getNode(ubChildChild - 1);
+                    PtrType ubChildChild = ubChildData.child[1 - ubDir].get();
+                    AVLNode<PtrType> &ubChildChildData = tree.getNode(ubChildChild);
                     Trees::rotate(tree, ubChild, ubDir);
-                    Trees::rotate(tree, node, 1 - ubDir);
+                    Trees::rotate(tree, node.get(), 1 - ubDir);
                     int ubChildChildBf = ubChildChildData.balancingFactor();
                     int ubChildChildUbDir = ubChildChildBf == 1 ? 0 : 1;
                     if (ubChildChildBf == 0) {
@@ -286,7 +300,7 @@ struct AVLNode {
                     ubChildChildData.setBalancingFactor(0);
                     deltaHeight--;
                 } else {
-                    Trees::rotate(tree, node, 1 - ubDir);
+                    Trees::rotate(tree, node.get(), 1 - ubDir);
                     if (ubChildBf == 0) {
                         nodeData.setBalancingFactor(1 - 2 * ubDir);
                         ubChildData.setBalancingFactor(2 * ubDir - 1);
@@ -305,65 +319,65 @@ struct AVLNode {
     }
     template<typename Tree>
     static void insert(Tree &tree, InsertionPoint point, PtrType node) {
-        AVLNode<PtrType> &nodeData = tree.getNode(node - 1);
-        if (point.node == 0) {
-            tree.setRoot(node);
+        AVLNode<PtrType> &nodeData = tree.getNode(node);
+        if (!point.node.isPresent()) {
+            tree.setRoot(OptionalInt<PtrType>(node));
         } else {
-            AVLNode<PtrType> &parentData = tree.getNode(point.node - 1);
+            AVLNode<PtrType> &parentData = tree.getNode(point.node.get());
             nodeData.setParent(point.node);
-            parentData.child[point.dir] = node;
+            parentData.child[point.dir] = OptionalInt<PtrType>(node);
         }
         rebalance(tree, point.node, point.dir, 1);
     }
     template<typename Tree>
     static PtrType remove(Tree &tree, PtrType node) {
-        AVLNode<PtrType> *nodeData = &tree.getNode(node - 1);
-        if (nodeData->child[0] != 0 && nodeData->child[1] != 0) {
-            PtrType successor = nodeData->child[1];
-            PtrType next;
-            while ((next = tree.getNode(successor - 1).child[0]) != 0) {
-                successor = next;
+        AVLNode<PtrType> *nodeData = &tree.getNode(node);
+        if (nodeData->child[0].isPresent() && nodeData->child[1].isPresent()) {
+            PtrType successor = nodeData->child[1].get();
+            OptionalInt<PtrType> next;
+            while ((next = tree.getNode(successor).child[0]).isPresent()) {
+                successor = next.get();
             }
             Trees::swap(tree, node, successor);
-            AVLNode<PtrType> &successorData = tree.getNode(successor - 1);
+            AVLNode<PtrType> &successorData = tree.getNode(successor);
             int bf = nodeData->balancingFactor();
             nodeData->setBalancingFactor(successorData.balancingFactor());
             successorData.setBalancingFactor(bf);
         }
-        PtrType parent = nodeData->getParent();
-        if (nodeData->child[0] != 0 || nodeData->child[1] != 0) {
-            PtrType child = nodeData->child[nodeData->child[0] != 0 ? 0 : 1];
-            AVLNode<PtrType> &childData = tree.getNode(child - 1);
-            if (parent == 0) {
-                childData.setParent(0);
-                tree.setRoot(child);
+        OptionalInt<PtrType> parent = nodeData->getParent();
+        if (nodeData->child[0].isPresent() || nodeData->child[1].isPresent()) {
+            PtrType child = nodeData->child[nodeData->child[0].isPresent() ? 0 : 1].get();
+            AVLNode<PtrType> &childData = tree.getNode(child);
+            if (!parent.isPresent()) {
+                childData.setParent(OptionalInt<PtrType>());
+                tree.setRoot(OptionalInt<PtrType>(child));
             } else {
-                AVLNode<PtrType> &parentData = tree.getNode(parent - 1);
-                int dir = parentData.child[0] == node ? 0 : 1;
-                parentData.child[dir] = child;
+                AVLNode<PtrType> &parentData = tree.getNode(parent.get());
+                int dir = parentData.child[0] == OptionalInt<PtrType>(node) ? 0 : 1;
+                parentData.child[dir] = OptionalInt<PtrType>(child);
                 childData.setParent(parent);
                 rebalance(tree, parent, dir, -1);
             }
             return node;
         }
-        if (parent == 0) {
-            nodeData->setParent(0);
-            tree.setRoot(0);
+        if (!parent.isPresent()) {
+            nodeData->setParent(OptionalInt<PtrType>());
+            tree.setRoot(OptionalInt<PtrType>());
         } else {
-            AVLNode<PtrType> &parentData = tree.getNode(parent - 1);
-            int dir = parentData.child[0] == node ? 0 : 1;
-            parentData.child[dir] = 0;
+            AVLNode<PtrType> &parentData = tree.getNode(parent.get());
+            int dir = parentData.child[0] == OptionalInt<PtrType>(node) ? 0 : 1;
+            parentData.child[dir] = OptionalInt<PtrType>();
             rebalance(tree, parent, dir, -1);
         }
         return node;
     }
     template<typename Tree, typename Fn>
-    static void dump(Tree &tree, std::ostream &os, PtrType root, Fn &&elementVisitor, int indents) {
+    static void dump(Tree &tree, std::ostream &os, OptionalInt<PtrType> root, Fn &&elementVisitor, int indents) {
         for (int i = 0; i < indents; i++) os << "    ";
-        if (root != 0) {
-            AVLNode<PtrType> &node = tree.getNode(root - 1);
-            os << "<node id=" << root - 1 << ", bf=" << node.balancingFactor() << ", ";
-            elementVisitor(os, tree, root - 1);
+        if (root.isPresent()) {
+            AVLNode<PtrType> &node = tree.getNode(root.get());
+            os << "<node id=" << root.get() << ", bf=" << node.balancingFactor() << ", ";
+            elementVisitor(os, tree, root.get());
             os << ">" << std::endl;
             dump(tree, os, node.child[0], elementVisitor, indents + 1);
             dump(tree, os, node.child[1], elementVisitor, indents + 1);
@@ -400,23 +414,23 @@ struct AVLNode {
         }
     };
     template<typename Tree>
-    static int checkHeightWithErrors(Tree &tree, PtrType root, std::vector<CheckHeightError> &errors) {
-        if (root != 0) {
-            AVLNode<PtrType> &node = tree.getNode(root - 1);
-            if (node.child[0] != 0 && tree.getNode(node.child[0] - 1).getParent() != root) {
-                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_PARENT_LINK1, root - 1});
+    static int checkHeightWithErrors(Tree &tree, OptionalInt<PtrType> root, std::vector<CheckHeightError> &errors) {
+        if (root.isPresent()) {
+            AVLNode<PtrType> &node = tree.getNode(root.get());
+            if (node.child[0].isPresent() && tree.getNode(node.child[0].get()).getParent() != root) {
+                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_PARENT_LINK1, root.get()});
             }
-            if (node.child[1] != 0 && tree.getNode(node.child[1] - 1).getParent() != root) {
-                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_PARENT_LINK2, root - 1});
+            if (node.child[1].isPresent() && tree.getNode(node.child[1].get()).getParent() != root) {
+                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_PARENT_LINK2, root.get()});
             }
             int h1 = checkHeightWithErrors(tree, node.child[0], errors);
             int h2 = checkHeightWithErrors(tree, node.child[1], errors);
             int bf = h1 - h2;
             int actualBf = node.balancingFactor();
             if (bf != actualBf) {
-                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_BF, root - 1});
+                errors.push_back(CheckHeightError{CheckHeightErrorMessage::WRONG_BF, root.get()});
                 if (bf >= 2 || bf <= -2) {
-                    errors.push_back(CheckHeightError{CheckHeightErrorMessage::IMBALANCED, root - 1});
+                    errors.push_back(CheckHeightError{CheckHeightErrorMessage::IMBALANCED, root.get()});
                 }
             }
             return (h1 > h2 ? h1 : h2) + 1;
@@ -425,7 +439,7 @@ struct AVLNode {
         }
     }
     template<typename Tree>
-    static bool checkHeight(Tree &tree, PtrType root, std::ostream &os) {
+    static bool checkHeight(Tree &tree, OptionalInt<PtrType> root, std::ostream &os) {
         std::vector<CheckHeightError> errors;
         checkHeightWithErrors(tree, root, errors);
         if (errors.size() > 0) {
@@ -436,7 +450,7 @@ struct AVLNode {
         } else return true;
     }
     PtrType parentAndBalancing = 1;
-    PtrType child[2]{0, 0};
+    OptionalInt<PtrType> child[2]{OptionalInt<PtrType>(), OptionalInt<PtrType>()};
 };
 
 template<typename PtrType>
@@ -722,7 +736,7 @@ struct AVLMap {
         ptr_type i = (seed + 1) % this->nodes.size();
         while (i != seed) {
             if (this->nodes.at(i).occupied) {
-                return InsertionPoint{i + 1, InsertionPoint::SELF_DIR};
+                return InsertionPoint{OptionalInt<ptr_type>(i), InsertionPoint::SELF_DIR};
             }
             i = (i + 1) % this->nodes.size();
         }
@@ -730,16 +744,16 @@ struct AVLMap {
     }
     void remove(InsertionPoint point) {
         if (point.isNodePresent()) {
-            ptr_type removedNode = AVLNodeType::remove(*this, point.node);
-            Node &node = this->nodes.at(removedNode - 1);
+            ptr_type removedNode = AVLNodeType::remove(*this, point.node.get());
+            Node &node = this->nodes.at(removedNode);
             V *ret = &node.value;
             node.node.child[0] = this->recycle;
             node.occupied = false;
-            this->recycle = removedNode;
+            this->recycle = OptionalInt<ptr_type>(removedNode);
         }
     }
     V &getValue(InsertionPoint point) {
-        return this->nodes.at(point.node - 1).value;
+        return this->nodes.at(point.node.get()).value;
     }
     void dump(std::ostream &os) {
         AVLNodeType::dump(*this, os, this->root, [](std::ostream &os2, AVLMap<K, V> &map, ptr_type node) {
@@ -748,11 +762,11 @@ struct AVLMap {
         }, 0);
     }
     void clear() {
-        this->root = 0;
-        this->recycle = 0;
+        this->root = OptionalInt<ptr_type>();
+        this->recycle = OptionalInt<ptr_type>();
         this->nodes.clear();
     }
-    ptr_type getRoot() const { return this->root; }
+    OptionalInt<ptr_type> getRoot() const { return this->root; }
 
     private:
     template<typename K2, typename Ctx>
@@ -764,26 +778,26 @@ struct AVLMap {
         }
     };
     std::vector<Node> nodes;
-    ptr_type root = 0;
-    ptr_type recycle = 0;
+    OptionalInt<ptr_type> root;
+    OptionalInt<ptr_type> recycle;
     AVLNodeType &getNode(ptr_type node) {
         return this->nodes.at(node).node;
     }
-    void setRoot(ptr_type node) {
+    void setRoot(OptionalInt<ptr_type> node) {
         this->root = node;
     }
     ptr_type allocNode(K &&key, V &&value) {
-        if (this->recycle != 0) {
-            ptr_type ret = this->recycle;
-            Node &node = this->nodes.at(this->recycle - 1);
+        if (this->recycle.isPresent()) {
+            ptr_type ret = this->recycle.get();
+            Node &node = this->nodes.at(ret);
             this->recycle = node.node.child[0];
             node.node.clear();
             node.key = key;
             node.value = value;
             node.occupied = true;
-            return this->recycle;
+            return ret;
         } else {
-            ptr_type ret = this->nodes.size() + 1;
+            ptr_type ret = this->nodes.size();
             this->nodes.emplace_back(std::move(key), std::move(value));
             return ret;
         }
