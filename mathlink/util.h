@@ -43,7 +43,7 @@ struct Unit {};
 template<typename T>
 struct OptionalInt {
     OptionalInt(): val(0) {}
-    explicit OptionalInt(T val): val(val + 1) {}
+    OptionalInt(T val): val(val + 1) {}
     OptionalInt(T val, Unit u): val(val) {}
     static OptionalInt<T> fromRaw(T val) { return OptionalInt<T>(val, Unit{}); }
     bool isPresent() const {
@@ -56,8 +56,21 @@ struct OptionalInt {
     bool operator == (OptionalInt<T> other) const {
         return this->val == other.val;
     }
+    bool operator == (T other) const {
+        return this->val == other + 1;
+    }
     bool operator != (OptionalInt<T> other) const {
         return this->val != other.val;
+    }
+    template<typename Fn>
+    T orElse(Fn &&fn) const {
+        return this->val == 0 ? fn() : this->val - 1;
+    }
+    template<typename Fn>
+    OptionalInt<T> map(Fn &&fn) const {
+        if (this->val == 0) {
+            return *this;
+        } else return OptionalInt<T>(fn(this->val - 1));
     }
     private:
     T val;
@@ -229,6 +242,32 @@ struct Trees {
             } else {
                 node2 = nextNode.get();
             }
+        }
+    }
+    template<typename Tree, typename PtrType>
+    static PtrType leftmost(Tree &tree, PtrType node) {
+        OptionalInt<PtrType> next;
+        while ((next = tree.getNode(node).child[0]).isPresent()) {
+            node = next.get();
+        }
+        return node;
+    }
+    template<typename Tree, typename PtrType>
+    static OptionalInt<PtrType> successor(Tree &tree, PtrType node) {
+        auto &nodeData = tree.getNode(node);
+        if (nodeData.child[1].isPresent()) {
+            return leftmost(tree, nodeData.child[1].get());
+        } else while (1) {
+            auto &nodeData2 = tree.getNode(node);
+            OptionalInt<PtrType> parent = nodeData2.getParent();
+            if (parent.isPresent()) {
+                auto &parentData = tree.getNode(parent.get());
+                if (parentData.child[0] == node) {
+                    return parent;
+                } else {
+                    node = parent.get();
+                }
+            } else return OptionalInt<PtrType>();
         }
     }
 };
@@ -733,6 +772,7 @@ struct AVLMap {
         return Trees::find(*this, WrappedKey<K2, Ctx>{key, ctx}, this->root);
     }
     InsertionPoint randomElement(std::size_t seed) const {
+        seed %= this->nodes.size();
         ptr_type i = (seed + 1) % this->nodes.size();
         while (i != seed) {
             if (this->nodes.at(i).occupied) {
@@ -751,6 +791,9 @@ struct AVLMap {
             node.occupied = false;
             this->recycle = OptionalInt<ptr_type>(removedNode);
         }
+    }
+    K &getKey(InsertionPoint point) {
+        return this->nodes.at(point.node.get()).key;
     }
     V &getValue(InsertionPoint point) {
         return this->nodes.at(point.node.get()).value;
@@ -828,23 +871,35 @@ struct SimpleHashContext {
     }
 };
 
-template<typename K, typename V, unsigned int loadFactor = 60>
+template<typename K, typename V, typename PtrType = std::uint32_t, unsigned int loadFactor = 60>
 struct HashMap {
+    using AVLNodeType = AVLNode<PtrType>;
+    using Self = HashMap<K, V, PtrType, loadFactor>;
     struct Entry {
         const K &getKey() const { return this->key; }
         const V &getValue() const { return this->value; }
         private:
+        AVLNodeType avlNode;
         bool occupied;
-        std::size_t next;
         K key;
         V value;
-        Entry(): occupied(false), next(0) {}
+        Entry(): occupied(false) {}
 
-        friend class HashMap<K, V, loadFactor>;
+        friend class HashMap<K, V, PtrType, loadFactor>;
+    };
+    struct Pointer {
+        std::size_t bucketId;
+        OptionalInt<PtrType> node;
+        bool isNonNull() const {
+            return this->node.isPresent();
+        }
+        static Pointer nil() {
+            return Pointer{0, OptionalInt<PtrType>()};
+        }
     };
 
     struct Iterator {
-        Iterator(const HashMap<K, V, loadFactor> &map, std::size_t cursor): map(map), cursor(cursor) {
+        Iterator(const HashMap<K, V, PtrType, loadFactor> &map, std::size_t cursor): map(map), cursor(cursor) {
             this->moveToOccupied();
         };
         void moveToOccupied() {
@@ -865,117 +920,154 @@ struct HashMap {
         const V &value() const {
             return this->map.entries[this->cursor].value;
         }
+        V *operator -> () const {
+            return &this->value();
+        }
         private:
-        const HashMap<K, V, loadFactor> &map;
+        const HashMap<K, V, PtrType, loadFactor> &map;
         std::size_t cursor;
     };
 
     HashMap(): buckets(nullptr), bucketSize(0), entries(nullptr), entriesSize(0), size(0) {}
-    HashMap(const HashMap<K, V, loadFactor> &) = delete;
-    HashMap(HashMap<K, V, loadFactor> &&other) {
+    HashMap(const HashMap<K, V, PtrType, loadFactor> &) = delete;
+    HashMap(HashMap<K, V, PtrType, loadFactor> &&other) {
         this->buckets = other.buckets;
         this->bucketSize = other.bucketSize;
         this->entries = other.entries;
         this->entriesSize = other.entriesSize;
+        this->entriesLen = other.entriesLen;
         this->size = other.size;
         other.buckets = nullptr;
         other.bucketSize = 0;
         other.entries = nullptr;
         other.entriesSize = 0;
+        other.entriesLen = 0;
         other.size = 0;
     }
     ~HashMap() {
-        if (this->entries != nullptr) {
-            delete[] this->entries;
-        }
-        if (this->buckets) {
-            delete[] this->buckets;
-        }
+        this->clearAndFree();
     }
     std::size_t getSize() const { return this->size; }
+    void clearAndFree() {
+        if (this->entries != nullptr) {
+            delete[] this->entries;
+            this->entries = nullptr;
+        }
+        if (this->buckets != nullptr) {
+            delete[] this->buckets;
+            this->buckets = nullptr;
+        }
+        this->recycle = OptionalInt<PtrType>();
+        this->bucketSize = 0;
+        this->entriesSize = 0;
+        this->entriesLen = 0;
+        this->size = 0;
+    }
+    void clear() {
+        this->size = 0;
+        this->entriesLen = 0;
+        arraySet(this->buckets, this->bucketSize, OptionalInt<PtrType>());
+        this->recycle = OptionalInt<PtrType>();
+        for (std::size_t i = 0; i < this->entriesSize; i++) {
+            this->entries[i].occupied = false;
+        }
+    }
 
     template<typename Ctx>
     void resize(std::size_t size, const Ctx &ctx) {
         delete[] this->buckets;
-        this->buckets = new std::size_t[size];
-        arraySet<std::size_t>(this->buckets, size, 0);
+        this->buckets = new OptionalInt<PtrType>[size];
+        // arraySet<std::size_t>(this->buckets, size, 0);
         this->bucketSize = size;
         Entry *oldEntry = this->entries;
-        auto oldEntrySize = this->entriesSize;
-        this->entries = new Entry[this->entriesSize];
+        if (this->entriesSize > 0) {
+            this->entries = new Entry[this->entriesSize];
+            this->entriesLen = 0;
+        }
         this->size = 0;
-        for (std::size_t i = 0; i < oldEntrySize; i++) {
+        for (std::size_t i = 0; i < this->entriesSize; i++) {
             Entry *entry = oldEntry + i;
             if (entry->occupied) {
                 this->computeIfAbsent(std::move(entry->key), ctx, [=]{ return std::move(entry->value); });
             }
         }
+        if (oldEntry != nullptr) {
+            delete[] oldEntry;
+        }
     }
 
     template<typename K2, typename Ctx>
-    Entry *getEntry(const K2 &key, const Ctx &ctx) const {
-        std::size_t entryPtr = this->buckets[ctx.hash(key) % this->bucketSize];
-        if (entryPtr == 0) {
-            return nullptr;
-        }
-        entryPtr--;
-        Entry *entry = this->entries + entryPtr;
-        while (1) {
-            if (ctx.equals(key, entry->key)) {
-                return entry;
+    Pointer find(const K2 &key, const Ctx &ctx) const {
+        std::size_t hash = ctx.hash(key) % this->bucketSize;
+        OptionalInt<PtrType> entryPtr = this->buckets[hash];
+        if (!entryPtr.isPresent()) {
+            return Pointer::nil();
+        } else {
+            TreeWrapper wrapper(*this, hash);
+            InsertionPoint point = Trees::find(wrapper, WrappedKey<K2, Ctx>{key, ctx}, entryPtr);
+            if (point.isNodePresent()) {
+                return Pointer{hash, point.node};
+            } else {
+                return Pointer::nil();
             }
-            if (entry->next != 0) {
-                entry = this->entries + entry->next - 1;
-            } else return nullptr;
         }
-        return nullptr;
     }
-    template<typename K2>
-    Entry *getEntrySimple(const K2 &key) const {
-        return this->getEntry(key, SimpleHashContext<K>{});
+    template<typename K2, typename Ctx>
+    Entry *findEntry(const K2 &key, const Ctx &ctx) const {
+        Pointer p = this->find(key, ctx);
+        if (p.isNonNull()) {
+
+        }
+    }
+    Entry *getEntry(Pointer p) {
+        if (p.isNonNull()) {
+            return this->entries + p.node.get();
+        } else return nullptr;
     }
     template<typename K2, typename Ctx, typename Fn>
-    std::pair<Entry *, bool> computeIfAbsent(K2 &&key, const Ctx &ctx, Fn &&fn) {
+    std::pair<Pointer, bool> computeIfAbsent(K2 &&key, const Ctx &ctx, Fn &&fn) {
         if (this->bucketSize == 0 || this->bucketSize < this->size * loadFactor / 100) {
             this->resize(this->bucketSize == 0 ? 16 : 2 * this->bucketSize, ctx);
         }
         std::size_t hash = ctx.hash(key) % this->bucketSize;
-        std::size_t entryPtr = this->buckets[hash];
-        if (entryPtr == 0) {
-            entryPtr = findFreeEntry(0);
-            this->buckets[hash] = entryPtr + 1;
-            Entry *entry = this->entries + entryPtr;
-            entry->occupied = true;
-            entry->key = ctx.adaptKey(key);
-            entry->value = fn();
-            entry->next = 0;
-            this->size++;
-            return std::make_pair(entry, true);
-        }
-        entryPtr--;
-        while (1) {
-            Entry *entry = this->entries + entryPtr;
-            if (ctx.equals(key, entry->key)) {
-                return std::make_pair(entry, false);
-            }
-            if (entry->next != 0) {
-                entryPtr = entry->next - 1;
+        auto entryPtr = this->buckets[hash];
+        if (!entryPtr.isPresent()) {
+            PtrType node = this->allocEntry(ctx.adaptKey(key), fn());
+            this->buckets[hash] = node;
+            return std::make_pair(Pointer{hash, node}, true);
+        } else {
+            TreeWrapper treeWrapper(*this, hash);
+            InsertionPoint point = Trees::find(treeWrapper, WrappedKey<K2, Ctx>{key, ctx}, entryPtr);
+            if (!point.isNodePresent()) {
+                PtrType node = this->allocEntry(ctx.adaptKey(key), fn());
+                // treeWrapper invalidated here
+                TreeWrapper treeWrapper2(*this, hash);
+                AVLNodeType::insert(treeWrapper2, point, node);
+                return std::make_pair(Pointer{hash, node}, true);
             } else {
-                entryPtr = findFreeEntry(entryPtr);
-                entry->next = entryPtr + 1;
-                entry = this->entries + entryPtr;
-                entry->occupied = true;
-                entry->key = ctx.adaptKey(key);
-                entry->value = fn();
-                entry->next = 0;
-                this->size++;
-                return std::make_pair(entry, true);
+                return std::make_pair(Pointer{hash, point.node}, false);
             }
         }
     }
+    template<typename K2, typename Ctx>
+    std::pair<Pointer, bool> putIfAbsent(K2 &&key, const Ctx &ctx, V &&value) {
+        return this->computeIfAbsent(std::move(key), ctx, [&]{ return std::move(value); });
+    }
     template<typename K2, typename Fn>
-    std::pair<Entry *, bool> computeIfAbsentSimple(K2 &&key, Fn &&fn) {
+    std::pair<Pointer, bool> computeIfAbsentSimple(K2 &&key, Fn &&fn) {
         return this->computeIfAbsent(key, SimpleHashContext<K>{}, fn);
+    }
+
+    void remove(Pointer pointer) {
+        if (pointer.isNonNull()) {
+            TreeWrapper wrapper(*this, pointer.bucketId);
+            PtrType node = AVLNodeType::remove(wrapper, pointer.node.get());
+            Entry &entry = this->entries[node];
+            entry.avlNode.child[0] = this->recycle;
+            entry.occupied = false;
+            this->recycle = node;
+            this->size--;
+        }
     }
 
     Iterator begin() const {
@@ -987,19 +1079,35 @@ struct HashMap {
     void dump(std::ostream &os) const {
         for (std::size_t i = 0; i < this->bucketSize; i++) {
             os << i << " {";
-            std::size_t entryPtr = this->buckets[i];
+            TreeWrapper wrapper(*this, i);
+            OptionalInt<PtrType> node = this->buckets[i].map([&](PtrType n) {
+                return Trees::leftmost(wrapper, n);
+            });
             bool first = true;
-            while (entryPtr > 0) {
-                Entry *entry = this->entries + entryPtr - 1;
+            while (node.isPresent()) {
                 if (!first) {
                     os << ", ";
                 }
                 first = false;
-                os << entry->key << " -> " << entry->value;
-                entryPtr = entry->next;
+                PtrType n = node.get();
+                Entry &entry = this->entries[n];
+                os << entry.key << " -> " << entry.value;
+                node = Trees::successor(wrapper, n);
             }
             os << "}" << std::endl;
         }
+    }
+    const K *randomKey(std::size_t seed) {
+        seed %= this->entriesLen;
+        PtrType ret = (seed + 1) % this->entriesLen;
+        while (ret != seed) {
+            Entry &entry = this->entries[ret];
+            if (entry.occupied) {
+                return &entry.key;
+            }
+            ret = (ret + 1) % this->entriesLen;
+        }
+        return nullptr;
     }
     template<typename Ctx>
     bool checkHash(const Ctx &ctx) const {
@@ -1017,26 +1125,71 @@ struct HashMap {
     }
 
     private:
-    std::size_t *buckets;
-    std::size_t bucketSize;
-    Entry *entries;
-    std::size_t entriesSize;
-    std::size_t size;
+    using InsertionPoint = Trees::InsertionPoint<PtrType>;
+    struct TreeWrapper {
+        OptionalInt<PtrType> *root;
+        Entry *entries;
 
-    std::size_t findFreeEntry(std::size_t start) {
-        if (this->size == this->entriesSize) {
-            std::size_t newSize = this->entriesSize == 0 ? 16 : this->entriesSize << 1;
-            Entry *newEntry = new Entry[newSize];
-            for (std::size_t i = 0; i < this->entriesSize; i++) {
-                newEntry[i] = std::move(this->entries[i]);
+        TreeWrapper(const HashMap<K, V, PtrType, loadFactor> &map, std::size_t bucketId) {
+            this->root = map.buckets + bucketId;
+            this->entries = map.entries;
+        }
+        void setRoot(OptionalInt<PtrType> root) {
+            *this->root = root;
+        }
+        OptionalInt<PtrType> getRoot() {
+            return *this->root;
+        }
+        AVLNodeType &getNode(PtrType node) {
+            return this->entries[node].avlNode;
+        }
+    };
+    template<typename K2, typename Ctx>
+    struct WrappedKey {
+        const K2 &key;
+        const Ctx &ctx;
+        int compare(const TreeWrapper &tree, PtrType node) const {
+            return this->ctx.compare(this->key, tree.entries[node].key);
+        }
+    };
+    OptionalInt<PtrType> *buckets = nullptr;
+    std::size_t bucketSize = 0;
+    Entry *entries = nullptr;
+    std::size_t entriesSize = 0;
+    std::size_t entriesLen = 0;
+    std::size_t size = 0;
+    OptionalInt<PtrType> recycle{};
+
+    PtrType allocEntry(K &&key, V &&value) {
+        PtrType ret;
+        if (this->recycle.isPresent()) {
+            ret = this->recycle.get();
+            this->recycle = this->entries[ret].avlNode.child[0];
+        } else {
+            if (this->entriesLen >= this->entriesSize) {
+                std::size_t newSize = this->entriesSize == 0 ? 16 : this->entriesSize << 1;
+                Entry *newEntry = new Entry[newSize];
+                for (std::size_t i = 0; i < this->entriesSize; i++) {
+                    newEntry[i] = std::move(this->entries[i]);
+                }
+                if (this->entriesSize > 0) {
+                    delete[] this->entries;
+                }
+                this->entries = newEntry;
+                this->entriesSize = newSize;
             }
-            this->entries = newEntry;
-            this->entriesSize = newSize;
+            ret = this->entriesLen++;
         }
-        while (this->entries[start].occupied) {
-            start = (start + 1) % this->entriesSize;
-        }
-        return start;
+        Entry &entry = this->entries[ret];
+        entry.avlNode.clear();
+        entry.occupied = true;
+        entry.key = key;
+        entry.value = value;
+        this->size++;
+        return ret;
+    }
+    TreeWrapper wrapTree(std::size_t hash) const {
+        return TreeWrapper(*this, hash);
     }
 };
 

@@ -11,8 +11,8 @@ using namespace pperm;
 static bool testOrderedMap(int seed) {
     AVLMap<int, int> map;
     std::default_random_engine randEngine(seed);
-    std::uniform_int_distribution<int> distribe(0, 1000);
-    for (int i = 0; i < 10000; i++) {
+    std::uniform_int_distribution<int> distribe(0, 10000);
+    for (int i = 0; i < 1000; i++) {
         int val = distribe(randEngine);
         map.insert(val, SimpleHashContext<int>{}, val*val);
         if (!AVLNode<std::uint32_t>::checkHeight(map, map.getRoot(), std::cout)) return false;
@@ -35,19 +35,43 @@ static bool testOrderedMap(int seed) {
     return true;
 }
 
-static bool testHashMap() {
+static bool testHashMap(std::size_t seed) {
     HashMap<int, int> map;
+    std::default_random_engine randEngine(seed);
+    std::uniform_int_distribution<int> distribe(0, 10000);
     for (std::size_t i = 0; i < 1000; i++) {
-        map.computeIfAbsentSimple(i*i, [=]{ return i*i*i; });
+        int key = distribe(randEngine);
+        map.putIfAbsent(key, SimpleHashContext<int>{}, key*key);
     }
-    for (std::size_t i = 0; i < 1000; i++) {
-        if (map.getEntrySimple(i*i)->getValue() != i*i*i) {
+    const int *keyPtr;
+    while ((keyPtr = map.randomKey(distribe(randEngine))) != nullptr) {
+        int key = *keyPtr;
+        auto pt = map.find(key, SimpleHashContext<int>{});
+        int value = map.getEntry(pt)->getValue();
+        if (value != key*key) {
+            std::cout << "wrong value on key " << key << std::endl;
+            return false;
+        }
+        map.remove(pt);
+    }
+    for (int i = 0; i < 100; i++) {
+        map.computeIfAbsent(i, SimpleHashContext<int>{}, [=]{ return i*i; });
+    }
+    for (int i = 0; i < 100; i++) {
+        auto value = map.getEntry(map.find(i, SimpleHashContext<int>{}))->getValue();
+        if (value != i*i) {
             std::cout << "wrong value on key " << i << std::endl;
             return false;
         }
     }
-    if (!map.checkHash(SimpleHashContext<int>{})) {
-        std::cout << "invalid hash" << std::endl;
+    map.clear();
+    if (map.find(1, SimpleHashContext<int>{}).isNonNull()) {
+        std::cout << "unexpected key" << std::endl;
+        return false;
+    }
+    map.computeIfAbsent(1, SimpleHashContext<int>{}, []{ return 236; });
+    if (!map.find(1, SimpleHashContext<int>{}).isNonNull()) {
+        std::cout << "unexpected key" << std::endl;
         return false;
     }
     return true;
@@ -60,7 +84,7 @@ static void testSchreierVector() {
 
 int main(int argc, const char *args[]) {
     bool passed = true;
-    TEST(testHashMap());
+    TEST(testHashMap(9));
     TEST(testOrderedMap(9));
     if (passed) {
         std::cout << "All tests passed" << std::endl;
