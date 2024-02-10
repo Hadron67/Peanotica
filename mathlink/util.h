@@ -854,43 +854,49 @@ struct AVLMap {
     friend struct AVLNode<ptr_type>;
 };
 
-template<typename T>
+template<typename K, typename V>
+struct MapEntry {
+    K key;
+    V value;
+};
+
 struct SimpleHashContext {
-    template<typename T2, typename T3>
-    bool equals(const T2 &v2, const T3 &v3) const {
-        return v2 == v3;
-    }
     template<typename T2, typename T3>
     int compare(const T2 &v2, const T3 &v3) const {
         if (v2 == v3) return 0;
         if (v2 > v3) return 1;
         return -1;
     }
+    template<typename T, typename K, typename V>
+    int compare(const T &v1, const MapEntry<K, V> &v2) const {
+        return this->compare(v1, v2.key);
+    }
+    template<typename K1, typename V1, typename K2, typename V2>
+    int compare(const MapEntry<K1, V1> &v1, const MapEntry<K2, V2> &v2) const {
+        return this->compare(v1.key, v2.key);
+    }
     template<typename T2>
     std::size_t hash(const T2 &v) const {
         return std::hash<T2>{}(v);
     }
-    template<typename T2>
-    T adaptKey(T2 &&v) const {
-        return T(v);
+    template<typename K, typename V>
+    std::size_t hash(const MapEntry<K, V> &entry) const {
+        return std::hash<K>{}(entry.key);
     }
 };
 
-template<typename K, typename V, typename PtrType = std::uint32_t, unsigned int loadFactor = 60>
-struct HashMap {
+template<typename T, typename PtrType = std::uint32_t, unsigned int loadFactor = 60>
+struct HashTable {
     using AVLNodeType = AVLNode<PtrType>;
-    using Self = HashMap<K, V, PtrType, loadFactor>;
     struct Entry {
-        const K &getKey() const { return this->key; }
-        const V &getValue() const { return this->value; }
+        const T &getValue() const { return this->value; }
         private:
         AVLNodeType avlNode;
         bool occupied;
-        K key;
-        V value;
+        T value;
         Entry(): occupied(false) {}
 
-        friend class HashMap<K, V, PtrType, loadFactor>;
+        friend class HashTable<T, PtrType, loadFactor>;
     };
     struct Pointer {
         std::size_t bucketId;
@@ -904,7 +910,7 @@ struct HashMap {
     };
 
     struct Iterator {
-        Iterator(const HashMap<K, V, PtrType, loadFactor> &map, std::size_t cursor): map(map), cursor(cursor) {
+        Iterator(const HashTable<T, PtrType, loadFactor> &map, std::size_t cursor): map(map), cursor(cursor) {
             this->moveToOccupied();
         };
         void moveToOccupied() {
@@ -920,23 +926,20 @@ struct HashMap {
             this->moveToOccupied();
             return *this;
         }
-        const K &key() const {
-            return this->map.entries[this->cursor].key;
-        }
-        V &value() const {
+        T &value() const {
             return this->map.entries[this->cursor].value;
         }
-        V *operator -> () const {
+        T *operator -> () const {
             return &this->value();
         }
         private:
-        const HashMap<K, V, PtrType, loadFactor> &map;
+        const HashTable<T, PtrType, loadFactor> &map;
         std::size_t cursor;
     };
 
-    HashMap(): buckets(nullptr), bucketSize(0), entries(nullptr), entriesSize(0), size(0) {}
-    HashMap(const HashMap<K, V, PtrType, loadFactor> &) = delete;
-    HashMap(HashMap<K, V, PtrType, loadFactor> &&other) {
+    HashTable() = default;
+    HashTable(const HashTable<T, PtrType, loadFactor> &) = delete;
+    HashTable(HashTable<T, PtrType, loadFactor> &&other) {
         this->buckets = other.buckets;
         this->bucketSize = other.bucketSize;
         this->entries = other.entries;
@@ -950,7 +953,7 @@ struct HashMap {
         other.entriesLen = 0;
         other.size = 0;
     }
-    ~HashMap() {
+    ~HashTable() {
         this->clearAndFree();
     }
     std::size_t getSize() const { return this->size; }
@@ -993,7 +996,7 @@ struct HashMap {
         for (std::size_t i = 0; i < this->entriesSize; i++) {
             Entry *entry = oldEntry + i;
             if (entry->occupied) {
-                this->computeIfAbsent(std::move(entry->key), ctx, [=]{ return std::move(entry->value); });
+                this->computeIfAbsent(std::move(entry->value), ctx, [](T &&value){ return std::move(value); });
             }
         }
         if (oldEntry != nullptr) {
@@ -1037,14 +1040,14 @@ struct HashMap {
         std::size_t hash = ctx.hash(key) % this->bucketSize;
         auto entryPtr = this->buckets[hash];
         if (!entryPtr.isPresent()) {
-            PtrType node = this->allocEntry(ctx.adaptKey(key), fn());
+            PtrType node = this->allocEntry(fn(std::forward<K2>(key)));
             this->buckets[hash] = node;
             return std::make_pair(Pointer{hash, node}, true);
         } else {
             TreeWrapper treeWrapper(*this, hash);
             InsertionPoint point = Trees::find(treeWrapper, WrappedKey<K2, Ctx>{key, ctx}, entryPtr);
             if (!point.isNodePresent()) {
-                PtrType node = this->allocEntry(ctx.adaptKey(key), fn());
+                PtrType node = this->allocEntry(fn(std::forward<K2>(key)));
                 // treeWrapper invalidated here
                 TreeWrapper treeWrapper2(*this, hash);
                 AVLNodeType::insert(treeWrapper2, point, node);
@@ -1055,12 +1058,12 @@ struct HashMap {
         }
     }
     template<typename K2, typename Ctx>
-    std::pair<Pointer, bool> putIfAbsent(K2 &&key, const Ctx &ctx, V &&value) {
-        return this->computeIfAbsent(std::move(key), ctx, [&]{ return std::move(value); });
+    std::pair<Pointer, bool> putIfAbsent(K2 &&key, const Ctx &ctx, T &&value) {
+        return this->computeIfAbsent(key, ctx, [&](K2 &&key2){ return std::move(value); });
     }
     template<typename K2, typename Fn>
     std::pair<Pointer, bool> computeIfAbsentSimple(K2 &&key, Fn &&fn) {
-        return this->computeIfAbsent(key, SimpleHashContext<K>{}, fn);
+        return this->computeIfAbsent(key, SimpleHashContext{}, fn);
     }
 
     void remove(Pointer pointer) {
@@ -1102,13 +1105,13 @@ struct HashMap {
             os << "}" << std::endl;
         }
     }
-    const K *randomKey(std::size_t seed) {
+    const T *randomKey(std::size_t seed) {
         seed %= this->entriesLen;
         PtrType ret = (seed + 1) % this->entriesLen;
         while (ret != seed) {
             Entry &entry = this->entries[ret];
             if (entry.occupied) {
-                return &entry.key;
+                return &entry.value;
             }
             ret = (ret + 1) % this->entriesLen;
         }
@@ -1135,7 +1138,7 @@ struct HashMap {
         OptionalInt<PtrType> *root;
         Entry *entries;
 
-        TreeWrapper(const HashMap<K, V, PtrType, loadFactor> &map, std::size_t bucketId) {
+        TreeWrapper(const HashTable<T, PtrType, loadFactor> &map, std::size_t bucketId) {
             this->root = map.buckets + bucketId;
             this->entries = map.entries;
         }
@@ -1154,7 +1157,7 @@ struct HashMap {
         const K2 &key;
         const Ctx &ctx;
         int compare(const TreeWrapper &tree, PtrType node) const {
-            return this->ctx.compare(this->key, tree.entries[node].key);
+            return this->ctx.compare(this->key, tree.entries[node].value);
         }
     };
     OptionalInt<PtrType> *buckets = nullptr;
@@ -1165,7 +1168,7 @@ struct HashMap {
     std::size_t size = 0;
     OptionalInt<PtrType> recycle{};
 
-    PtrType allocEntry(K &&key, V &&value) {
+    PtrType allocEntry(T &&value) {
         PtrType ret;
         if (this->recycle.isPresent()) {
             ret = this->recycle.get();
@@ -1188,7 +1191,6 @@ struct HashMap {
         Entry &entry = this->entries[ret];
         entry.avlNode.clear();
         entry.occupied = true;
-        entry.key = key;
         entry.value = value;
         this->size++;
         return ret;
