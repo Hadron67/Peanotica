@@ -3,19 +3,20 @@
 
 using namespace pperm;
 
-void Permutation::copyFrom(const Array<std::uint32_t> &pool, const Permutation &perm) {
+void Permutation::copyFrom(const Array<point_type> &pool, const Permutation &perm) {
     this->isNegative = perm.isNegative;
     copyArray(pool.getPtr(this->images), pool.getPtr(perm.images), perm.len);
 }
 
-Permutation GenSet::getPermutation(const Array<std::uint32_t> &pool, std::size_t i) const {
+Permutation GenSet::getPermutation(const Array<point_type> &pool, std::size_t i) const {
+    auto ptr = this->generators.offset(i * (this->permLen + 1));
     return Permutation {
-        bitSetGet(pool.getPtr(this->signs), 32, i),
-        this->generators.offset(i),
+        *pool.getPtr(ptr) == 0 ? false : true,
+        ptr.offset(1),
         this->permLen
     };
 }
-void Permutation::print(std::ostream &os, const Array<std::uint32_t> &pool) {
+void Permutation::print(std::ostream &os, const Array<point_type> &pool) {
     if (this->isNegative) {
         os << "-";
     }
@@ -28,7 +29,34 @@ void Permutation::print(std::ostream &os, const Array<std::uint32_t> &pool) {
     os << "/";
 }
 
-void GenSet::print(std::ostream &os, const Array<std::uint32_t> &pool) {
+int Permutation::compare(Array<point_type> &pool, const Permutation &other) {
+    if (this->isNegative != other.isNegative) {
+        return this->isNegative ? -1 : 1;
+    }
+    if (this->len > other.len) {
+        return 1;
+    } else if (this->len < other.len) {
+        return -1;
+    }
+    auto ptr1 = pool.getPtr(this->images), ptr2 = pool.getPtr(other.images);
+    for (std::size_t i = 0; i < this->len; i++) {
+        auto n1 = *ptr1++, n2 = *ptr2++;
+        if (n1 > n2) {
+            return 1;
+        } else if (n1 < n2) {
+            return -1;
+        }
+    }
+    return 0;
+}
+std::size_t Permutation::hash(Array<point_type> &pool) {
+    std::size_t ret = 0;
+    if (this->isNegative) {
+        ret += 1;
+    }
+}
+
+void GenSet::print(std::ostream &os, const Array<point_type> &pool) {
     os << "{ ";
     for (std::size_t i = 0; i < this->len; i++) {
         if (i > 0) os << ", ";
@@ -37,19 +65,19 @@ void GenSet::print(std::ostream &os, const Array<std::uint32_t> &pool) {
     os << " }";
 }
 
-SchreierVectorBuilder::SchreierVectorBuilder(Array<std::uint32_t> &pool, const GenSet &genset): genset(genset), pool(pool) {
+SchreierVectorBuilder::SchreierVectorBuilder(Array<point_type> &pool, const GenSet &genset): genset(genset), pool(pool) {
     this->vector.generator = pool.reserve(genset.permLen);
     this->vector.sourcePoint = pool.reserve(genset.permLen);
     arraySet(pool.getPtr(this->vector.generator), genset.permLen, 0u);
     arraySet(pool.getPtr(this->vector.sourcePoint), genset.permLen, 0u);
 }
-void SchreierVectorBuilder::appendOrbit(std::uint32_t point) {
+void SchreierVectorBuilder::appendOrbit(point_type point) {
     auto schreierVectorP = this->pool.getPtr(this->vector.generator);
     auto backwardsVectorP = this->pool.getPtr(this->vector.sourcePoint);
     this->orbitPoints.insert(point);
     this->workingPoints.push_back(point);
     while (!workingPoints.empty()) {
-        std::uint32_t point = workingPoints[0];
+        point_type point = workingPoints[0];
         workingPoints.pop_front();
         for (std::size_t j = 0; j < this->genset.len; j++) {
             auto generator = this->genset.getPermutation(pool, j);
@@ -68,22 +96,22 @@ void SchreierVectorBuilder::appendAllOrbits() {
     }
 }
 
-void pperm::permutationProductSimp(std::uint32_t *dest, const std::uint32_t *p1, const std::uint32_t *p2, std::size_t len) {
+void pperm::permutationProductSimp(point_type *dest, const point_type *p1, const point_type *p2, std::size_t len) {
     for (std::size_t i = 0; i < len; i++) {
         *dest++ = p2[*p1++];
     }
 }
 
-Permutation pperm::identity(Array<std::uint32_t> &pool, std::uint32_t len) {
+Permutation pperm::identity(Array<point_type> &pool, std::size_t len) {
     Permutation ret{false, pool.reserve(len), len};
     auto ptr = pool.getPtr(ret.images);
-    for (std::uint32_t i = 0; i < len; i++) {
+    for (point_type i = 0; i < len; i++) {
         *ptr++ = i;
     }
     return ret;
 }
 
-Permutation pperm::product(Array<std::uint32_t> &pool, const Permutation &perm1, const Permutation &perm2) {
+Permutation pperm::product(Array<point_type> &pool, const Permutation &perm1, const Permutation &perm2) {
     Permutation ret{perm1.isNegative != perm2.isNegative, pool.reserve(perm1.len), perm1.len};
     auto ptr = pool.getPtr(ret.images);
     auto p1 = pool.getPtr(perm1.images);
@@ -94,7 +122,7 @@ Permutation pperm::product(Array<std::uint32_t> &pool, const Permutation &perm1,
     return ret;
 }
 
-Permutation pperm::inverse(Array<std::uint32_t> &pool, const Permutation &perm) {
+Permutation pperm::inverse(Array<point_type> &pool, const Permutation &perm) {
     Permutation ret{perm.isNegative, pool.reserve(perm.len), perm.len};
     auto ptr = pool.getPtr(ret.images);
     auto p1 = pool.getPtr(perm.images);
@@ -104,10 +132,10 @@ Permutation pperm::inverse(Array<std::uint32_t> &pool, const Permutation &perm) 
     return ret;
 }
 
-Permutation pperm::traceSchreierVector(Array<std::uint32_t> &pool, std::uint32_t point, const GenSet &genset, const SchreierVector &vec) {
+Permutation pperm::traceSchreierVector(Array<point_type> &pool, point_type point, const GenSet &genset, const SchreierVector &vec) {
     Permutation ret = identity(pool, genset.permLen);
     auto cursor = pool.position();
-    std::uint32_t generator;
+    point_type generator;
     while ((generator = pool.getPtr(vec.generator)[point]) != 0) {
         auto cursor = pool.position();
         ret.copyFrom(pool, product(pool, ret, genset.getPermutation(pool, generator - 1)));
@@ -117,7 +145,7 @@ Permutation pperm::traceSchreierVector(Array<std::uint32_t> &pool, std::uint32_t
     return ret;
 }
 
-bool pperm::isIdentity(const std::uint32_t *perm, std::size_t len) {
+bool pperm::isIdentity(const point_type *perm, std::size_t len) {
     for (std::size_t i = 0; i < len; i++) {
         if (*perm++ != i) {
             return false;

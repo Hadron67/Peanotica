@@ -37,11 +37,16 @@ static bool testOrderedMap(int seed) {
 
 static bool testHashMap(std::size_t seed) {
     HashMap<int, int> map;
+    // HashTable<MapEntry<int, int>> map;
     std::default_random_engine randEngine(seed);
     std::uniform_int_distribution<int> distribe(0, 10000);
     for (std::size_t i = 0; i < 1000; i++) {
         int key = distribe(randEngine);
         map.putIfAbsent(key, SimpleHashContext<int>{}, key*key);
+    }
+    for (auto it = map.begin(); it != map.end(); ++it) {
+        auto key = it.key();
+        EXPECT(key*key, it.value());
     }
     const int *keyPtr;
     while ((keyPtr = map.randomKey(distribe(randEngine))) != nullptr) {

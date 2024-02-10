@@ -14,52 +14,55 @@ typedef std::uint32_t point_type;
 
 struct Permutation {
     bool isNegative;
-    Ptr<std::uint32_t> images;
-    std::uint32_t len;
-    void copyFrom(const Array<std::uint32_t> &pool, const Permutation &perm);
-    void print(std::ostream &os, const Array<std::uint32_t> &pool);
+    Ptr<point_type> images;
+    std::size_t len;
+    void copyFrom(const Array<point_type> &pool, const Permutation &perm);
+    void print(std::ostream &os, const Array<point_type> &pool);
+    int compare(Array<point_type> &pool, const Permutation &other);
+    std::size_t hash(Array<point_type> &pool);
 };
 
 struct GenSet {
-    std::uint32_t len, permLen;
-    Ptr<std::uint32_t> generators;
-    Ptr<std::uint32_t> signs;
-    Permutation getPermutation(const Array<std::uint32_t> &pool, std::size_t i) const;
-    void print(std::ostream &os, const Array<std::uint32_t> &pool);
+    point_type len, permLen;
+    Ptr<point_type> generators;
+    Ptr<point_type> signs;
+    HashMap<std::uint32_t, bool> generatorToId;
+    Permutation getPermutation(const Array<point_type> &pool, std::size_t i) const;
+    void print(std::ostream &os, const Array<point_type> &pool);
 };
 
 /**
  * Points are optional int: zero means obsent entry, non-zeros are values plus 1.
 */
 struct SchreierVector {
-    Ptr<std::uint32_t> generator;
-    Ptr<std::uint32_t> sourcePoint;
+    Ptr<point_type> generator;
+    Ptr<point_type> sourcePoint;
 };
 
 struct SchreierVectorBuilder {
     const GenSet &genset;
-    Array<std::uint32_t> &pool;
-    std::unordered_set<std::uint32_t> orbitPoints;
-    std::deque<std::uint32_t> workingPoints;
+    Array<point_type> &pool;
+    std::unordered_set<point_type> orbitPoints;
+    std::deque<point_type> workingPoints;
     SchreierVector vector;
-    SchreierVectorBuilder(Array<std::uint32_t> &pool, const GenSet &genset);
-    void appendOrbit(std::uint32_t point);
+    SchreierVectorBuilder(Array<point_type> &pool, const GenSet &genset);
+    void appendOrbit(point_type point);
     void appendAllOrbits();
-    void appendOrbitAndRest(std::uint32_t point) {
+    void appendOrbitAndRest(point_type point) {
         this->appendOrbit(point);
         this->appendAllOrbits();
     };
 };
 
 struct SchreierSims {
-    
+
 };
 
 template<typename T>
 struct Printer {
     const T &val;
-    const Array<std::uint32_t> &pool;
-    Printer(const T &val, const Array<std::uint32_t> &pool): val(val), pool(pool) {}
+    const Array<point_type> &pool;
+    Printer(const T &val, const Array<point_type> &pool): val(val), pool(pool) {}
 };
 
 template<typename T>
@@ -68,12 +71,12 @@ std::ostream &operator << (std::ostream &os, const Printer<T> &printer) {
     return os;
 }
 
-void permutationProductSimp(std::uint32_t *dest, const std::uint32_t *p1, const std::uint32_t *p2, std::size_t len);
-Permutation identity(Array<std::uint32_t> &pool, std::uint32_t len);
-Permutation product(Array<std::uint32_t> &pool, const Permutation &perm1, const Permutation &perm2);
-Permutation inverse(Array<std::uint32_t> &pool, const Permutation &perm);
-Permutation traceSchreierVector(Array<std::uint32_t> &pool, std::uint32_t point, const GenSet &genset, const SchreierVector &vec);
-GenSet stablizer(Array<std::uint32_t> &pool, const GenSet &genset);
-bool isIdentity(const std::uint32_t *perm, std::size_t len);
+void permutationProductSimp(point_type *dest, const point_type *p1, const point_type *p2, std::size_t len);
+Permutation identity(Array<point_type> &pool, std::size_t len);
+Permutation product(Array<point_type> &pool, const Permutation &perm1, const Permutation &perm2);
+Permutation inverse(Array<point_type> &pool, const Permutation &perm);
+Permutation traceSchreierVector(Array<point_type> &pool, point_type point, const GenSet &genset, const SchreierVector &vec);
+GenSet stablizer(Array<point_type> &pool, const GenSet &genset);
+bool isIdentity(const point_type *perm, std::size_t len);
 
 }

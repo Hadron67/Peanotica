@@ -84,6 +84,9 @@ struct Ptr {
     Ptr offset(std::int32_t offset) const {
         return Ptr<T>(this->value + offset);
     }
+    T *offsetFrom(T *ptr) const {
+        return ptr + this->value;
+    }
 };
 
 template<typename T>
@@ -105,8 +108,6 @@ struct Slice {
 
 template<typename T>
 struct Array {
-    T *ptr;
-    std::size_t size, len;
     Array(): Array(64) {}
     Array(std::uint32_t size): ptr(new T[size]), size(size), len(0) {};
     ~Array() { delete[] this->ptr; }
@@ -134,6 +135,10 @@ struct Array {
     }
 
     T *getPtr(Ptr<T> ptr) const { return this->ptr + ptr.value; }
+
+    private:
+    T *ptr;
+    std::size_t size, len;
 };
 
 struct Trees {
@@ -908,16 +913,17 @@ struct HashMap {
             }
         }
         bool operator == (const Iterator &other) const {
-            return &this->map == &other->map && this->cursor == other->cursor;
+            return this->cursor == other.cursor;
         }
-        Iterator operator ++ () {
+        Iterator &operator ++ () {
             this->cursor++;
             this->moveToOccupied();
+            return *this;
         }
         const K &key() const {
             return this->map.entries[this->cursor].key;
         }
-        const V &value() const {
+        V &value() const {
             return this->map.entries[this->cursor].value;
         }
         V *operator -> () const {
@@ -977,7 +983,6 @@ struct HashMap {
     void resize(std::size_t size, const Ctx &ctx) {
         delete[] this->buckets;
         this->buckets = new OptionalInt<PtrType>[size];
-        // arraySet<std::size_t>(this->buckets, size, 0);
         this->bucketSize = size;
         Entry *oldEntry = this->entries;
         if (this->entriesSize > 0) {
