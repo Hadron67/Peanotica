@@ -3,6 +3,8 @@
 #include <iostream>
 #include <utility>
 #include <vector>
+#include <functional>
+#include <exception>
 
 namespace pperm {
 
@@ -18,8 +20,8 @@ void copyArray(T *dest, const T *src, std::size_t len) {
     }
 }
 
-template<typename T>
-void arraySet(T *dest, std::size_t len, T &&val) {
+template<typename T, typename T2>
+void arraySet(T *dest, std::size_t len, T2 &&val) {
     for (std::size_t i = 0; i < len; i++) {
         *dest++ = val;
     }
@@ -39,42 +41,93 @@ struct InstantArray {
 };
 
 struct Unit {};
+struct None {};
 
 template<typename T>
-struct OptionalInt {
-    OptionalInt(): val(0) {}
-    OptionalInt(T val): val(val + 1) {}
-    OptionalInt(T val, Unit u): val(val) {}
-    static OptionalInt<T> fromRaw(T val) { return OptionalInt<T>(val, Unit{}); }
+struct OptionalUInt {
+    OptionalUInt(): val(0) {}
+    OptionalUInt(None n): val(0) {}
+    OptionalUInt(T val): val(val + 1) {}
+    OptionalUInt(T val, Unit u): val(val) {}
+    static OptionalUInt<T> fromRaw(T val) { return OptionalUInt<T>(val, Unit{}); }
     bool isPresent() const {
         return this->val != 0;
     }
     T get() const {
+        if (this->val == 0) {
+            throw std::runtime_error("attempting to get() a None OptionalUInt");
+        }
         return this->val - 1;
     }
     T getRaw() const { return this->val; }
-    bool operator == (OptionalInt<T> other) const {
+    bool operator == (OptionalUInt<T> other) const {
         return this->val == other.val;
     }
     bool operator == (T other) const {
         return this->val == other + 1;
-    }
-    bool operator != (OptionalInt<T> other) const {
-        return this->val != other.val;
     }
     template<typename Fn>
     T orElse(Fn &&fn) const {
         return this->val == 0 ? fn() : this->val - 1;
     }
     template<typename Fn>
-    OptionalInt<T> map(Fn &&fn) const {
+    OptionalUInt<T> map(Fn &&fn) const {
         if (this->val == 0) {
             return *this;
-        } else return OptionalInt<T>(fn(this->val - 1));
+        } else return OptionalUInt<T>(fn(this->val - 1));
     }
     private:
     T val;
 };
+
+template<typename T>
+std::ostream &operator << (std::ostream &os, OptionalUInt<T> val) {
+    if (val.isPresent()) {
+        os << val.get();
+    } else {
+        os << "None";
+    }
+    return os;
+}
+
+template<typename T>
+struct OptionalInt {
+    OptionalInt() = default;
+    OptionalInt(None n): val(0) {}
+    OptionalInt(T v): val(v > 0 ? v + 1 : v) {}
+    bool isPresent() const {
+        return this->val != 0;
+    }
+    T get() const {
+        return this->val < 0 ? this->val : this->val - 1;
+    }
+    bool operator == (OptionalInt<T> other) const {
+        return this->val == other.val;
+    }
+    bool operator == (T other) const {
+        return this->isPresent() && this->get() == other;
+    }
+    template<typename Fn>
+    OptionalInt<T> map(Fn &&fn) const {
+        if (this->val == 0) {
+            return *this;
+        } else {
+            return OptionalInt<T>(fn(this->get()));
+        }
+    }
+    private:
+    T val = 0;
+};
+
+template<typename T>
+std::ostream &operator << (std::ostream &os, OptionalInt<T> val) {
+    if (val.isPresent()) {
+        os << val.get();
+    } else {
+        os << "None";
+    }
+    return os;
+}
 
 template<typename T>
 struct Ptr {
@@ -91,11 +144,11 @@ struct Ptr {
 
 template<typename T>
 struct Slice {
-    Ptr<T> ptr;
+    T *ptr;
     std::size_t len;
 
     Slice<T> slice(std::size_t begin, std::size_t len) const {
-        return Slice<T>{this->ptr.offset(begin), len};
+        return Slice<T>{this->ptr + begin, len};
     }
 
     const T &operator [] (std::size_t i) const {
@@ -105,6 +158,11 @@ struct Slice {
         return this->ptr[i];
     }
 };
+
+template<typename T>
+inline Slice<T> makeSlice(T *ptr, std::size_t len) {
+    return Slice<T>{ptr, len};
+}
 
 template<typename T>
 struct Array {
@@ -144,11 +202,11 @@ struct Array {
 struct Trees {
     template<typename PtrType>
     struct InsertionPoint {
-        OptionalInt<PtrType> node;
+        OptionalUInt<PtrType> node;
         int dir;
         static constexpr int SELF_DIR = 2;
         static InsertionPoint<PtrType> nil() {
-            return InsertionPoint<PtrType>{OptionalInt<PtrType>(), 2};
+            return InsertionPoint<PtrType>{OptionalUInt<PtrType>(), 2};
         }
         bool isNodePresent() const {
             return this->dir == SELF_DIR && this->node.isPresent();
@@ -168,20 +226,20 @@ struct Trees {
     template<typename Tree, typename PtrType>
     static void rotate(Tree &tree, PtrType selfPtr, int dir) {
         auto &self = tree.getNode(selfPtr);
-        OptionalInt<PtrType> parentPtr = self.getParent();
-        OptionalInt<PtrType> rightPtr = self.child[1 - dir];
+        OptionalUInt<PtrType> parentPtr = self.getParent();
+        OptionalUInt<PtrType> rightPtr = self.child[1 - dir];
         auto &right = tree.getNode(rightPtr.get());
-        OptionalInt<PtrType> rightLeftPtr = right.child[dir];
+        OptionalUInt<PtrType> rightLeftPtr = right.child[dir];
         self.child[1 - dir] = rightLeftPtr;
         if (rightLeftPtr.isPresent()) {
-            tree.getNode(rightLeftPtr.get()).setParent(OptionalInt<PtrType>(selfPtr));
+            tree.getNode(rightLeftPtr.get()).setParent(OptionalUInt<PtrType>(selfPtr));
         }
-        right.child[dir] = OptionalInt<PtrType>(selfPtr);
+        right.child[dir] = OptionalUInt<PtrType>(selfPtr);
         self.setParent(rightPtr);
         right.setParent(parentPtr);
         if (parentPtr.isPresent()) {
             auto &parent = tree.getNode(parentPtr.get());
-            parent.child[OptionalInt<PtrType>(selfPtr) == parent.child[0] ? 0 : 1] = rightPtr;
+            parent.child[OptionalUInt<PtrType>(selfPtr) == parent.child[0] ? 0 : 1] = rightPtr;
         } else {
             tree.setRoot(rightPtr);
         }
@@ -189,8 +247,8 @@ struct Trees {
     template<typename Tree, typename PtrType>
     static void swap(Tree &tree, PtrType pn1, PtrType pn2) {
         auto &node1 = tree.getNode(pn1), &node2 = tree.getNode(pn2);
-        OptionalInt<PtrType> n1 = OptionalInt<PtrType>(pn1), n2 = OptionalInt<PtrType>(pn2);
-        OptionalInt<PtrType> p1 = node1.getParent(), p2 = node2.getParent();
+        OptionalUInt<PtrType> n1 = OptionalUInt<PtrType>(pn1), n2 = OptionalUInt<PtrType>(pn2);
+        OptionalUInt<PtrType> p1 = node1.getParent(), p2 = node2.getParent();
         if (p1.isPresent()) {
             if (p1 != n2) {
                 auto &p1Node = tree.getNode(p1.get());
@@ -221,7 +279,7 @@ struct Trees {
         }
         node1.setParent(p2 != n1 ? p2 : n2);
         node2.setParent(p1 != n2 ? p1 : n1);
-        OptionalInt<PtrType> tmp = node1.child[0];
+        OptionalUInt<PtrType> tmp = node1.child[0];
         node1.child[0] = node2.child[0] != n1 ? node2.child[0] : n2;
         node2.child[0] = tmp != n2 ? tmp : n1;
         tmp = node1.child[1];
@@ -229,7 +287,7 @@ struct Trees {
         node2.child[1] = tmp != n2 ? tmp : n1;
     }
     template<typename Tree, typename K, typename PtrType>
-    static InsertionPoint<PtrType> find(Tree &tree, const K &key, OptionalInt<PtrType> node) {
+    static InsertionPoint<PtrType> find(Tree &tree, const K &key, OptionalUInt<PtrType> node) {
         if (!node.isPresent()) {
             return InsertionPoint<PtrType>::nil();
         }
@@ -238,12 +296,12 @@ struct Trees {
         while (1) {
             int cmp = key.compare(tree, node2);
             if (cmp == 0) {
-                return InsertionPoint<PtrType>{OptionalInt<PtrType>(node2), InsertionPoint<PtrType>::SELF_DIR};
+                return InsertionPoint<PtrType>{OptionalUInt<PtrType>(node2), InsertionPoint<PtrType>::SELF_DIR};
             }
             dir = cmp < 0 ? 0 : 1;
-            OptionalInt<PtrType> nextNode = tree.getNode(node2).child[dir];
+            OptionalUInt<PtrType> nextNode = tree.getNode(node2).child[dir];
             if (!nextNode.isPresent()) {
-                return InsertionPoint<PtrType>{OptionalInt<PtrType>(node2), dir};
+                return InsertionPoint<PtrType>{OptionalUInt<PtrType>(node2), dir};
             } else {
                 node2 = nextNode.get();
             }
@@ -251,20 +309,20 @@ struct Trees {
     }
     template<typename Tree, typename PtrType>
     static PtrType leftmost(Tree &tree, PtrType node) {
-        OptionalInt<PtrType> next;
+        OptionalUInt<PtrType> next;
         while ((next = tree.getNode(node).child[0]).isPresent()) {
             node = next.get();
         }
         return node;
     }
     template<typename Tree, typename PtrType>
-    static OptionalInt<PtrType> successor(Tree &tree, PtrType node) {
+    static OptionalUInt<PtrType> successor(Tree &tree, PtrType node) {
         auto &nodeData = tree.getNode(node);
         if (nodeData.child[1].isPresent()) {
             return leftmost(tree, nodeData.child[1].get());
         } else while (1) {
             auto &nodeData2 = tree.getNode(node);
-            OptionalInt<PtrType> parent = nodeData2.getParent();
+            OptionalUInt<PtrType> parent = nodeData2.getParent();
             if (parent.isPresent()) {
                 auto &parentData = tree.getNode(parent.get());
                 if (parentData.child[0] == node) {
@@ -272,7 +330,7 @@ struct Trees {
                 } else {
                     node = parent.get();
                 }
-            } else return OptionalInt<PtrType>();
+            } else return OptionalUInt<PtrType>();
         }
     }
 };
@@ -285,8 +343,8 @@ struct AVLNode {
         int height;
     };
     void clear() {
-        this->child[0] = OptionalInt<PtrType>();
-        this->child[1] = OptionalInt<PtrType>();
+        this->child[0] = OptionalUInt<PtrType>();
+        this->child[1] = OptionalUInt<PtrType>();
         this->parentAndBalancing = 1;
     }
     int balancingFactor() const {
@@ -295,17 +353,17 @@ struct AVLNode {
     void setBalancingFactor(int factor) {
         this->parentAndBalancing = (this->parentAndBalancing & ~static_cast<PtrType>(3)) | (PtrType(factor + 1) & 3);
     }
-    OptionalInt<PtrType> getParent() const {
-        return OptionalInt<PtrType>::fromRaw(this->parentAndBalancing >> 2);
+    OptionalUInt<PtrType> getParent() const {
+        return OptionalUInt<PtrType>::fromRaw(this->parentAndBalancing >> 2);
     }
-    void setParent(OptionalInt<PtrType> parent) {
+    void setParent(OptionalUInt<PtrType> parent) {
         this->parentAndBalancing = (this->parentAndBalancing & 3) | (parent.getRaw() << 2);
     }
     template<typename Tree>
-    static void rebalance(Tree &tree, OptionalInt<PtrType> node, int dir, int deltaHeight) {
+    static void rebalance(Tree &tree, OptionalUInt<PtrType> node, int dir, int deltaHeight) {
         while (node.isPresent() && deltaHeight != 0) {
             AVLNode<PtrType> &nodeData = tree.getNode(node.get());
-            OptionalInt<PtrType> parent = nodeData.getParent();
+            OptionalUInt<PtrType> parent = nodeData.getParent();
             int nextDir;
             if (parent.isPresent()) {
                 AVLNode<PtrType> &parentData = tree.getNode(parent.get());
@@ -365,11 +423,11 @@ struct AVLNode {
     static void insert(Tree &tree, InsertionPoint point, PtrType node) {
         AVLNode<PtrType> &nodeData = tree.getNode(node);
         if (!point.node.isPresent()) {
-            tree.setRoot(OptionalInt<PtrType>(node));
+            tree.setRoot(OptionalUInt<PtrType>(node));
         } else {
             AVLNode<PtrType> &parentData = tree.getNode(point.node.get());
             nodeData.setParent(point.node);
-            parentData.child[point.dir] = OptionalInt<PtrType>(node);
+            parentData.child[point.dir] = OptionalUInt<PtrType>(node);
         }
         rebalance(tree, point.node, point.dir, 1);
     }
@@ -378,7 +436,7 @@ struct AVLNode {
         AVLNode<PtrType> *nodeData = &tree.getNode(node);
         if (nodeData->child[0].isPresent() && nodeData->child[1].isPresent()) {
             PtrType successor = nodeData->child[1].get();
-            OptionalInt<PtrType> next;
+            OptionalUInt<PtrType> next;
             while ((next = tree.getNode(successor).child[0]).isPresent()) {
                 successor = next.get();
             }
@@ -388,35 +446,35 @@ struct AVLNode {
             nodeData->setBalancingFactor(successorData.balancingFactor());
             successorData.setBalancingFactor(bf);
         }
-        OptionalInt<PtrType> parent = nodeData->getParent();
+        OptionalUInt<PtrType> parent = nodeData->getParent();
         if (nodeData->child[0].isPresent() || nodeData->child[1].isPresent()) {
             PtrType child = nodeData->child[nodeData->child[0].isPresent() ? 0 : 1].get();
             AVLNode<PtrType> &childData = tree.getNode(child);
             if (!parent.isPresent()) {
-                childData.setParent(OptionalInt<PtrType>());
-                tree.setRoot(OptionalInt<PtrType>(child));
+                childData.setParent(OptionalUInt<PtrType>());
+                tree.setRoot(OptionalUInt<PtrType>(child));
             } else {
                 AVLNode<PtrType> &parentData = tree.getNode(parent.get());
-                int dir = parentData.child[0] == OptionalInt<PtrType>(node) ? 0 : 1;
-                parentData.child[dir] = OptionalInt<PtrType>(child);
+                int dir = parentData.child[0] == OptionalUInt<PtrType>(node) ? 0 : 1;
+                parentData.child[dir] = OptionalUInt<PtrType>(child);
                 childData.setParent(parent);
                 rebalance(tree, parent, dir, -1);
             }
             return node;
         }
         if (!parent.isPresent()) {
-            nodeData->setParent(OptionalInt<PtrType>());
-            tree.setRoot(OptionalInt<PtrType>());
+            nodeData->setParent(OptionalUInt<PtrType>());
+            tree.setRoot(OptionalUInt<PtrType>());
         } else {
             AVLNode<PtrType> &parentData = tree.getNode(parent.get());
-            int dir = parentData.child[0] == OptionalInt<PtrType>(node) ? 0 : 1;
-            parentData.child[dir] = OptionalInt<PtrType>();
+            int dir = parentData.child[0] == OptionalUInt<PtrType>(node) ? 0 : 1;
+            parentData.child[dir] = OptionalUInt<PtrType>();
             rebalance(tree, parent, dir, -1);
         }
         return node;
     }
     template<typename Tree, typename Fn>
-    static void dump(Tree &tree, std::ostream &os, OptionalInt<PtrType> root, Fn &&elementVisitor, int indents) {
+    static void dump(Tree &tree, std::ostream &os, OptionalUInt<PtrType> root, Fn &&elementVisitor, int indents) {
         for (int i = 0; i < indents; i++) os << "    ";
         if (root.isPresent()) {
             AVLNode<PtrType> &node = tree.getNode(root.get());
@@ -458,7 +516,7 @@ struct AVLNode {
         }
     };
     template<typename Tree>
-    static int checkHeightWithErrors(Tree &tree, OptionalInt<PtrType> root, std::vector<CheckHeightError> &errors) {
+    static int checkHeightWithErrors(Tree &tree, OptionalUInt<PtrType> root, std::vector<CheckHeightError> &errors) {
         if (root.isPresent()) {
             AVLNode<PtrType> &node = tree.getNode(root.get());
             if (node.child[0].isPresent() && tree.getNode(node.child[0].get()).getParent() != root) {
@@ -483,7 +541,7 @@ struct AVLNode {
         }
     }
     template<typename Tree>
-    static bool checkHeight(Tree &tree, OptionalInt<PtrType> root, std::ostream &os) {
+    static bool checkHeight(Tree &tree, OptionalUInt<PtrType> root, std::ostream &os) {
         std::vector<CheckHeightError> errors;
         checkHeightWithErrors(tree, root, errors);
         if (errors.size() > 0) {
@@ -494,7 +552,7 @@ struct AVLNode {
         } else return true;
     }
     PtrType parentAndBalancing = 1;
-    OptionalInt<PtrType> child[2]{OptionalInt<PtrType>(), OptionalInt<PtrType>()};
+    OptionalUInt<PtrType> child[2]{OptionalUInt<PtrType>(), OptionalUInt<PtrType>()};
 };
 
 template<typename PtrType>
@@ -760,7 +818,7 @@ struct AVLMap {
         private:
         AVLNodeType node;
         bool occupied = true;
-        friend class AVLMap<K, V>;
+        friend struct AVLMap<K, V>;
     };
     template<typename K2, typename Ctx>
     InsertionPoint insert(K2 &&key, const Ctx &ctx, V &&value) {
@@ -781,7 +839,7 @@ struct AVLMap {
         ptr_type i = (seed + 1) % this->nodes.size();
         while (i != seed) {
             if (this->nodes.at(i).occupied) {
-                return InsertionPoint{OptionalInt<ptr_type>(i), InsertionPoint::SELF_DIR};
+                return InsertionPoint{OptionalUInt<ptr_type>(i), InsertionPoint::SELF_DIR};
             }
             i = (i + 1) % this->nodes.size();
         }
@@ -791,10 +849,9 @@ struct AVLMap {
         if (point.isNodePresent()) {
             ptr_type removedNode = AVLNodeType::remove(*this, point.node.get());
             Node &node = this->nodes.at(removedNode);
-            V *ret = &node.value;
             node.node.child[0] = this->recycle;
             node.occupied = false;
-            this->recycle = OptionalInt<ptr_type>(removedNode);
+            this->recycle = OptionalUInt<ptr_type>(removedNode);
         }
     }
     K &getKey(InsertionPoint point) {
@@ -810,11 +867,11 @@ struct AVLMap {
         }, 0);
     }
     void clear() {
-        this->root = OptionalInt<ptr_type>();
-        this->recycle = OptionalInt<ptr_type>();
+        this->root = OptionalUInt<ptr_type>();
+        this->recycle = OptionalUInt<ptr_type>();
         this->nodes.clear();
     }
-    OptionalInt<ptr_type> getRoot() const { return this->root; }
+    OptionalUInt<ptr_type> getRoot() const { return this->root; }
 
     private:
     template<typename K2, typename Ctx>
@@ -826,12 +883,12 @@ struct AVLMap {
         }
     };
     std::vector<Node> nodes;
-    OptionalInt<ptr_type> root;
-    OptionalInt<ptr_type> recycle;
+    OptionalUInt<ptr_type> root;
+    OptionalUInt<ptr_type> recycle;
     AVLNodeType &getNode(ptr_type node) {
         return this->nodes.at(node).node;
     }
-    void setRoot(OptionalInt<ptr_type> node) {
+    void setRoot(OptionalUInt<ptr_type> node) {
         this->root = node;
     }
     ptr_type allocNode(K &&key, V &&value) {
@@ -896,16 +953,16 @@ struct HashTable {
         T value;
         Entry(): occupied(false) {}
 
-        friend class HashTable<T, PtrType, loadFactor>;
+        friend struct HashTable<T, PtrType, loadFactor>;
     };
     struct Pointer {
         std::size_t bucketId;
-        OptionalInt<PtrType> node;
+        OptionalUInt<PtrType> node;
         bool isNonNull() const {
             return this->node.isPresent();
         }
         static Pointer nil() {
-            return Pointer{0, OptionalInt<PtrType>()};
+            return Pointer{0, OptionalUInt<PtrType>()};
         }
     };
 
@@ -966,7 +1023,7 @@ struct HashTable {
             delete[] this->buckets;
             this->buckets = nullptr;
         }
-        this->recycle = OptionalInt<PtrType>();
+        this->recycle = None{};
         this->bucketSize = 0;
         this->entriesSize = 0;
         this->entriesLen = 0;
@@ -975,8 +1032,8 @@ struct HashTable {
     void clear() {
         this->size = 0;
         this->entriesLen = 0;
-        arraySet(this->buckets, this->bucketSize, OptionalInt<PtrType>());
-        this->recycle = OptionalInt<PtrType>();
+        arraySet(this->buckets, this->bucketSize, None{});
+        this->recycle = None{};
         for (std::size_t i = 0; i < this->entriesSize; i++) {
             this->entries[i].occupied = false;
         }
@@ -985,7 +1042,7 @@ struct HashTable {
     template<typename Ctx>
     void resize(std::size_t size, const Ctx &ctx) {
         delete[] this->buckets;
-        this->buckets = new OptionalInt<PtrType>[size];
+        this->buckets = new OptionalUInt<PtrType>[size];
         this->bucketSize = size;
         Entry *oldEntry = this->entries;
         if (this->entriesSize > 0) {
@@ -1007,7 +1064,7 @@ struct HashTable {
     template<typename K2, typename Ctx>
     Pointer find(const K2 &key, const Ctx &ctx) const {
         std::size_t hash = ctx.hash(key) % this->bucketSize;
-        OptionalInt<PtrType> entryPtr = this->buckets[hash];
+        OptionalUInt<PtrType> entryPtr = this->buckets[hash];
         if (!entryPtr.isPresent()) {
             return Pointer::nil();
         } else {
@@ -1088,7 +1145,7 @@ struct HashTable {
         for (std::size_t i = 0; i < this->bucketSize; i++) {
             os << i << " {";
             TreeWrapper wrapper(*this, i);
-            OptionalInt<PtrType> node = this->buckets[i].map([&](PtrType n) {
+            OptionalUInt<PtrType> node = this->buckets[i].map([&](PtrType n) {
                 return Trees::leftmost(wrapper, n);
             });
             bool first = true;
@@ -1135,17 +1192,17 @@ struct HashTable {
     private:
     using InsertionPoint = Trees::InsertionPoint<PtrType>;
     struct TreeWrapper {
-        OptionalInt<PtrType> *root;
+        OptionalUInt<PtrType> *root;
         Entry *entries;
 
         TreeWrapper(const HashTable<T, PtrType, loadFactor> &map, std::size_t bucketId) {
             this->root = map.buckets + bucketId;
             this->entries = map.entries;
         }
-        void setRoot(OptionalInt<PtrType> root) {
+        void setRoot(OptionalUInt<PtrType> root) {
             *this->root = root;
         }
-        OptionalInt<PtrType> getRoot() {
+        OptionalUInt<PtrType> getRoot() {
             return *this->root;
         }
         AVLNodeType &getNode(PtrType node) {
@@ -1160,13 +1217,13 @@ struct HashTable {
             return this->ctx.compare(this->key, tree.entries[node].value);
         }
     };
-    OptionalInt<PtrType> *buckets = nullptr;
+    OptionalUInt<PtrType> *buckets = nullptr;
     std::size_t bucketSize = 0;
     Entry *entries = nullptr;
     std::size_t entriesSize = 0;
     std::size_t entriesLen = 0;
     std::size_t size = 0;
-    OptionalInt<PtrType> recycle{};
+    OptionalUInt<PtrType> recycle{};
 
     PtrType allocEntry(T &&value) {
         PtrType ret;
@@ -1198,6 +1255,143 @@ struct HashTable {
     TreeWrapper wrapTree(std::size_t hash) const {
         return TreeWrapper(*this, hash);
     }
+};
+
+template<typename T>
+struct OBStack {
+    OBStack(std::size_t blockSize): blockSize(blockSize) {}
+    OBStack(const OBStack<T> &) = delete;
+    OBStack(OBStack<T> &&) = default;
+    ~OBStack() {
+        for (auto it = this->blocks.begin(); it != this->blocks.end(); ++it) {
+            delete[] it->ptr;
+        }
+    }
+    bool isEmpty() const {
+        if (this->allocPtr == 0) {
+            return this->blocks.size() == 0 || this->blocks[this->allocPtr].len == 0;
+        } else return false;
+    }
+    T *push(std::size_t count) {
+        auto newBlockSize = count > this->blockSize ? count : this->blockSize;
+        if (this->allocPtr >= this->blocks.size()) {
+            Block newBlock{new T[newBlockSize], count, newBlockSize};
+            auto ret = newBlock.ptr;
+            this->blocks.push_back(newBlock);
+            return ret;
+        }
+        Block &top = this->blocks[this->allocPtr];
+        if (top.len + count <= top.size) {
+            auto ret = top.ptr + top.len;
+            top.len += count;
+            return ret;
+        } else {
+            this->allocPtr++;
+            if (this->allocPtr >= this->blocks.size()) {
+                Block newBlock{new T[newBlockSize], count, newBlockSize};
+                auto ret = newBlock.ptr;
+                this->blocks.push_back(newBlock);
+                return ret;
+            } else {
+                Block &block = this->blocks[this->allocPtr];
+                if (block.size < count) {
+                    delete[] block.ptr;
+                    block.ptr = new T[newBlockSize];
+                    block.size = count;
+                }
+                block.len = count;
+                return block.ptr;
+            }
+        }
+    }
+    void pop(std::size_t count) {
+        while (count > 0) {
+            Block &blk = this->blocks[this->allocPtr];
+            auto releasedCount = count > blk.len ? blk.len : count;
+            blk.len -= releasedCount;
+            count -= releasedCount;
+            if (this->allocPtr == 0) {
+                break;
+            }
+            if (blk.len == 0) {
+                this->allocPtr--;
+            }
+        }
+    }
+    private:
+    struct Block {
+        T *ptr;
+        std::size_t len, size;
+    };
+    std::size_t blockSize;
+    std::size_t allocPtr = 0;
+    std::vector<Block> blocks;
+};
+
+template<typename T>
+struct Array2d {
+    std::size_t size1, size2;
+    T *ptr;
+};
+
+template<typename T>
+struct ArrayVector {
+    ArrayVector() = default;
+    ArrayVector(std::size_t elementLen): elementLen(elementLen) {}
+    ArrayVector(const ArrayVector &) = default;
+    ArrayVector(ArrayVector &&) = default;
+    void setElementLen(std::size_t elementLen) {
+        auto size = this->getSize();
+        this->elementLen = elementLen;
+        this->data.resize(elementLen * size);
+    }
+    void clear() {
+        this->data.clear();
+    }
+    bool isEmpty() const {
+        return this->data.empty();
+    }
+    std::size_t getSize() const {
+        return this->data.size() / this->elementLen;
+    }
+    std::size_t getElementSize() const {
+        return this->elementLen;
+    }
+    const T *operator[] (std::size_t i) const {
+        return this->data.data() + this->elementLen*i;
+    }
+    T *operator[] (std::size_t i) {
+        return this->data.data() + this->elementLen*i;
+    }
+    void pop() {
+        this->data.resize(this->data.size() - this->elementLen);
+    }
+    T *push() {
+        auto size = this->data.size();
+        this->data.resize(size + this->elementLen);
+        return this->data.data() + size;
+    }
+    T *top() {
+        return this->data.data() + (this->data.size() - this->elementLen);
+    }
+    const T *top() const {
+        return this->data.data() + (this->data.size() - this->elementLen);
+    }
+    void remove(std::size_t index) {
+        auto dataPtr = this->data.data() + index, dataPtr2 = dataPtr + this->elementLen;
+        auto size = this->getSize();
+        for (std::size_t i = 0; i < this->elementLen * (size - 1 - index); i++) {
+            *dataPtr++ = *dataPtr2++;
+        }
+        this->data.resize(this->data.size() - this->elementLen);
+    }
+    private:
+    std::size_t elementLen;
+    std::vector<T> data;
+};
+
+struct Logger {
+    
 };
 
 }
