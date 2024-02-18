@@ -166,6 +166,46 @@ static bool testCyclesConvert() {
     return true;
 }
 
+static bool testBaseChange1() {
+    constexpr int DEG = 4;
+    PermutationStack stack(DEG * 16);
+    StackedPermutation tmp{stack, DEG};
+    PermutationList genset(4);
+    genset.push().identity().cycle(0, 1);
+    genset.push().identity().cycle(1, 2);
+    genset.push().identity().cycle(2, 3);
+    upoint_type base[]{0, 1, 2, 3};
+
+    BaseChanger changer;
+    changer.setSGS(makeSlice(base, 4), genset);
+    changer.interchange(1, stack);
+    EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(1, 3)).isPresent());
+
+    return true;
+}
+
+static bool testBaseChange2() {
+    constexpr int DEG = 21;
+    PermutationStack stack(DEG * 16);
+    StackedPermutation tmp(stack, DEG);
+    PermutationList genset(DEG);
+
+    genset.push().identity().cycle(0, 7, 8).cycle(1, 10, 14).cycle(2, 9, 11).cycle(3, 13, 18).cycle(4, 15, 16).cycle(5, 20, 19).cycle(6, 12, 17);
+    genset.push().identity().cycle(8, 17, 19).cycle(11, 18, 16);
+    genset.push().identity().cycle(9, 20, 10).cycle(12, 15, 13);
+    genset.push().identity().cycle(7, 12, 20).cycle(9, 13, 15);
+    genset.push().identity().cycle(1, 5, 2).cycle(3, 4, 6);
+    genset.push().identity().cycle(11, 19, 14).cycle(16, 18, 17);
+    upoint_type base[]{0, 8, 7, 9, 1, 11};
+
+    BaseChanger changer;
+    changer.setSGS(makeSlice(base, 6), genset);
+    changer.interchange(0, stack);
+    EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 1, 2, 3, 5, 4, 6)).isPresent());
+
+    return true;
+}
+
 int main(int argc, const char *args[]) {
     bool passed = true;
     TEST(testHashMap(9));
@@ -174,6 +214,8 @@ int main(int argc, const char *args[]) {
     TEST(testSchreierSims());
     TEST(testJerrumFilter());
     TEST(testCyclesConvert());
+    TEST(testBaseChange1());
+    TEST(testBaseChange2());
     if (passed) {
         std::cout << "All tests passed" << std::endl;
         return 0;

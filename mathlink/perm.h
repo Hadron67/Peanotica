@@ -99,8 +99,13 @@ struct Cycles {
         private:
         std::size_t i, size;
         upoint_type *ptr;
+        friend Cycles;
     };
     upoint_type *data;
+
+    Iterator begin() const {
+
+    }
 };
 
 struct CyclesConverter {
@@ -340,6 +345,19 @@ struct SchreierOrbit {
         return this->pointToOrbitId[p1] == this->pointToOrbitId[p2];
     }
     void reset(std::size_t permLen);
+    std::size_t allOrbitSize() const {
+        auto ptr = this->pointToOrbitId.get();
+        return std::count_if(ptr, ptr + this->permLen, [](OptionalUInt<upoint_type> point){ return point.isPresent(); });
+    }
+    template<typename Fn>
+    void collectAllOrbit(Fn consumer) const {
+        auto ptr = this->pointToOrbitId.get();
+        for (upoint_type p = 0; p < this->permLen; p++, ptr++) {
+            if (ptr->isPresent()) {
+                consumer(p, ptr->get());
+            }
+        }
+    }
     void dump(std::ostream &os, PermutationList &genset);
 };
 
@@ -505,6 +523,8 @@ struct JerrumBranchingBuilder {
 };
 
 StackedPermutation traceSchreierVector(PermutationStack &stack, upoint_type point, PermutationList &genset, const OptionalSchreierVectorEntry *vec);
+StackedPermutation doubleTraceSchreierVector(PermutationStack &stack, upoint_type point1, upoint_type point2, PermutationList &genset, const OptionalSchreierVectorEntry *vec);
+void computeOrbit(bool *points, upoint_type start, PermutationList &perms, std::deque<upoint_type> &workQueue);
 // has allocation
 bool isInGroup(PermutationStack &stack, PermutationView perm, PermutationList &genset, Slice<upoint_type> base);
 
@@ -525,6 +545,20 @@ inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationLis
         }
     }
 }
+
+struct BaseChanger {
+    PermutationSet genset;
+    void setSGS(Slice<upoint_type> base, PermutationList &genset);
+    void interchange(std::size_t pos, PermutationStack &stack);
+    private:
+    PermutationSet newGens;
+    PermutationList stabilizer, stabilizer2;
+    SchreierVectorBuilder orbit1, orbit2;
+    Array<bool> orbitSets;
+    Array<upoint_type> base;
+    std::size_t baseLen;
+    std::deque<upoint_type> queue;
+};
 
 }
 

@@ -166,37 +166,31 @@ inline Slice<T> makeSlice(T *ptr, std::size_t len) {
 
 template<typename T>
 struct Array {
-    Array(): Array(64) {}
-    Array(std::uint32_t size): ptr(new T[size]), size(size), len(0) {};
-    ~Array() { delete[] this->ptr; }
-    void resize(std::size_t size) {
-        T *ptr = new T[size];
-        for (std::size_t i = 0; i < this->len; i++) {
-            ptr[i] = this->ptr[i];
+    Array() = default;
+    Array(const Array<T> &) = delete;
+    Array(Array &&other) {
+        this->ptr = other.ptr;
+        this->size = other.size;
+        other.ptr = nullptr;
+        other.size = 0;
+    }
+    ~Array() { if (this->ptr) delete[] this->ptr; }
+    T *get() const {
+        return this->ptr;
+    }
+    void ensureSize(std::size_t size) {
+        if (this->ptr == nullptr || this->size < size) {
+            if (this->ptr) {
+                delete[] this->ptr;
+            }
+            this->ptr = new T[size];
+            this->size = size;
         }
-        this->size = size;
-        delete [] this->ptr;
-        this->ptr = ptr;
     }
-    Ptr<T> position() const { return Ptr<T>(this->len); }
-    void setPosition(Ptr<T> ptr) { this->len = ptr.value; }
-    Ptr<T> reserve(std::size_t len) {
-        std::size_t ret = this->len;
-        if (this->size < len + this->len) {
-            this->resize(2*(this->len + len));
-        }
-        this->len += len;
-        return Ptr<T>(ret);
-    }
-    void set(Ptr<T> ptr, T &&value) {
-        this->ptr[ptr.value] = value;
-    }
-
-    T *getPtr(Ptr<T> ptr) const { return this->ptr + ptr.value; }
 
     private:
-    T *ptr;
-    std::size_t size, len;
+    T *ptr = nullptr;
+    std::size_t size = 0;
 };
 
 struct Trees {
@@ -1386,12 +1380,12 @@ struct ArrayVector {
         this->data.resize(this->data.size() - this->elementLen);
     }
     private:
-    std::size_t elementLen;
+    std::size_t elementLen = 0;
     std::vector<T> data;
 };
 
 struct Logger {
-    
+
 };
 
 }

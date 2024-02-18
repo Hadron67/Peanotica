@@ -328,6 +328,33 @@ StackedPermutation pperm::traceSchreierVector(PermutationStack &stack, upoint_ty
     return ret;
 }
 
+StackedPermutation doubleTraceSchreierVector(PermutationStack &stack, upoint_type point1, upoint_type point2, PermutationList &genset, const OptionalSchreierVectorEntry *vec) {
+    auto permLen = genset.getPermutationLength();
+    StackedPermutation tmp1(stack, permLen);
+    tmp1.inverse(traceSchreierVector(stack, point1, genset, vec));
+    tmp1.multiply(tmp1, traceSchreierVector(stack, point2, genset, vec));
+    return tmp1;
+}
+
+void pperm::computeOrbit(bool *points, upoint_type start, PermutationList &perms, std::deque<upoint_type> &workQueue) {
+    auto permLen = perms.getPermutationLength();
+    arraySet(points, permLen, false);
+    points[start] = true;
+    workQueue.clear();
+    workQueue.push_back(start);
+    while (!workQueue.empty()) {
+        auto point = workQueue[0];
+        workQueue.pop_front();
+        for (auto perm : perms) {
+            auto image = perm.mapPoint(point);
+            if (!points[image]) {
+                points[image] = true;
+                workQueue.push_back(image);
+            }
+        }
+    }
+}
+
 bool pperm::isInGroup(PermutationStack &stack, PermutationView perm, PermutationList &genset, Slice<upoint_type> base) {
     auto permLen = genset.getPermutationLength();
     PermutationList genset2(genset);
@@ -574,6 +601,83 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
         this->currentGens.clear();
         this->siftingBranching.collectLabels([this](PermutationView perm) { this->currentGens.addPermutation(perm); });
     }
+}
+
+static inline upoint_type findFirstPoint(const bool *points, std::size_t size) {
+    for (upoint_type ret = 0; ret < size; ret++, points++) {
+        if (*points) {
+            return ret;
+        }
+    }
+}
+
+static inline void boolListComplement(bool *dest, const bool *exclude, std::size_t len) {
+    for (std::size_t i = 0; i < len; i++, dest++, exclude++) {
+        if (*exclude) {
+            *dest = false;
+        }
+    }
+}
+
+void BaseChanger::setSGS(Slice<upoint_type> base, PermutationList &genset) {
+    auto permLen = genset.getPermutationLength();
+    this->base.ensureSize(base.len);
+    copyArray(this->base.get(), base.ptr, base.len);
+    this->baseLen = base.len;
+    this->genset.setPermutationLength(permLen);
+    this->genset.clear();
+    this->genset.addAll(genset.begin(), genset.end());
+    this->stabilizer.setPermutationLength(permLen);
+    this->stabilizer2.setPermutationLength(permLen);
+    this->newGens.setPermutationLength(permLen);
+}
+
+void BaseChanger::interchange(std::size_t pos, PermutationStack &stack) {
+    auto permLen = this->genset.getPermutationLength();
+    this->orbitSets.ensureSize(permLen * 3);
+    auto gamma = this->orbitSets.get(), deltai = gamma + permLen, tmpPointSet = deltai + permLen;
+    arraySet(gamma, permLen * 3, false);
+
+    auto base = makeSlice(this->base.get(), this->baseLen);
+    auto bp1 = base[pos], bp2 = base[pos + 1];
+
+    this->stabilizer.addAll(this->genset.begin(), this->genset.end());
+    stabilizerPointsInPlace(this->stabilizer, base.slice(0, pos));
+    this->stabilizer2.addAll(this->stabilizer.begin(), this->stabilizer.end());
+    stabilizerInPlace(this->stabilizer2, bp1);
+
+    this->newGens.clear();
+    this->newGens.addAll(this->stabilizer2.begin(), this->stabilizer2.end());
+    this->orbit1.reset(this->stabilizer);
+    this->orbit2.reset(this->stabilizer2);
+    this->orbit1.appendOrbit(bp1);
+    this->orbit2.appendOrbit(bp2);
+
+    computeOrbit(tmpPointSet, bp2, this->stabilizer, this->queue);
+    auto barDeltaj1Size = this->orbit1.orbit.allOrbitSize() *  this->orbit2.orbit.allOrbitSize() / std::count(tmpPointSet, tmpPointSet + permLen, true);
+
+    deltai[bp1] = true;
+    this->orbit1.orbit.collectAllOrbit([gamma](upoint_type p, upoint_type orbit){ gamma[p] = true; });
+    gamma[bp1] = false;
+    gamma[bp2] = false;
+
+    while (std::count(deltai, deltai + permLen, true) < barDeltaj1Size) {
+        auto gamma0 = findFirstPoint(gamma, permLen);
+        auto g1 = traceSchreierVector(stack, gamma0, this->stabilizer, this->orbit1.orbit.vector.get());
+        auto g1InvMapBp2 = g1.inverseMapPoint(bp2);
+        if (this->orbit2.orbit.pointToOrbitId[g1InvMapBp2].isPresent()) {
+            auto g2 = traceSchreierVector(stack, g1InvMapBp2, this->stabilizer2, this->orbit2.orbit.vector.get());
+            g2.multiply(g2, g1);
+            this->newGens.addPermutation(g2);
+            computeOrbit(deltai, bp1, this->newGens.permutations, this->queue);
+            boolListComplement(gamma, deltai, permLen);
+        } else {
+            computeOrbit(tmpPointSet, gamma0, this->newGens.permutations, this->queue);
+            boolListComplement(gamma, tmpPointSet, permLen);
+        }
+    }
+    this->genset.addAll(this->newGens.begin(), this->newGens.end());
+    std::swap(base[pos], base[pos + 1]);
 }
 
 // Double coset representative
