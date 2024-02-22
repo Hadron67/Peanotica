@@ -1,3 +1,5 @@
 *.o
+*.tm.cc
 perm
+pperm-ml
 tests

@@ -57,15 +57,17 @@ struct PermutationView {
     std::size_t getLength() const {
         return this->len;
     }
+    // template<typename... T>
+    // PermutationView &cycle(T... args) {
+    //     upoint_type arr[sizeof...(args)]{upoint_type(args)...};
+    //     auto images = this->images();
+    //     for (unsigned int i = 0; i < sizeof...(args); i++) {
+    //         images[arr[i]] = arr[(i + 1) % sizeof...(args)];
+    //     }
+    //     return *this;
+    // }
     template<typename... T>
-    PermutationView &cycle(T... args) {
-        upoint_type arr[sizeof...(args)]{upoint_type(args)...};
-        auto images = this->images();
-        for (unsigned int i = 0; i < sizeof...(args); i++) {
-            images[arr[i]] = arr[(i + 1) % sizeof...(args)];
-        }
-        return *this;
-    }
+    inline PermutationView &cycle(T... args);
     PermutationView &assign(bool isNegative, std::initializer_list<upoint_type> list);
     PermutationView &identity();
     PermutationView &multiply(const PermutationView &p1, const PermutationView &p2);
@@ -98,6 +100,37 @@ struct PermutationView {
 };
 
 std::ostream &operator << (std::ostream &os, const PermutationView &perm);
+
+struct CyclesBuilder {
+    CyclesBuilder(PermutationView perm): images(perm.images()) {}
+    void append(upoint_type p) {
+        if (this->first.isPresent()) {
+            this->images[this->last] = p;
+        } else {
+            this->first = p;
+        }
+        this->last = p;
+    }
+    void finish() const {
+        if (this->first.isPresent()) {
+            this->images[this->last] = this->first.get();
+        }
+    }
+    private:
+    upoint_type *images;
+    OptionalUInt<upoint_type> first;
+    upoint_type last;
+};
+
+template<typename... T>
+inline PermutationView &PermutationView::cycle(T... args) {
+    CyclesBuilder builder(*this);
+    for (auto p : {args...}) {
+        builder.append(p);
+    }
+    builder.finish();
+    return *this;
+}
 
 struct Cycles {
     struct Iterator {
