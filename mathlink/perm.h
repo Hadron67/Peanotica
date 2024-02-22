@@ -38,6 +38,8 @@ struct OptionalSignedPoint {
     upoint_type point;
 };
 
+struct PermutationFormatter;
+
 struct PermutationView {
     upoint_type *data;
     std::size_t len;
@@ -45,8 +47,9 @@ struct PermutationView {
     bool isNegative() const {
         return bool(this->data[0]);
     }
-    void setNegative(bool isNegative) {
+    PermutationView &setNegative(bool isNegative) {
         this->data[0] = upoint_type(isNegative);
+        return *this;
     }
     upoint_type *images() const {
         return this->data + 1;
@@ -89,7 +92,9 @@ struct PermutationView {
     bool operator != (PermutationView other) const {
         return this->compare(other) != 0;
     }
+    inline void print(std::ostream &os, PermutationFormatter &formatter) const;
     static std::size_t storageSize(std::size_t len) { return len + 1; }
+    static std::size_t permutationLengthFromStorageSize(std::size_t size) { return size - 1; }
 };
 
 std::ostream &operator << (std::ostream &os, const PermutationView &perm);
@@ -116,30 +121,79 @@ struct CyclesConverter {
     private:
     upoint_type *data = nullptr;
     std::size_t size = 0;
+    bool isNegative;
     friend std::ostream &operator << (std::ostream &os, const CyclesConverter &cycles);
 };
 
 std::ostream &operator << (std::ostream &os, const CyclesConverter &cycles);
 
+struct PermutationFormatter {
+    bool useCycles;
+
+    template<typename T>
+    struct FormattedValue {
+        T arg;
+        PermutationFormatter &formatter;
+    };
+    template<typename T>
+    struct FormattedRef {
+        T &arg;
+        PermutationFormatter &formatter;
+    };
+    void print(std::ostream &os, PermutationView perm) {
+        if (this->useCycles) {
+            this->cyclesConverter.convert(perm);
+            os << this->cyclesConverter;
+        } else {
+            os << perm;
+        }
+    }
+    template<typename T>
+    FormattedValue<T> formatValue(T &&arg) {
+        return FormattedValue<T>{arg, *this};
+    }
+    template<typename T>
+    FormattedRef<T> formatRef(T &arg) {
+        return FormattedRef<T>{arg, *this};
+    }
+    private:
+    CyclesConverter cyclesConverter;
+};
+
+template<typename T>
+inline std::ostream &operator << (std::ostream &os, const PermutationFormatter::FormattedValue<T> &perm) {
+    perm.arg.print(os, perm.formatter);
+    return os;
+}
+
+template<typename T>
+inline std::ostream &operator << (std::ostream &os, const PermutationFormatter::FormattedRef<T> &perm) {
+    perm.arg.print(os, perm.formatter);
+    return os;
+}
+
+inline void PermutationView::print(std::ostream &os, PermutationFormatter &formatter) const {
+    formatter.print(os, *this);
+}
+
 struct PermutationList {
     struct Iterator {
-        Iterator(PermutationList *list, std::size_t cursor): list(list), cursor(cursor) {}
+        Iterator(ArrayVector<upoint_type>::Iterator inner): inner(inner) {}
         bool operator == (Iterator other) const {
-            return this->list == other.list && this->cursor == other.cursor;
+            return this->inner == other.inner;
         }
         PermutationView operator -> () const {
-            return list->get(this->cursor);
+            return PermutationView{*this->inner, PermutationView::permutationLengthFromStorageSize(this->inner.getElementSize())};
         }
         PermutationView operator * () {
-            return list->get(this->cursor);
+            return PermutationView{*this->inner, PermutationView::permutationLengthFromStorageSize(this->inner.getElementSize())};
         }
         Iterator &operator ++ () {
-            this->cursor++;
+            ++this->inner;
             return *this;
         }
         private:
-        PermutationList *list;
-        std::size_t cursor;
+        ArrayVector<upoint_type>::Iterator inner;
         friend PermutationList;
     };
     PermutationList() = default;
@@ -177,10 +231,10 @@ struct PermutationList {
         this->push().copy(perm);
     }
     Iterator begin() {
-        return Iterator(this, 0);
+        return Iterator(this->data.begin());
     }
     Iterator end() {
-        return Iterator(this, this->getSize());
+        return Iterator(this->data.end());
     }
     template<typename Iter1, typename Iter2>
     void addAll(Iter1 begin, Iter2 end) {
@@ -188,6 +242,7 @@ struct PermutationList {
             this->addPermutation(*iter);
         }
     }
+    void print(std::ostream &os, PermutationFormatter &formatter);
     private:
     ArrayVector<upoint_type> data;
 };
@@ -297,6 +352,9 @@ struct PermutationSet {
     Iterator end() {
         return this->permutations.end();
     }
+    void print(std::ostream &os, PermutationFormatter &format) {
+        this->permutations.print(os, format);
+    }
     private:
     HashTable<std::uint32_t> permToId;
 };
@@ -341,6 +399,14 @@ struct SchreierOrbit {
     }
     SchreierOrbit(SchreierOrbit &&other) = default;
     SchreierOrbit &operator = (SchreierOrbit &&other) = default;
+    void appendOrbit(upoint_type point, PermutationList &genset, std::deque<upoint_type> &queue);
+
+    template<typename Iter1, typename Iter2>
+    void appendOrbits(Iter1 begin, Iter2 end, PermutationList &genset, std::deque<upoint_type> &queue) {
+        for (auto iter = begin; iter != end; ++iter) {
+            this->appendOrbit(*iter, genset, queue);
+        }
+    }
     bool onSameOrbit(upoint_type p1, upoint_type p2) const {
         return this->pointToOrbitId[p1] == this->pointToOrbitId[p2];
     }
@@ -358,27 +424,25 @@ struct SchreierOrbit {
             }
         }
     }
-    void dump(std::ostream &os, PermutationList &genset);
+    template<typename Fn>
+    void collectOneOrbit(upoint_type p, Fn consumer) {
+        auto ptr = this->pointToOrbitId.get();
+        auto orbit = ptr[p];
+        if (orbit.isPresent()) {
+            for (upoint_type p = 0; p < this->permLen; p++, ptr++) {
+                if (orbit == *ptr) {
+                    consumer(p);
+                }
+            }
+        }
+    }
+    void dump(std::ostream &os, PermutationList &genset, PermutationFormatter &formater);
 };
 
-struct SchreierVectorBuilder {
-    PermutationList *genset;
-    SchreierOrbit orbit;
-    std::deque<upoint_type> workingPoints;
-    SchreierVectorBuilder() = default;
-    SchreierVectorBuilder(PermutationList &genset) {
-        this->reset(genset);
-    };
-    void reset(PermutationList &genset);
-    void appendOrbit(upoint_type point);
-    void appendAllOrbits();
-    void appendOrbitAndRest(upoint_type point) {
-        this->appendOrbit(point);
-        this->appendAllOrbits();
-    };
-};
+struct StackedPermutation;
 
 struct PermutationStack {
+    PermutationStack() = default;
     PermutationStack(std::size_t blockSize): inner(blockSize) {};
     PermutationView push(std::size_t len) {
         return PermutationView{this->inner.push(PermutationView::storageSize(len)), len};
@@ -387,8 +451,12 @@ struct PermutationStack {
         this->inner.pop(perm.getStorageSize());
     }
     inline void pop(struct StackedPermutation &perm);
+    inline StackedPermutation pushStacked(std::size_t len);
     std::size_t isEmpty() {
         return this->inner.isEmpty();
+    }
+    void setBlockSize(std::size_t size) {
+        this->inner.blockSize = size;
     }
     private:
     OBStack<upoint_type> inner;
@@ -405,9 +473,9 @@ struct StackedPermutation : PermutationView {
         this->data = other.data;
         this->len = other.len;
         this->stack = other.stack;
-        other.leak();
+        other.forget();
     }
-    void leak() {
+    void forget() {
         this->stack = nullptr;
     }
     ~StackedPermutation() {
@@ -420,8 +488,12 @@ struct StackedPermutation : PermutationView {
 };
 
 inline void PermutationStack::pop(StackedPermutation &perm) {
-    perm.leak();
+    perm.forget();
     this->inner.pop(perm.getStorageSize());
+}
+
+inline StackedPermutation PermutationStack::pushStacked(std::size_t permLen) {
+    return StackedPermutation(*this, permLen);
 }
 
 struct JerrumBranching {
@@ -500,7 +572,7 @@ struct JerrumBranching {
             }
         }
     }
-    void dump(std::ostream &os);
+    void dump(std::ostream &os, PermutationFormatter &formatter);
     private:
     std::size_t permLen = 0;
     OptionalPtr *tableData = nullptr;
@@ -514,7 +586,7 @@ struct JerrumBranchingBuilder {
     void build(PermutationStack &permStack, PermutationList &genset);
     private:
     PermutationStack *permStack;
-    SchreierVectorBuilder orbit;
+    SchreierOrbit orbit;
     PermutationList currentGens;
     PermutationSet schreierGens; // maybe PermutationList is also ok? cause we don't know whether the Schreier generators contain dupes
     JerrumBranching siftingBranching;
@@ -531,11 +603,11 @@ bool isInGroup(PermutationStack &stack, PermutationView perm, PermutationList &g
 template<typename Set>
 inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationList &gens, SchreierOrbit &orbit) {
     auto permLen = gens.getPermutationLength();
-    StackedPermutation tmp(stack, permLen);
+    auto tmp = stack.pushStacked(permLen);
     for (upoint_type gamma = 0; gamma < permLen; gamma++) if (orbit.pointToOrbitId[gamma].isPresent()) {
         auto tmp1 = traceSchreierVector(stack, gamma, gens, orbit.vector.get());
         for (auto gen : gens) {
-            StackedPermutation tmp2(stack, permLen);
+            auto tmp2 = stack.pushStacked(permLen);
             tmp2.inverse(traceSchreierVector(stack, gen.mapPoint(gamma), gens, orbit.vector.get()));
             tmp.multiply(tmp1, gen);
             tmp.multiply(tmp, tmp2);
@@ -548,17 +620,229 @@ inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationLis
 
 struct BaseChanger {
     PermutationSet genset;
-    void setSGS(Slice<upoint_type> base, PermutationList &genset);
-    void interchange(std::size_t pos, PermutationStack &stack);
+    void setSGS(PermutationList &genset);
+    void interchange(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack);
+    void moveToFirst(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack) {
+        while (pos > 0) {
+            this->interchange(base, --pos, stack);
+        }
+    }
     private:
     PermutationSet newGens;
     PermutationList stabilizer, stabilizer2;
-    SchreierVectorBuilder orbit1, orbit2;
+    SchreierOrbit orbit1, orbit2;
     Array<bool> orbitSets;
-    Array<upoint_type> base;
-    std::size_t baseLen;
     std::deque<upoint_type> queue;
 };
+
+struct AlphaTable {
+    using InnerIterator = ArrayVector<upoint_type>::Iterator;
+    struct Entry {
+        Slice<upoint_type> getL() const {
+            return makeSlice(this->data + 1, this->data[0]);
+        }
+        void setL(Slice<upoint_type> l) {
+            this->data[0] = l.len;
+            this->getL().copy(l);
+        }
+        void appendToL(upoint_type p) {
+            auto &len = this->data[0];
+            this->data[len++ + 1] = p;
+        }
+        PermutationView getS() const {
+            auto ptr = this->data + 1 + this->permLen;
+            return PermutationView{ptr, this->permLen};
+        }
+        PermutationView getD() const {
+            auto ptr = this->data + 1 + this->permLen + PermutationView::storageSize(this->permLen);
+            return PermutationView{ptr, this->permLen};
+        }
+        std::size_t getStorageSize() const {
+            return storageSize(this->permLen);
+        }
+        static std::size_t storageSize(std::size_t permLen) {
+            return 2 * PermutationView::storageSize(permLen) + permLen + 1;
+        }
+        void print(std::ostream &os, PermutationFormatter &formatter);
+        private:
+        Entry(std::size_t permLen, upoint_type *data): permLen(permLen), data(data) {}
+        std::size_t permLen;
+        upoint_type *data;
+        friend AlphaTable;
+    };
+    struct Iterator {
+        Iterator(InnerIterator inner, std::size_t permLen): inner(inner), permLen(permLen) {}
+        bool operator == (Iterator other) const {
+            return this->inner == other.inner;
+        }
+        Entry operator * () {
+            return Entry(this->permLen, *this->inner);
+        }
+        Entry operator -> () {
+            return this->operator*();
+        }
+        Iterator &operator ++ () {
+            ++this->inner;
+            return *this;
+        }
+        private:
+        InnerIterator inner;
+        std::size_t permLen;
+    };
+    void setPermutationLength(std::size_t permLen) {
+        this->data.setElementLen(Entry::storageSize(permLen));
+        this->permLen = permLen;
+    }
+    std::size_t getPermutationLength() {
+        return this->permLen;
+    }
+    Entry get(std::size_t i) {
+        return Entry(this->getPermutationLength(), this->data[i]);
+    }
+    Entry pushEntry() {
+        return Entry(this->getPermutationLength(), this->data.push());
+    }
+    Iterator begin() {
+        return Iterator(this->data.begin(), this->permLen);
+    }
+    Iterator end() {
+        return Iterator(this->data.end(), this->permLen);
+    }
+    void clear() {
+        this->data.clear();
+    }
+    private:
+    std::size_t permLen = 0;
+    ArrayVector<upoint_type> data;
+};
+
+std::ostream &operator << (std::ostream &os, AlphaTable::Entry entry);
+
+struct DoubleCosetRepresentativeSolver {
+    bool verbose;
+    std::optional<StackedPermutation> solve(PermutationList &gensetS, PermutationList &gensetD, PermutationView perm);
+    void setUseCycles(bool b) {
+        this->permFormatter.useCycles = b;
+    }
+    private:
+    using TableEntry = AlphaTable::Entry;
+    PermutationFormatter permFormatter;
+    std::size_t permLen;
+    PermutationStack permStack;
+    PermutationList gensetS, gensetD;
+    PermutationSet sgdSet;
+    std::vector<upoint_type> gensetDBase;
+    SchreierOrbit orbitS, orbitD;
+    BaseChanger baseChanger;
+    OBStack<bool> boolSetPool;
+    std::deque<upoint_type> queue;
+
+    AlphaTable alphas[2];
+    unsigned int alphaPtr;
+
+    Array<upoint_type> tmpL;
+
+    void setPermutationLength(std::size_t permLen) {
+        this->permLen = permLen;
+        this->gensetS.setPermutationLength(permLen);
+        this->gensetD.setPermutationLength(permLen);
+        this->sgdSet.setPermutationLength(permLen);
+    }
+    void subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm);
+    void stabilizeOnePoint(upoint_type b, upoint_type p);
+};
+
+namespace meta {
+    template<unsigned int ...N> struct List {};
+    template<typename ...T> struct SCycles {
+        private:
+        template<typename T2>
+        struct OneCycle {};
+        template<unsigned int ...N>
+        struct OneCycle<List<N...>> {
+            static void oneCycle(PermutationView perm) {
+                perm.cycle(N...);
+            }
+        };
+        public:
+        static void assignPermutation(PermutationView perm) {
+            int perms[]{0, (OneCycle<T>::oneCycle(perm), 0)...};
+            (void)perms;
+        }
+    };
+    template<unsigned int ...N> struct Images {
+        static void assignPermutation(PermutationView perm) {
+            perm.assign(false, {N...});
+        }
+    };
+
+    template<typename T> struct Neg {
+        static void assignPermutation(PermutationView perm) {
+            T::assignPermutation(perm);
+            perm.setNegative(true);
+        }
+    };
+
+    template<typename ...T>
+    struct GenSet {
+        static PermutationList build(unsigned int n) {
+            PermutationList ret(n);
+            int perms[]{0, (GenSet<T...>::addOnePermutation<T>(ret), 0)...};
+            (void)perms;
+            return ret;
+        }
+        private:
+        template<typename T2>
+        static void addOnePermutation(PermutationList &list) {
+            T2::assignPermutation(list.push().identity());
+        }
+    };
+
+    template<typename ...T> struct JoinType {};
+    template<template<typename...> typename H, typename ...T>
+    struct JoinType<H<T...>> {
+        using Type = H<T...>;
+    };
+    template<template<typename...> typename H, typename ...T1, typename ...T2, typename ...T3>
+    struct JoinType<H<T1...>, H<T2...>, T3...> {
+        using Type = typename JoinType<H<T1..., T2...>, T3...>::Type;
+    };
+
+    template<typename ...T>
+    using Join = typename JoinType<T...>::Type;
+
+    template<unsigned int ...N> struct SymmetricGenSetType {};
+    template<unsigned int N1, unsigned int N2, unsigned int ...N>
+    struct SymmetricGenSetType<N1, N2, N...> {
+        using Type = Join<GenSet<SCycles<List<N1, N2>>>, typename SymmetricGenSetType<N2, N...>::Type>;
+    };
+    template<unsigned int N>
+    struct SymmetricGenSetType<N> {
+        using Type = GenSet<>;
+    };
+
+    template<unsigned int ...N>
+    using Symmetric = typename SymmetricGenSetType<N...>::Type;
+
+    template<template<typename> typename Fn, typename T> struct MapType {};
+    template<template<typename> typename Fn, template<typename...> typename H>
+    struct MapType<Fn, H<>> {
+        using Type = H<>;
+    };
+    template<template<typename> typename Fn, template<typename...> typename H, typename T, typename ...T2>
+    struct MapType<Fn, H<T, T2...>> {
+        using Type = Join<H<Fn<T>>, typename MapType<Fn, H<T2...>>::Type>;
+    };
+    template<template<typename> typename Fn, typename T>
+    using Map = typename MapType<Fn, T>::Type;
+
+    template<unsigned int ...N>
+    using Antisymmetric = Map<Neg, Symmetric<N...>>;
+
+    template<unsigned int N1, unsigned int N2, unsigned int N3, unsigned int N4>
+    using RiemannSymmetric = GenSet<Neg<SCycles<List<N1, N2>>>, Neg<SCycles<List<N3, N4>>>, SCycles<List<N1, N3>, List<N2, N4>>>;
+};
+
 
 }
 

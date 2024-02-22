@@ -144,6 +144,7 @@ void CyclesConverter::convert(PermutationView perm) {
     }
     PermutationView tmp{this->data + perm.len * 2 + 1, perm.len};
     tmp.copy(perm);
+    this->isNegative = tmp.isNegative();
     auto images = tmp.images();
     auto totalLen = this->data, currentCycleLen = totalLen + 1, currentCycleData = currentCycleLen + 1;
     *totalLen = 0;
@@ -170,6 +171,9 @@ void CyclesConverter::convert(PermutationView perm) {
 std::ostream &pperm::operator << (std::ostream &os, const CyclesConverter &cycles) {
     auto len = cycles.data[0];
     auto ptr = cycles.data + 1;
+    if (cycles.isNegative) {
+        os << "-";
+    }
     if (len == 0) {
         os << "I";
     }
@@ -186,21 +190,36 @@ std::ostream &pperm::operator << (std::ostream &os, const CyclesConverter &cycle
     return os;
 }
 
-struct PermutationHashContext {
-    PermutationSet *genset;
-    std::size_t hash(const PermutationView &perm) const {
-        return perm.hash();
+void PermutationList::print(std::ostream &os, PermutationFormatter &formatter) {
+    os << "{";
+    bool first = true;
+    for (auto perm : *this) {
+        if (!first) {
+            os << ", ";
+        }
+        first = false;
+        formatter.print(os, perm);
     }
-    std::size_t hash(std::size_t i) const {
-        return this->genset->get(i).hash();
-    }
-    int compare(std::size_t i, std::size_t j) const {
-        return this->genset->get(i).compare(this->genset->get(j));
-    }
-    int compare(const PermutationView &perm, std::size_t i) const {
-        return perm.compare(this->genset->get(i));
-    }
-};
+    os << "}";
+}
+
+namespace {
+    struct PermutationHashContext {
+        PermutationSet *genset;
+        std::size_t hash(const PermutationView &perm) const {
+            return perm.hash();
+        }
+        std::size_t hash(std::size_t i) const {
+            return this->genset->get(i).hash();
+        }
+        int compare(std::size_t i, std::size_t j) const {
+            return this->genset->get(i).compare(this->genset->get(j));
+        }
+        int compare(const PermutationView &perm, std::size_t i) const {
+            return perm.compare(this->genset->get(i));
+        }
+    };
+}
 
 void PermutationSet::commitPermutation() {
     auto id = this->getSize() - 1;
@@ -241,37 +260,6 @@ void PermutationSet::remove(std::size_t index) {
     this->permutations.remove(index);
 }
 
-void SchreierOrbit::reset(std::size_t permLen) {
-    this->permLen = permLen;
-    this->orbitCount = 0;
-    if (this->pointToOrbitId == nullptr || permLen > this->allocSize) {
-        this->pointToOrbitId = std::make_unique<OptionalUInt<std::uint32_t>[]>(permLen);
-        this->vector = std::make_unique<OptionalSchreierVectorEntry[]>(permLen);
-        this->allocSize = permLen;
-    }
-    arraySet(this->pointToOrbitId.get(), permLen, None{});
-    arraySet(this->vector.get(), permLen, None{});
-}
-void SchreierOrbit::dump(std::ostream &os, PermutationList &genset) {
-    auto vec = this->vector.get();
-    os << "schreier vector {" << std::endl;
-    for (upoint_type point = 0; point < genset.getPermutationLength(); point++, vec++) {
-        if (vec->isPresent()) {
-            auto entry = vec->get();
-            os << "    " << point << " <-- " << genset.get(entry.generator) << " -- " << entry.sourcePoint << std::endl;
-        } else {
-            os << "    " << point << std::endl;
-        }
-    }
-    os << "}" << std::endl;
-}
-
-void SchreierVectorBuilder::reset(PermutationList &genset) {
-    this->genset = &genset;
-    auto permLen = genset.getPermutationLength();
-    this->workingPoints.clear();
-    this->orbit.reset(permLen);
-}
 
 template<typename T>
 static inline OptionalUInt<std::size_t> firstNonePos(const OptionalUInt<T> *ptr, std::size_t len) {
@@ -283,41 +271,61 @@ static inline OptionalUInt<std::size_t> firstNonePos(const OptionalUInt<T> *ptr,
     return None{};
 }
 
-void SchreierVectorBuilder::appendOrbit(upoint_type point) {
-    auto orbitId1 = firstNonePos(this->orbit.pointToOrbitId.get(), this->genset->getPermutationLength());
-    if (!orbitId1.isPresent()) {
+void SchreierOrbit::appendOrbit(upoint_type point, PermutationList &genset, std::deque<upoint_type> &queue) {
+    if (this->pointToOrbitId[point].isPresent()) {
         return;
-    } else {
-        this->orbit.orbitCount++;
     }
-    auto orbitId = orbitId1.get();
-    this->orbit.pointToOrbitId[point] = orbitId;
-    this->workingPoints.push_back(point);
-    auto gensetSize = this->genset->getSize();
-    while (!workingPoints.empty()) {
-        auto point = workingPoints[0];
-        workingPoints.pop_front();
+    auto orbitId = this->orbitCount++;
+    this->pointToOrbitId[point] = orbitId;
+    queue.clear();
+    queue.push_back(point);
+    auto gensetSize = genset.getSize();
+    while (!queue.empty()) {
+        auto point = queue[0];
+        queue.pop_front();
         for (std::size_t j = 0; j < gensetSize; j++) {
-            auto generator = this->genset->get(j);
+            auto generator = genset.get(j);
             auto image = generator.mapPoint(point);
-            if (!this->orbit.pointToOrbitId[image].isPresent()) {
-                this->orbit.pointToOrbitId[image] = orbitId;
-                this->orbit.vector[image] = SchreierVectorEntry{std::uint32_t(j), point};
-                workingPoints.push_back(image);
+            if (!this->pointToOrbitId[image].isPresent()) {
+                this->pointToOrbitId[image] = orbitId;
+                this->vector[image] = SchreierVectorEntry{std::uint32_t(j), point};
+                queue.push_back(image);
             }
         }
     }
 }
-void SchreierVectorBuilder::appendAllOrbits() {
-    for (std::size_t i = 0; i < this->genset->getPermutationLength(); i++) {
-        this->appendOrbit(i);
+
+void SchreierOrbit::reset(std::size_t permLen) {
+    this->permLen = permLen;
+    this->orbitCount = 0;
+    if (this->pointToOrbitId == nullptr || permLen > this->allocSize) {
+        this->pointToOrbitId = std::make_unique<OptionalUInt<std::uint32_t>[]>(permLen);
+        this->vector = std::make_unique<OptionalSchreierVectorEntry[]>(permLen);
+        this->allocSize = permLen;
     }
+    arraySet(this->pointToOrbitId.get(), permLen, None{});
+    arraySet(this->vector.get(), permLen, None{});
+}
+void SchreierOrbit::dump(std::ostream &os, PermutationList &genset, PermutationFormatter &formater) {
+    bool empty = true;
+    auto vec = this->vector.get();
+    os << "schreier vector {";
+    for (upoint_type point = 0; point < genset.getPermutationLength(); point++, vec++) {
+        if (vec->isPresent()) {
+            auto entry = vec->get();
+            empty = false;
+            os << std::endl << "    " << point << " <-- " << formater.formatValue(genset.get(entry.generator)) << " -- " << entry.sourcePoint;
+        }
+    }
+    if (!empty) os << std::endl;
+    os << "}";
 }
 
 StackedPermutation pperm::traceSchreierVector(PermutationStack &stack, upoint_type point, PermutationList &genset, const OptionalSchreierVectorEntry *vec) {
     auto permLen = genset.getPermutationLength();
     OptionalSchreierVectorEntry entry;
-    StackedPermutation ret(stack, permLen), tmp(stack, permLen);
+    auto ret = stack.pushStacked(permLen);
+    auto tmp = stack.pushStacked(permLen);
     ret.identity();
     while ((entry = vec[point]).isPresent()) {
         auto entry2 = entry.get();
@@ -328,7 +336,7 @@ StackedPermutation pperm::traceSchreierVector(PermutationStack &stack, upoint_ty
     return ret;
 }
 
-StackedPermutation doubleTraceSchreierVector(PermutationStack &stack, upoint_type point1, upoint_type point2, PermutationList &genset, const OptionalSchreierVectorEntry *vec) {
+StackedPermutation pperm::doubleTraceSchreierVector(PermutationStack &stack, upoint_type point1, upoint_type point2, PermutationList &genset, const OptionalSchreierVectorEntry *vec) {
     auto permLen = genset.getPermutationLength();
     StackedPermutation tmp1(stack, permLen);
     tmp1.inverse(traceSchreierVector(stack, point1, genset, vec));
@@ -360,14 +368,15 @@ bool pperm::isInGroup(PermutationStack &stack, PermutationView perm, Permutation
     PermutationList genset2(genset);
     StackedPermutation tmp(stack, permLen), tmp2(stack, permLen), tmp3(stack, permLen);
     tmp.copy(perm);
-    SchreierVectorBuilder orbitBuilder(genset2);
+    SchreierOrbit orbit;
+    std::deque<upoint_type> queue;
     for (std::size_t i = 0; i < base.len; i++) {
         auto currentBase = base[i];
         auto baseImage = tmp.mapPoint(currentBase);
-        orbitBuilder.reset(genset2);
-        orbitBuilder.appendOrbit(currentBase);
-        if (orbitBuilder.orbit.onSameOrbit(currentBase, baseImage)) {
-            tmp2.inverse(traceSchreierVector(stack, baseImage, genset2, orbitBuilder.orbit.vector.get()));
+        orbit.reset(permLen);
+        orbit.appendOrbit(currentBase, genset2, queue);
+        if (orbit.onSameOrbit(currentBase, baseImage)) {
+            tmp2.inverse(traceSchreierVector(stack, baseImage, genset2, orbit.vector.get()));
             tmp3.copy(tmp);
             tmp.multiply(tmp3, tmp2);
         } else {
@@ -539,7 +548,7 @@ void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_typ
     }
 }
 
-void JerrumBranching::dump(std::ostream &os) {
+void JerrumBranching::dump(std::ostream &os, PermutationFormatter &formatter) {
     std::deque<upoint_type> queue;
     auto root = this->findRoot();
     if (root.isPresent()) {
@@ -552,7 +561,7 @@ void JerrumBranching::dump(std::ostream &os) {
         for (upoint_type p2 = 0; p2 < this->permLen; p2++) {
             auto edge = this->getEdge(p, p2);
             if (edge.isPresent()) {
-                os << "    " << p << " -- " << this->getPermutation(edge.get()) << " --> " << p2 << std::endl;
+                os << "    " << p << " -- " << formatter.formatValue(this->getPermutation(edge.get())) << " --> " << p2 << std::endl;
                 queue.push_back(p2);
             }
         }
@@ -560,7 +569,7 @@ void JerrumBranching::dump(std::ostream &os) {
     for (upoint_type p = 0; p < this->permLen; p++) {
         auto ver = this->getVertex(p);
         if (ver.isPresent()) {
-            std::cout << "    v(" << p << ") = " << this->getPermutation(ver.get()) << std::endl;
+            std::cout << "    v(" << p << ") = " << formatter.formatValue(this->getPermutation(ver.get())) << std::endl;
         }
     }
     os << "}" << std::endl;
@@ -568,11 +577,11 @@ void JerrumBranching::dump(std::ostream &os) {
 
 void JerrumBranchingBuilder::augment(upoint_type i) {
     auto permLen = this->currentGens.getPermutationLength();
-    for (upoint_type p = 0; p < permLen; p++) if(p != i && this->orbit.orbit.pointToOrbitId[p].isPresent()) {
+    for (upoint_type p = 0; p < permLen; p++) if(p != i && this->orbit.pointToOrbitId[p].isPresent()) {
         for (upoint_type l = 0; l < permLen; l++) {
             this->branching.setEdge(l, p, None{});
         }
-        auto u1 = traceSchreierVector(*this->permStack, p, this->currentGens, this->orbit.orbit.vector.get());
+        auto u1 = traceSchreierVector(*this->permStack, p, this->currentGens, this->orbit.vector.get());
         auto permPtr = this->branching.allocPermutation();
         this->branching.getPermutation(permPtr).copy(u1);
         this->branching.setEdge(i, p, permPtr);
@@ -589,11 +598,11 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
     this->currentGens.addAll(genset.begin(), genset.end());
 
     for (upoint_type p = 0; p < permLen; p++) {
-        this->orbit.reset(this->currentGens);
-        this->orbit.appendOrbit(p);
+        this->orbit.reset(this->currentGens.getPermutationLength());
+        this->orbit.appendOrbit(p, this->currentGens, this->queue);
         this->augment(p);
         this->schreierGens.clear();
-        schreierGenerators(this->schreierGens, *this->permStack, this->currentGens, this->orbit.orbit);
+        schreierGenerators(this->schreierGens, *this->permStack, this->currentGens, this->orbit);
         this->siftingBranching.reset();
         for (auto perm : this->schreierGens) {
             this->siftingBranching.siftElement(*this->permStack, this->queue, perm);
@@ -609,6 +618,9 @@ static inline upoint_type findFirstPoint(const bool *points, std::size_t size) {
             return ret;
         }
     }
+#ifdef PPERM_DEBUG
+    throw std::runtime_error("first point not found");
+#endif
 }
 
 static inline void boolListComplement(bool *dest, const bool *exclude, std::size_t len) {
@@ -619,11 +631,8 @@ static inline void boolListComplement(bool *dest, const bool *exclude, std::size
     }
 }
 
-void BaseChanger::setSGS(Slice<upoint_type> base, PermutationList &genset) {
+void BaseChanger::setSGS(PermutationList &genset) {
     auto permLen = genset.getPermutationLength();
-    this->base.ensureSize(base.len);
-    copyArray(this->base.get(), base.ptr, base.len);
-    this->baseLen = base.len;
     this->genset.setPermutationLength(permLen);
     this->genset.clear();
     this->genset.addAll(genset.begin(), genset.end());
@@ -632,41 +641,42 @@ void BaseChanger::setSGS(Slice<upoint_type> base, PermutationList &genset) {
     this->newGens.setPermutationLength(permLen);
 }
 
-void BaseChanger::interchange(std::size_t pos, PermutationStack &stack) {
+void BaseChanger::interchange(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack) {
     auto permLen = this->genset.getPermutationLength();
     this->orbitSets.ensureSize(permLen * 3);
     auto gamma = this->orbitSets.get(), deltai = gamma + permLen, tmpPointSet = deltai + permLen;
     arraySet(gamma, permLen * 3, false);
 
-    auto base = makeSlice(this->base.get(), this->baseLen);
     auto bp1 = base[pos], bp2 = base[pos + 1];
 
+    this->stabilizer.clear();
     this->stabilizer.addAll(this->genset.begin(), this->genset.end());
     stabilizerPointsInPlace(this->stabilizer, base.slice(0, pos));
+    this->stabilizer2.clear();
     this->stabilizer2.addAll(this->stabilizer.begin(), this->stabilizer.end());
     stabilizerInPlace(this->stabilizer2, bp1);
 
     this->newGens.clear();
     this->newGens.addAll(this->stabilizer2.begin(), this->stabilizer2.end());
-    this->orbit1.reset(this->stabilizer);
-    this->orbit2.reset(this->stabilizer2);
-    this->orbit1.appendOrbit(bp1);
-    this->orbit2.appendOrbit(bp2);
+    this->orbit1.reset(permLen);
+    this->orbit2.reset(permLen);
+    this->orbit1.appendOrbit(bp1, this->stabilizer, this->queue);
+    this->orbit2.appendOrbit(bp2, this->stabilizer2, this->queue);
 
     computeOrbit(tmpPointSet, bp2, this->stabilizer, this->queue);
-    auto barDeltaj1Size = this->orbit1.orbit.allOrbitSize() *  this->orbit2.orbit.allOrbitSize() / std::count(tmpPointSet, tmpPointSet + permLen, true);
+    auto barDeltaj1Size = this->orbit1.allOrbitSize() *  this->orbit2.allOrbitSize() / std::count(tmpPointSet, tmpPointSet + permLen, true);
 
     deltai[bp1] = true;
-    this->orbit1.orbit.collectAllOrbit([gamma](upoint_type p, upoint_type orbit){ gamma[p] = true; });
+    this->orbit1.collectAllOrbit([gamma](upoint_type p, upoint_type orbit){ gamma[p] = true; });
     gamma[bp1] = false;
     gamma[bp2] = false;
 
     while (std::count(deltai, deltai + permLen, true) < barDeltaj1Size) {
         auto gamma0 = findFirstPoint(gamma, permLen);
-        auto g1 = traceSchreierVector(stack, gamma0, this->stabilizer, this->orbit1.orbit.vector.get());
+        auto g1 = traceSchreierVector(stack, gamma0, this->stabilizer, this->orbit1.vector.get());
         auto g1InvMapBp2 = g1.inverseMapPoint(bp2);
-        if (this->orbit2.orbit.pointToOrbitId[g1InvMapBp2].isPresent()) {
-            auto g2 = traceSchreierVector(stack, g1InvMapBp2, this->stabilizer2, this->orbit2.orbit.vector.get());
+        if (this->orbit2.pointToOrbitId[g1InvMapBp2].isPresent()) {
+            auto g2 = traceSchreierVector(stack, g1InvMapBp2, this->stabilizer2, this->orbit2.vector.get());
             g2.multiply(g2, g1);
             this->newGens.addPermutation(g2);
             computeOrbit(deltai, bp1, this->newGens.permutations, this->queue);
@@ -680,7 +690,347 @@ void BaseChanger::interchange(std::size_t pos, PermutationStack &stack) {
     std::swap(base[pos], base[pos + 1]);
 }
 
-// Double coset representative
-struct AlphaTable {
-    private:
-};
+namespace {
+    struct AlphaTableHashContext {
+        AlphaTable *self;
+        int compare(std::size_t i, std::size_t j) const {
+            return this->self->get(i).getL().compare(this->self->get(j).getL());
+        }
+        int compare(Slice<upoint_type> l, std::size_t i) const {
+            return l.compare(this->self->get(i).getL());
+        }
+        std::size_t hash(std::size_t i) const {
+            return this->self->get(i).getL().hash();
+        }
+        std::size_t hash(Slice<upoint_type> l) const {
+            return l.hash();
+        }
+    };
+    struct PointSet {
+        const bool *data;
+        std::size_t len;
+    };
+    std::ostream &operator << (std::ostream &os, PointSet set) {
+        bool first = true;
+        auto ptr = set.data;
+        os << "{";
+        for (upoint_type p = 0; p < set.len; p++, ptr++) if(*ptr) {
+            if (!first) {
+                os << ", ";
+            }
+            first = false;
+            os << p;
+        }
+        os << "}";
+        return os;
+    }
+}
+
+void AlphaTable::Entry::print(std::ostream &os, PermutationFormatter &formatter) {
+    os << "[" << this->getL() << "] -> {" << formatter.formatValue(this->getS()) << ", " << formatter.formatValue(this->getD()) << "}";
+}
+
+std::ostream &pperm::operator << (std::ostream &os, AlphaTable::Entry entry) {
+    os << "[" << entry.getL() << "] -> (" << entry.getS() << ", " << entry.getD() << ")";
+    return os;
+}
+
+static inline void mapPointSet(bool *dest, const bool *set, PermutationView perm) {
+    for (upoint_type p = 0; p < perm.len; p++) if (set[p]) {
+        dest[perm.mapPoint(p)] = true;
+    }
+}
+
+static inline void pointSetIntersection(bool *dest, const bool *set2, std::size_t len) {
+    for (std::size_t i = 0; i < len; i++, dest++, set2++) {
+        *dest = *dest && *set2;
+    }
+}
+
+void DoubleCosetRepresentativeSolver::subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm) {
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "calling F1 with ret = " << PointSet{ret, this->permLen}
+            << ", Delta_b = " << PointSet{orbitB, this->permLen}
+            << ", entry = " << this->permFormatter.formatValue(entry)
+            << std::endl;
+    }
+#endif
+    auto sgd = this->permStack.pushStacked(this->permLen);
+    sgd.multiply(entry.getS(), perm);
+    sgd.multiply(sgd, entry.getD());
+    auto orbitBsgd = this->boolSetPool.pushStacked(this->permLen);
+    arraySet(orbitBsgd.begin(), this->permLen, false);
+    mapPointSet(orbitBsgd.begin(), orbitB, sgd);
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "sgd = " << this->permFormatter.formatValue(sgd)
+            << ", Delta_b^(sgd) = " << PointSet{orbitBsgd.begin(), this->permLen}
+            << std::endl;
+    }
+#endif
+    auto selectedOrbits = this->boolSetPool.pushStacked(this->orbitD.orbitCount);
+    arraySet(selectedOrbits.begin(), this->orbitD.orbitCount, false);
+    auto pointToOrbitId = this->orbitD.pointToOrbitId.get();
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto orbitId0 = pointToOrbitId[p];
+        if (orbitId0.isPresent() && orbitBsgd[p]) {
+            selectedOrbits[orbitId0.get()] = true;
+        }
+    }
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto orbitId0 = pointToOrbitId[p];
+        if (orbitId0.isPresent() && selectedOrbits[orbitId0.get()]) {
+            ret[p] = true;
+        }
+    }
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "ret = " << PointSet{ret, this->permLen} << ", end of F1" << std::endl;
+    }
+#endif
+}
+
+void DoubleCosetRepresentativeSolver::stabilizeOnePoint(upoint_type b, upoint_type p) {
+    stabilizerInPlace(this->gensetS, b);
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "S_" << b << " = " << this->permFormatter.formatRef(this->gensetS) << std::endl;
+    }
+#endif
+    this->baseChanger.setSGS(this->gensetD);
+    auto base = makeSlice(this->gensetDBase.data(), this->gensetDBase.size());
+    auto pos = base.indexOf(p);
+    this->baseChanger.moveToFirst(base, pos, this->permStack);
+    this->gensetDBase.erase(this->gensetDBase.begin());
+    this->gensetD.clear();
+    this->gensetD.addAll(this->baseChanger.genset.begin(), this->baseChanger.genset.end());
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "after base change, D = " << this->permFormatter.formatRef(this->gensetD) << std::endl;
+    }
+#endif
+    stabilizerInPlace(this->gensetD, p);
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "D_" << p << " = " << this->permFormatter.formatRef(this->gensetD) << std::endl;
+    }
+#endif
+}
+
+std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(PermutationList &gensetS, PermutationList &gensetD, PermutationView perm) {
+#ifdef PPERM_DEBUG
+    if (this->verbose) {
+        std::cout << "Begin double coset representative algorithm on g = " << this->permFormatter.formatValue(perm)
+            << ", S = " << this->permFormatter.formatRef(gensetS)
+            << ", D = " << this->permFormatter.formatRef(gensetD)
+            << std::endl;
+    }
+#endif
+    this->setPermutationLength(gensetS.getPermutationLength());
+    this->gensetS.addAll(gensetS.begin(), gensetS.end());
+    this->gensetD.addAll(gensetD.begin(), gensetD.end());
+    this->boolSetPool.blockSize = this->permLen * 16;
+    this->permStack.setBlockSize(this->permLen * 16);
+
+    auto ret = this->permStack.pushStacked(this->permLen);
+
+    this->gensetDBase.clear();
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        this->gensetDBase.push_back(p);
+    }
+
+    this->alphaPtr = 0;
+    for (unsigned int i = 0; i < 2; i++) {
+        this->alphas[i].setPermutationLength(this->permLen);
+        this->alphas[i].clear();
+    }
+    {
+        auto entry = this->alphas[this->alphaPtr].pushEntry();
+        entry.setL(Slice<upoint_type>{nullptr, 0});
+        entry.getS().identity();
+        entry.getD().identity();
+    }
+
+    auto orbitB = this->boolSetPool.pushStacked(this->permLen);
+    auto orbitPi = this->boolSetPool.pushStacked(this->permLen);
+    auto images = this->boolSetPool.pushStacked(this->permLen);
+    for (upoint_type i = 0; i < this->permLen; i++) {
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "iteration i = " << i
+                << ", S = " << this->permFormatter.formatRef(this->gensetS)
+                << ", D = " << this->permFormatter.formatRef(this->gensetD)
+                << ", base(D) = {" << makeSlice(this->gensetDBase.data(), this->gensetDBase.size()) << "}"
+                << std::endl;
+        }
+#endif
+        auto &currentAlphaTab = this->alphas[this->alphaPtr];
+        auto &nextAlphaTab = this->alphas[(this->alphaPtr + 1) & 1];
+
+        this->orbitS.reset(this->permLen);
+        for (upoint_type j = i; j < this->permLen; j++) {
+            this->orbitS.appendOrbit(j, this->gensetS, this->queue);
+        }
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "Delta_S = ";
+            this->orbitS.dump(std::cout, this->gensetS, this->permFormatter);
+            std::cout << std::endl;
+        }
+#endif
+        arraySet(orbitB.begin(), this->permLen, false);
+        this->orbitS.collectOneOrbit(i, [&](upoint_type p){ orbitB[p] = true; });
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "Delta_b = " << PointSet{orbitB.begin(), this->permLen} << std::endl;
+        }
+#endif
+
+        this->orbitD.reset(this->permLen);
+        this->orbitD.appendOrbits(this->gensetDBase.begin(), this->gensetDBase.end(), this->gensetD, this->queue);
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "Delta_D = ";
+            this->orbitD.dump(std::cout, this->gensetD, this->permFormatter);
+            std::cout << std::endl;
+        }
+#endif
+
+        arraySet(images.begin(), this->permLen, false);
+        for (auto entry : currentAlphaTab) {
+            this->subroutineF1(images.begin(), orbitB.begin(), entry, perm);
+        }
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "IMAGES = " << PointSet{images.begin(), this->permLen} << std::endl;
+        }
+#endif
+
+        auto pi = findFirstPoint(images.begin(), this->permLen);
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "pi = " << pi << std::endl;
+        }
+#endif
+        this->orbitD.reset(this->permLen);
+        this->orbitD.appendOrbit(pi, this->gensetD, this->queue);
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "Delta_D = ";
+            this->orbitD.dump(std::cout, this->gensetD, this->permFormatter);
+            std::cout << std::endl;
+        }
+#endif
+
+        arraySet(orbitPi.begin(), this->permLen, false);
+        computeOrbit(orbitPi.begin(), pi, this->gensetD, this->queue);
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "Delta_p = " << PointSet{orbitPi.begin(), this->permLen} << std::endl;
+        }
+#endif
+
+        nextAlphaTab.clear();
+        for (auto entry : currentAlphaTab) {
+#ifdef PPERM_DEBUG
+            if (this->verbose) {
+                std::cout << "working on entry " << this->permFormatter.formatRef(entry) << std::endl;
+            }
+#endif
+            auto s = entry.getS(), d = entry.getD();
+            auto next = this->boolSetPool.pushStacked(this->permLen);
+            arraySet(next.begin(), this->permLen, false);
+            mapPointSet(next.begin(), orbitB.begin(), s);
+#ifdef PPERM_DEBUG
+            if (this->verbose) {
+                std::cout << "Delta_b^s = " << PointSet{next.begin(), this->permLen} << std::endl;
+            }
+#endif
+            auto gd = this->permStack.pushStacked(this->permLen);
+            gd.multiply(perm, d);
+            auto gdInv = this->permStack.pushStacked(this->permLen);
+            gdInv.inverse(gd);
+            auto orbitPigdInv = this->boolSetPool.pushStacked(this->permLen);
+            arraySet(orbitPigdInv.begin(), this->permLen, false);
+            mapPointSet(orbitPigdInv.begin(), orbitPi.begin(), gdInv);
+            pointSetIntersection(next.begin(), orbitPigdInv.begin(), this->permLen);
+#ifdef PPERM_DEBUG
+            if (this->verbose) {
+                std::cout << "Delta_p^((gd)^-1) = " << PointSet{orbitPigdInv.begin(), this->permLen} << std::endl;
+                std::cout << "NEXT = " << PointSet{next.begin(), this->permLen} << std::endl;
+            }
+#endif
+
+            for (upoint_type j = 0; j < this->permLen; j++) if (next[j]) {
+                auto s1 = traceSchreierVector(this->permStack, s.inverseMapPoint(j), this->gensetS, this->orbitS.vector.get());
+                s1.multiply(s1, s);
+                auto d2 = this->permStack.pushStacked(this->permLen);
+                d2.inverse(traceSchreierVector(this->permStack, gd.mapPoint(j), this->gensetD, this->orbitD.vector.get()));
+                auto d1 = this->permStack.pushStacked(this->permLen);
+                d1.multiply(d, d2);
+
+#ifdef PPERM_DEBUG
+                if (this->verbose) {
+                    std::cout << "for j = " << j
+                        << ", s_1 = " << this->permFormatter.formatValue(s1)
+                        << ", d_1 = " << this->permFormatter.formatValue(d1)
+                        << std::endl;
+                }
+#endif
+                auto newEntry = nextAlphaTab.pushEntry();
+                newEntry.getS().copy(s1);
+                newEntry.getD().copy(d1);
+                newEntry.setL(entry.getL());
+                newEntry.appendToL(j);
+            }
+        }
+        this->alphaPtr = (this->alphaPtr + 1) & 1;
+
+        this->sgdSet.clear();
+        for (auto entry : nextAlphaTab) {
+            auto sgd = this->permStack.pushStacked(this->permLen);
+            sgd.multiply(entry.getS(), perm);
+            sgd.multiply(sgd, entry.getD());
+            this->sgdSet.addPermutation(sgd);
+        }
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "sgd = " << this->permFormatter.formatRef(this->sgdSet) << std::endl;
+        }
+#endif
+        for (auto elem : this->sgdSet) {
+            auto elem2 = this->permStack.pushStacked(this->permLen);
+            elem2.copy(elem);
+            elem2.setNegative(!elem2.isNegative());
+            if (this->sgdSet.findPermutation(elem2).isPresent()) {
+#ifdef PPERM_DEBUG
+                if (this->verbose) {
+                    std::cout << "found permutations with opposite signs "
+                        << this->permFormatter.formatValue(elem)
+                        << " and " << this->permFormatter.formatValue(elem2)
+                        << " in sgd"
+                        << std::endl;
+                }
+#endif
+                return std::nullopt;
+            }
+        }
+
+        this->stabilizeOnePoint(i, pi);
+#ifdef PPERM_DEBUG
+        if (this->verbose) {
+            std::cout << "TAB = {" << std::endl;
+            for (auto entry : this->alphas[this->alphaPtr]) {
+                std::cout << "    " << this->permFormatter.formatRef(entry) << std::endl;
+            }
+            std::cout << "}" << std::endl;
+            std::cout << "iteration i = " << i << " done" << std::endl;
+        }
+#endif
+    }
+    auto firstEntry = this->alphas[this->alphaPtr].get(0);
+    ret.multiply(firstEntry.getS(), perm);
+    ret.multiply(ret, firstEntry.getD());
+    return ret;
+}

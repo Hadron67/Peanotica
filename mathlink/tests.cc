@@ -2,8 +2,10 @@
 #include <iostream>
 #include <random>
 #include <cstring>
+#include <optional>
 
 using namespace pperm;
+using namespace pperm::meta;
 
 #define TEST(test) { std::cout << "Running test " #test << std::endl; if (!test) { std::cout << "TEST FAILED" << std::endl; passed = false; }  }
 #define EXPECT(expected, actual) {auto a1 = (expected); auto a2 = (actual); if (a1 != a2) {std::cout << "unexpected value on " << __FILE__ << ":" << __LINE__ << ", expected " << a1 << ", actual " << a2 << std::endl; return false;}}
@@ -177,8 +179,8 @@ static bool testBaseChange1() {
     upoint_type base[]{0, 1, 2, 3};
 
     BaseChanger changer;
-    changer.setSGS(makeSlice(base, 4), genset);
-    changer.interchange(1, stack);
+    changer.setSGS(genset);
+    changer.interchange(makeSlice(base, 4), 1, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(1, 3)).isPresent());
 
     return true;
@@ -199,10 +201,90 @@ static bool testBaseChange2() {
     upoint_type base[]{0, 8, 7, 9, 1, 11};
 
     BaseChanger changer;
-    changer.setSGS(makeSlice(base, 6), genset);
-    changer.interchange(0, stack);
+    changer.setSGS(genset);
+    changer.interchange(makeSlice(base, 6), 0, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 1, 2, 3, 5, 4, 6)).isPresent());
 
+    return true;
+}
+
+namespace {
+    struct Zero {};
+    template<typename T> struct OptPermutationBuilder {
+        static std::optional<StackedPermutation> build(PermutationStack &stack, std::size_t permLen) {
+            auto ret = stack.pushStacked(permLen);
+            T::assignPermutation(ret);
+            return ret;
+        }
+    };
+    template<>
+    struct OptPermutationBuilder<Zero> {
+        static std::optional<StackedPermutation> build(PermutationStack &stack, std::size_t permLen) {
+            return std::nullopt;
+        }
+    };
+    struct OptPermutationView {
+        const std::optional<StackedPermutation> &perm;
+        void print(std::ostream &os, PermutationFormatter &formatter) const {
+            if (this->perm.has_value()) {
+                this->perm.value().print(os, formatter);
+            } else {
+                os << "0";
+            }
+        }
+    };
+};
+
+template<unsigned int N, typename InputPerm, typename S, typename D, typename ExpectedPerm, bool Verbose = false>
+bool doubleCosetRepCase() {
+    PermutationStack stack(N * 16);
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
+    auto gensetS = S::build(N);
+    auto gensetD = D::build(N);
+    auto input = stack.pushStacked(N);
+    InputPerm::assignPermutation(input);
+    auto expected = OptPermutationBuilder<ExpectedPerm>::build(stack, N);
+
+    DoubleCosetRepresentativeSolver solver;
+    solver.verbose = Verbose;
+    solver.setUseCycles(true);
+    auto actual = solver.solve(gensetS, gensetD, input);
+    if (expected != actual) {
+        std::cout << "unexpected results on input g = " << formatter.formatValue(input)
+            << ", S = " << formatter.formatRef(gensetS)
+            << ", D = " << formatter.formatRef(gensetD)
+            << ", " << std::endl
+            << "    expected: " << formatter.formatValue(OptPermutationView{expected})
+            << ", actual " << formatter.formatValue(OptPermutationView{actual})
+            << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool testDoubleCosetRep() {
+    if(!doubleCosetRepCase<
+        4,
+        Images<1, 3, 2, 0>,
+        RiemannSymmetric<0, 1, 2, 3>,
+        Symmetric<1, 2>,
+        Neg<Images<0, 1, 2, 3>>
+    >()) return false;
+    if (!doubleCosetRepCase<
+        4,
+        Images<1, 3, 2, 0>,
+        RiemannSymmetric<0, 1, 2, 3>,
+        Symmetric<1, 3>,
+        Zero
+    >()) return false;
+    if (!doubleCosetRepCase<
+        8,
+        Images<0, 2, 4, 6, 1, 3, 7, 5>,
+        Join<RiemannSymmetric<0, 1, 2, 3>, RiemannSymmetric<4, 5, 6, 7>, GenSet<SCycles<List<0, 4>, List<1, 5>, List<2, 6>, List<3, 7>>>>,
+        Join<Symmetric<0, 1>, Symmetric<2, 3>, Symmetric<4, 5>, Symmetric<6, 7>>,
+        Neg<Images<0, 2, 4, 6, 1, 3, 5, 7>>
+    >()) return false;
     return true;
 }
 
@@ -216,6 +298,7 @@ int main(int argc, const char *args[]) {
     TEST(testCyclesConvert());
     TEST(testBaseChange1());
     TEST(testBaseChange2());
+    TEST(testDoubleCosetRep());
     if (passed) {
         std::cout << "All tests passed" << std::endl;
         return 0;

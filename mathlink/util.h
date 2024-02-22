@@ -150,18 +150,91 @@ struct Slice {
     Slice<T> slice(std::size_t begin, std::size_t len) const {
         return Slice<T>{this->ptr + begin, len};
     }
+    Slice<T> slice(std::size_t begin) const {
+        return Slice<T>{this->ptr + begin, this->len - begin};
+    }
+    T *begin() const {
+        return this->ptr;
+    }
+    T *end() const {
+        return this->ptr + this->len;
+    }
+    void copy(Slice<T> l) const {
+        auto ptr = this->ptr, ptr2 = l.ptr;
+        for (std::size_t i = 0; i < this->len && i < l.len; i++, ptr++, ptr2++) {
+            *ptr = *ptr2;
+        }
+    }
 
     const T &operator [] (std::size_t i) const {
+#ifdef PPERM_DEBUG
+        if (i >= this->len) {
+            throw std::runtime_error("index out of bounds");
+        }
+#endif
         return this->ptr[i];
     }
     T &operator [] (std::size_t i) {
+#ifdef PPERM_DEBUG
+        if (i >= this->len) {
+            throw std::runtime_error("index out of bounds");
+        }
+#endif
         return this->ptr[i];
+    }
+    std::size_t indexOf(const T &val) {
+        auto ptr = this->ptr;
+        for (std::size_t i = 0; i < this->len; i++, ptr++) {
+            if (*ptr == val) {
+                return i;
+            }
+        }
+        return this->len;
+    }
+
+    int compare(Slice<T> other) const {
+        if (this->len != other.len) {
+            return this->len > other.len ? 1 : -1;
+        }
+        auto ptr1 = this->ptr, ptr2 = other.ptr;
+        for (std::size_t i = 0; i < this->len; i++, ptr1++, ptr2++) {
+            auto c1 = *ptr1, c2 = *ptr2;
+            if (c1 > c2) {
+                return 1;
+            }
+            if (c1 < c2) {
+                return -1;
+            }
+        }
+        return 0;
+    }
+    std::size_t hash() const {
+        // TODO: use a better hasher
+        std::size_t ret = 5381;
+        auto ptr = this->ptr;
+        for (std::size_t i = 0; i < this->len; i++) {
+            ret = ret * 33 + *ptr++;
+        }
+        return ret;
     }
 };
 
 template<typename T>
 inline Slice<T> makeSlice(T *ptr, std::size_t len) {
     return Slice<T>{ptr, len};
+}
+
+template<typename T>
+inline std::ostream &operator << (std::ostream &os, Slice<T> slice) {
+    bool first = true;
+    for (auto t : slice) {
+        if (!first) {
+            os << ", ";
+        }
+        first = false;
+        os << t;
+    }
+    return os;
 }
 
 template<typename T>
@@ -1251,8 +1324,12 @@ struct HashTable {
     }
 };
 
+template<typename T> struct StackedArray;
+
 template<typename T>
 struct OBStack {
+    std::size_t blockSize = 16;
+    OBStack() = default;
     OBStack(std::size_t blockSize): blockSize(blockSize) {}
     OBStack(const OBStack<T> &) = delete;
     OBStack(OBStack<T> &&) = default;
@@ -1312,15 +1389,49 @@ struct OBStack {
             }
         }
     }
+    inline StackedArray<T> pushStacked(std::size_t count);
     private:
     struct Block {
         T *ptr;
         std::size_t len, size;
     };
-    std::size_t blockSize;
     std::size_t allocPtr = 0;
     std::vector<Block> blocks;
 };
+
+template<typename T>
+struct StackedArray {
+    StackedArray(OBStack<T> &stack, std::size_t len): stack(&stack), ptr(stack.push(len)), len(len) {}
+    StackedArray(const StackedArray<T> &) = delete;
+    StackedArray(StackedArray<T> &&other): stack(other.stack), ptr(other.ptr), len(other.len) {
+        other.forget();
+    }
+    ~StackedArray() {
+        if (this->stack) {
+            this->stack->pop(this->len);
+        }
+    }
+    void forget() {
+        this->stack = nullptr;
+    }
+    T *begin() const { return this->ptr; }
+    T *end() const { return this->ptr + this->len; }
+    const T &operator [] (std::size_t i) const {
+        return this->ptr[i];
+    }
+    T &operator [] (std::size_t i) {
+        return this->ptr[i];
+    }
+    private:
+    OBStack<T> *stack;
+    T *ptr;
+    std::size_t len;
+};
+
+template<typename T>
+inline StackedArray<T> OBStack<T>::pushStacked(std::size_t count) {
+    return StackedArray<T>(*this, count);
+}
 
 template<typename T>
 struct Array2d {
@@ -1330,6 +1441,27 @@ struct Array2d {
 
 template<typename T>
 struct ArrayVector {
+    struct Iterator {
+        Iterator(const Iterator &other) = default;
+        T *operator * () const {
+            return this->ptr;
+        }
+        Iterator &operator ++ () {
+            this->ptr += this->step;
+            return *this;
+        }
+        bool operator == (Iterator other) const {
+            return this->ptr == other.ptr;
+        }
+        std::size_t getElementSize() const {
+            return this->step;
+        }
+        private:
+        Iterator(T *ptr, std::size_t step): ptr(ptr), step(step) {}
+        T *ptr;
+        std::size_t step;
+        friend ArrayVector<T>;
+    };
     ArrayVector() = default;
     ArrayVector(std::size_t elementLen): elementLen(elementLen) {}
     ArrayVector(const ArrayVector &) = default;
@@ -1351,11 +1483,17 @@ struct ArrayVector {
     std::size_t getElementSize() const {
         return this->elementLen;
     }
+    const T *get(std::size_t i) const {
+        return this->data.data() + this->elementLen * i;
+    }
+    T *get(std::size_t i) {
+        return this->data.data() + this->elementLen * i;
+    }
     const T *operator[] (std::size_t i) const {
-        return this->data.data() + this->elementLen*i;
+        return this->get(i);
     }
     T *operator[] (std::size_t i) {
-        return this->data.data() + this->elementLen*i;
+        return this->get(i);
     }
     void pop() {
         this->data.resize(this->data.size() - this->elementLen);
@@ -1372,17 +1510,36 @@ struct ArrayVector {
         return this->data.data() + (this->data.size() - this->elementLen);
     }
     void remove(std::size_t index) {
-        auto dataPtr = this->data.data() + index, dataPtr2 = dataPtr + this->elementLen;
+        auto dataPtr = this->data.data() + index*this->elementLen, dataPtr2 = dataPtr + this->elementLen;
         auto size = this->getSize();
         for (std::size_t i = 0; i < this->elementLen * (size - 1 - index); i++) {
             *dataPtr++ = *dataPtr2++;
         }
         this->data.resize(this->data.size() - this->elementLen);
     }
+    Iterator begin() {
+        return Iterator(this->data.data(), this->elementLen);
+    }
+    Iterator end() {
+        return Iterator(this->data.data() + this->data.size(), this->elementLen);
+    }
     private:
     std::size_t elementLen = 0;
     std::vector<T> data;
 };
+
+template<typename Self, typename Arg>
+struct BindLeftShift {
+    private:
+    Arg arg;
+    Self &self;
+    friend std::ostream &operator << (std::ostream &os, BindLeftShift<Self, Arg> &b);
+};
+
+template<typename Self, typename Arg>
+inline std::ostream &operator << (std::ostream &os, BindLeftShift<Self, Arg> &b) {
+    b.self.applyLeftShift(b.arg);
+}
 
 struct Logger {
 

@@ -2,7 +2,7 @@ MLINKDIR = /Applications/Mathematica.app/Contents/SystemFiles/Links/MathLink/Dev
 SYS = MacOSX-ARM64
 CADDSDIR = ${MLINKDIR}/CompilerAdditions
 
-CXXFLAGS = -std=c++20 -stdlib=libstdc++ -stdlib=libc++ -stdlib=libc++ -Wall -g -ggdb -fsanitize=address -I${CADDSDIR}
+CXXFLAGS = -std=c++20 -stdlib=libstdc++ -stdlib=libc++ -stdlib=libc++ -Wall -g -ggdb -DPPERM_DEBUG -fsanitize=address -I${CADDSDIR}
 LDFLAGS = -L${CADDSDIR} -lMLi4 -lm -fsanitize=address -framework Foundation
 
 MPREP = ${CADDSDIR}/mprep
