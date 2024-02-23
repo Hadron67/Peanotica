@@ -690,6 +690,29 @@ void BaseChanger::interchange(Slice<upoint_type> base, std::size_t pos, Permutat
     std::swap(base[pos], base[pos + 1]);
 }
 
+std::size_t GroupOrderCalculator::nextFactor() {
+    if (this->stabilizer < this->genset.getPermutationLength()) {
+        auto permLen = this->genset.getPermutationLength();
+        arraySet(this->orbit.get(), permLen, false);
+        computeOrbit(this->orbit.get(), this->stabilizer, this->genset, this->queue);
+        auto ret = std::count(this->orbit.get(), this->orbit.get() + permLen, true);
+        stabilizerInPlace(this->genset, this->stabilizer);
+        this->stabilizer++;
+        return ret;
+    } else {
+        return 1;
+    }
+}
+
+std::size_t GroupOrderCalculator::order() {
+    auto permLen = this->genset.getPermutationLength();
+    std::size_t ret = 1;
+    for (std::size_t i = 0; i < permLen; i++) {
+        ret *= this->nextFactor();
+    }
+    return ret;
+}
+
 namespace {
     struct AlphaTableHashContext {
         AlphaTable *self;
@@ -803,8 +826,7 @@ void DoubleCosetRepresentativeSolver::stabilizeOnePoint(upoint_type b, upoint_ty
     auto pos = base.indexOf(p);
     this->baseChanger.moveToFirst(base, pos, this->permStack);
     this->gensetDBase.erase(this->gensetDBase.begin());
-    this->gensetD.clear();
-    this->gensetD.addAll(this->baseChanger.genset.begin(), this->baseChanger.genset.end());
+    this->gensetD.copy(this->baseChanger.genset);
 #ifdef PPERM_DEBUG
     if (this->verbose) {
         std::cout << "after base change, D = " << this->permFormatter.formatRef(this->gensetD) << std::endl;
@@ -828,10 +850,8 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(Permuta
     }
 #endif
     this->setPermutationLength(gensetS.getPermutationLength());
-    this->gensetS.addAll(gensetS.begin(), gensetS.end());
-    this->gensetD.addAll(gensetD.begin(), gensetD.end());
-    this->boolSetPool.blockSize = this->permLen * 16;
-    this->permStack.setBlockSize(this->permLen * 16);
+    this->gensetS.copy(gensetS);
+    this->gensetD.copy(gensetD);
 
     auto ret = this->permStack.pushStacked(this->permLen);
 

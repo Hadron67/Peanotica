@@ -13,17 +13,7 @@ using namespace pperm;
 
 int WSDone = 0, WSAbort = 0;
 
-WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n)) {
-    switch (message){
-        case WSTerminateMessage:
-            WSDone = 1;
-        case WSInterruptMessage:
-        case WSAbortMessage:
-            WSAbort = 1;
-        default:
-            return;
-    }
-}
+WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n));
 
 static bool readPermutation(WSLINK link, PermutationView perm) {
     int len2;
@@ -35,6 +25,7 @@ static bool readPermutation(WSLINK link, PermutationView perm) {
         perm.setNegative(true);
     } else {
         TRY(sign == 1);
+        perm.setNegative(false);
     }
     auto images = perm.images();
     for (std::size_t i = 0; i < perm.len; i++, images++) {
@@ -56,72 +47,28 @@ static bool readPermutationList(WSLINK link, PermutationList &list) {
 }
 
 static bool writePermutation(WSLINK link, PermutationView perm) {
-    WSPutFunction(link, "List", perm.len + 1);
+    TRY(WSPutFunction(link, "List", perm.len + 1));
     if (perm.isNegative()) {
-        WSPutInteger32(link, -1);
+        TRY(WSPutInteger32(link, -1));
     } else {
-        WSPutInteger32(link, 1);
+        TRY(WSPutInteger32(link, 1));
     }
     auto ptr = perm.images();
     for (std::size_t i = 0; i < perm.len; i++, ptr++) {
-        WSPutInteger64(link, *ptr + 1);
+        TRY(WSPutInteger64(link, *ptr + 1));
     }
+    return true;
 }
 
 static bool writePermutationList(WSLINK link, PermutationList &list) {
-    WSPutFunction(link, "List", list.getSize());
+    TRY(WSPutFunction(link, "List", list.getSize()));
     for (auto perm : list) {
-        writePermutation(link, perm);
+        TRY(writePermutation(link, perm));
     }
     return true;
 }
 
 namespace {
-    struct WSInterger32List {
-        WSLINK link;
-        int *data = nullptr;
-        int len = 0;
-        WSInterger32List() = default;
-        WSInterger32List(const WSInterger32List &) = delete;
-        WSInterger32List(WSInterger32List &&other) {
-            this->link = other.link;
-            this->data = other.data;
-            this->len = other.len;
-            other.data = nullptr;
-            other.len = 0;
-        };
-        bool init(WSLINK link) {
-            return WSGetInteger32List(link, &this->data, &this->len);
-        }
-        ~WSInterger32List() {
-            if (this->data) {
-                WSReleaseInteger32List(this->link, this->data, this->len);
-            }
-        }
-    };
-    struct WSInterger64List {
-        WSLINK link;
-        wsint64 *data = nullptr;
-        int len = 0;
-        WSInterger64List() = default;
-        WSInterger64List(const WSInterger64List &) = delete;
-        WSInterger64List(WSInterger64List &&other) {
-            this->link = other.link;
-            this->data = other.data;
-            this->len = other.len;
-            other.data = nullptr;
-            other.len = 0;
-        };
-        bool init(WSLINK link) {
-            return WSGetInteger64List(link, &this->data, &this->len);
-        }
-        ~WSInterger64List() {
-            if (this->data) {
-                WSReleaseInteger64List(this->link, this->data, this->len);
-            }
-        }
-    };
-
     struct WSTPEnv {
         WSLINK stdlink = nullptr;
         WSEnvironment stdenv = nullptr;
@@ -139,21 +86,23 @@ namespace {
             }
             int err;
             this->stdlink = commandline ? WSOpenString(stdenv, commandline, &err) : WSOpenArgcArgv(stdenv, argv_end - argv, argv, &err);
-            if(this->stdlink == nullptr){
-                WSAlert(stdenv, WSErrorString( stdenv, err));
+            if(this->stdlink == nullptr) {
+                WSAlert(stdenv, WSErrorString(stdenv, err));
                 return false;
             }
+            TRY(WSSetMessageHandler(this->stdlink, WSDefaultHandler));
+            WSSetUserData(this->stdlink, static_cast<void *>(this), nullptr);
 
             const char *logFileName = std::getenv("PPERM_LOG_FILE");
             if (logFileName == nullptr) {
                 logFileName = "ppermlog.txt";
             }
             this->logFile.open(logFileName, std::ios_base::app);
+            this->logFile << std::endl;
             return true;
         };
         void mainLoop() {
             wsapi_packet pkt = 0;
-            int waitResult;
 
             this->defineFunctions();
             while(!WSDone && !WSError(this->stdlink)
@@ -179,16 +128,14 @@ namespace {
             }
         }
         private:
-        WSYieldFunctionObject stdyielder = (WSYieldFunctionObject)nullptr;
-        WSMessageHandlerObject stdhandler = (WSMessageHandlerObject)nullptr;
         std::vector<FunctionEntry> functions;
 
         bool definePattern(const char *patt, const char *args, int func_n) const {
-            WSPutFunction(this->stdlink, "DefineExternal", (long)3);
-            WSPutString(this->stdlink, patt);
-            WSPutString(this->stdlink, args);
-            WSPutInteger(this->stdlink, func_n);
-            return !WSError(this->stdlink);
+            TRY(WSPutFunction(this->stdlink, "DefineExternal", 3));
+            TRY(WSPutString(this->stdlink, patt));
+            TRY(WSPutString(this->stdlink, args));
+            TRY(WSPutInteger(this->stdlink, func_n));
+            return true;
         }
         bool defineFunctions() const {
             TRY(WSConnect(this->stdlink));
@@ -223,7 +170,16 @@ namespace {
 
 static void registerFunctions(WSTPEnv &env) {
     env.registerFunction(
-        PREFIX "MathLinkConstructStrongGenSet[" P_PREFIX "GS_List, " P_PREFIX "n_Integer]",
+        P_PREFIX "CheckLink[]",
+        "{}",
+        [](WSTPEnv &env) -> bool {
+            TRY(WSNewPacket(env.stdlink));
+            TRY(WSPutSymbol(env.stdlink, "True"));
+            return true;
+        }
+    );
+    env.registerFunction(
+        P_PREFIX "MathLinkConstructStrongGenSet[" P_PREFIX "GS_List, " P_PREFIX "n_Integer]",
         "{" P_PREFIX "n, " P_PREFIX "GS}",
         [](WSTPEnv &env) -> bool {
             int permLen;
@@ -242,18 +198,64 @@ static void registerFunctions(WSTPEnv &env) {
         }
     );
     env.registerFunction(
-        PREFIX "TestFunction[" P_PREFIX "n_]",
-        "{" P_PREFIX "n}",
+        P_PREFIX "MathLinkDoubleCosetRepresentative[" P_PREFIX "S_List, " P_PREFIX "g_List, " P_PREFIX "D_List, " P_PREFIX "n_Integer" "]",
+        "{" P_PREFIX "n, " P_PREFIX "S, " P_PREFIX "g, " P_PREFIX "D}",
         [](WSTPEnv &env) -> bool {
-            int val;
-            TRY(WSGetInteger32(env.stdlink, &val));
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            PermutationList gensetS(permLen), gensetD(permLen);
+            PermutationStack stack(permLen * 8);
+            auto perm = stack.pushStacked(permLen);
+            TRY(readPermutationList(env.stdlink, gensetS));
+            TRY(readPermutation(env.stdlink, perm));
+            TRY(readPermutationList(env.stdlink, gensetD));
 
+            DoubleCosetRepresentativeSolver solver;
+            auto ret = solver.solve(gensetS, gensetD, perm);
             TRY(WSNewPacket(env.stdlink));
-            TRY(WSPutFunction(env.stdlink, "List", 1));
-            TRY(WSPutInteger32(env.stdlink, val + 1));
+            if (ret.has_value()) {
+                TRY(writePermutation(env.stdlink, *ret));
+            } else {
+                TRY(WSPutInteger32(env.stdlink, 0));
+            }
             return true;
         }
     );
+    env.registerFunction(
+        P_PREFIX "MathLinkGroupOrderFromStrongGenSet[" P_PREFIX "G_List, " P_PREFIX "n_Integer]",
+        "{" P_PREFIX "n, " P_PREFIX "G}",
+        [](WSTPEnv &env) -> bool {
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            PermutationList genset(permLen);
+            TRY(readPermutationList(env.stdlink, genset));
+
+            GroupOrderCalculator calc;
+            calc.setGroup(genset);
+            TRY(WSNewPacket(env.stdlink));
+            TRY(WSPutFunction(env.stdlink, "Times", permLen));
+            for (int i = 0; i < permLen; i++) {
+                TRY(WSPutInteger64(env.stdlink, calc.nextFactor()));
+            }
+            return true;
+        }
+    );
+}
+
+WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n)) {
+    WSTPEnv &env = *static_cast<WSTPEnv *>(WSUserData(wslp, nullptr));
+    switch (message) {
+        case WSTerminateMessage:
+            WSDone = 1;
+            env.logFile << "terminated message received" << std::endl;
+        case WSInterruptMessage:
+        case WSAbortMessage:
+            WSAbort = 1;
+            env.logFile << "aborting message received, exiting" << std::endl;
+            std::exit(0);
+        default:
+            return;
+    }
 }
 
 int main(int argc, char *args[]) {

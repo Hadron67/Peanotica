@@ -132,20 +132,6 @@ inline PermutationView &PermutationView::cycle(T... args) {
     return *this;
 }
 
-struct Cycles {
-    struct Iterator {
-        private:
-        std::size_t i, size;
-        upoint_type *ptr;
-        friend Cycles;
-    };
-    upoint_type *data;
-
-    Iterator begin() const {
-
-    }
-};
-
 struct CyclesConverter {
     ~CyclesConverter() {
         if (this->data) delete[] this->data;
@@ -275,6 +261,12 @@ struct PermutationList {
             this->addPermutation(*iter);
         }
     }
+    template<typename Set>
+    void copy(Set &set) {
+        this->clear();
+        this->setPermutationLength(set.getPermutationLength());
+        this->addAll(set.begin(), set.end());
+    }
     void print(std::ostream &os, PermutationFormatter &formatter);
     private:
     ArrayVector<upoint_type> data;
@@ -387,6 +379,12 @@ struct PermutationSet {
     }
     void print(std::ostream &os, PermutationFormatter &format) {
         this->permutations.print(os, format);
+    }
+    template<typename Set>
+    void copy(Set &set) {
+        this->clear();
+        this->setPermutationLength(set.getPermutationLength());
+        this->addAll(set.begin(), set.end());
     }
     private:
     HashTable<std::uint32_t> permToId;
@@ -780,9 +778,26 @@ struct DoubleCosetRepresentativeSolver {
         this->gensetS.setPermutationLength(permLen);
         this->gensetD.setPermutationLength(permLen);
         this->sgdSet.setPermutationLength(permLen);
+        this->boolSetPool.blockSize = this->permLen * 16;
+        this->permStack.setBlockSize(this->permLen * 16);
     }
     void subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm);
     void stabilizeOnePoint(upoint_type b, upoint_type p);
+};
+
+struct GroupOrderCalculator {
+    void setGroup(PermutationList &list) {
+        this->stabilizer = 0;
+        this->orbit.ensureSize(list.getPermutationLength());
+        this->genset.copy(list);
+    }
+    std::size_t nextFactor();
+    std::size_t order();
+    private:
+    PermutationList genset;
+    Array<bool> orbit;
+    std::deque<upoint_type> queue;
+    std::size_t stabilizer;
 };
 
 namespace meta {

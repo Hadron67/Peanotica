@@ -208,6 +208,14 @@ static bool testBaseChange2() {
     return true;
 }
 
+static bool testGroupOrder() {
+    auto genset = GenSet<Neg<SCycles<List<0, 1>>>, Neg<SCycles<List<2, 3>>>, SCycles<List<0, 2>, List<1, 3>>>::build(4);
+    GroupOrderCalculator calc;
+    calc.setGroup(genset);
+    EXPECT(8, calc.order());
+    return true;
+}
+
 namespace {
     struct Zero {};
     template<typename T> struct OptPermutationBuilder {
@@ -285,6 +293,13 @@ bool testDoubleCosetRep() {
         Join<Symmetric<0, 1>, Symmetric<2, 3>, Symmetric<4, 5>, Symmetric<6, 7>>,
         Neg<Images<0, 2, 4, 6, 1, 3, 5, 7>>
     >()) return false;
+    if (!doubleCosetRepCase<
+        4,
+        Images<2, 3, 1, 0>,
+        RiemannSymmetric<0, 1, 2, 3>,
+        GenSet<>,
+        Neg<Images<0, 1, 2, 3>>
+    >()) return false;
     return true;
 }
 
@@ -298,6 +313,7 @@ int main(int argc, const char *args[]) {
     TEST(testCyclesConvert());
     TEST(testBaseChange1());
     TEST(testBaseChange2());
+    TEST(testGroupOrder());
     TEST(testDoubleCosetRep());
     if (passed) {
         std::cout << "All tests passed" << std::endl;
