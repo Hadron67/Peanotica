@@ -766,17 +766,18 @@ void BaseChanger::completeBaseChange(MutableSlice<upoint_type> base, Slice<upoin
     }
 }
 
-void BaseChanger::makeFirstPoint(Slice<upoint_type> base, upoint_type point, PermutationStack &stack) {
+void BaseChanger::makeFirstPoint(MutableSlice<upoint_type> base, upoint_type point, PermutationStack &stack) {
     auto permLen = this->genset.getPermutationLength();
     std::size_t pos = 0;
+    auto baseLen = base.getLength();
     this->orbit1.reset(permLen);
     this->orbit1.appendOrbit(point, this->genset.permutations, this->queue);
-    while (pos < base.len) {
+    while (pos < baseLen) {
         if (this->orbit1.pointToOrbitId[base[pos]].isPresent()) {
             auto gInv = traceSchreierVector(stack, base[pos], this->genset.permutations, this->orbit1.vector.get());
             auto g = stack.pushStacked(permLen);
             g.inverse(gInv);
-            for (std::size_t i = 0; i < base.len; i++) {
+            for (std::size_t i = 0; i < baseLen; i++) {
                 base[i] = g.mapPoint(base[i]);
             }
             auto tmp = stack.pushStacked(permLen);
@@ -789,7 +790,10 @@ void BaseChanger::makeFirstPoint(Slice<upoint_type> base, upoint_type point, Per
         }
         pos++;
     }
-
+    if (pos == baseLen) {
+        base.append(point);
+    }
+    this->moveToFirstDirectly(base, pos, stack);
 }
 
 std::size_t GroupOrderCalculator::nextFactor() {
@@ -816,16 +820,16 @@ std::size_t GroupOrderCalculator::order() {
 }
 
 void BaseChangingStrongGenSetProvider::stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) {
-    auto pos = base.indexOf(point);
-    if (pos > 0) {
-        this->baseChanger->setSGS(this->genset);
-        upoint_type newBase[]{point};
-        auto newBaseSlice = makeSlice(newBase, 1);
-        // this->baseChanger->moveToFirst(base, pos, stack);
-        this->baseChanger->completeBaseChange(base, newBaseSlice, stack);
+    this->baseChanger->setSGS(this->genset);
+    upoint_type newBase[]{point};
+    auto newBaseSlice = makeSlice(newBase, 1);
+    this->baseChanger->makeFirstPoint(base, point, stack);
+    // this->baseChanger->completeBaseChange(base, newBaseSlice, stack);
+    if (base.getLength() > 0) {
+        assert(base[0] == point);
+        base.shift();
+        stabilizerInPlace(this->genset, point);
     }
-    base.shift();
-    stabilizerInPlace(this->genset, point);
 }
 PermutationList &BaseChangingStrongGenSetProvider::getStrongGenSet() {
     return this->genset;
@@ -929,46 +933,46 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
     this->baseChangeOfSTime = 0;
 
     // set up bases
-//     auto baseProvider = [](std::size_t i) { return i; };
-//     auto tmpBase = makeSlice(this->getTmpBase(), 0);
-//     filterBasePoints([&](upoint_type p) { tmpBase[tmpBase.len++] = p; }, baseProvider, this->permLen, gensetSProvider.getStrongGenSet(), this->baseFilterTmp);
-//     this->initialBaseSLen = tmpBase.len;
-//     this->baseSStart = this->permLen - tmpBase.len;
-//     this->getInitialBaseS().copy(tmpBase);
-//     this->getBaseS().copy(tmpBase);
-//     tmpBase.len = 0;
-//     filterBasePoints([&](upoint_type p) { tmpBase[tmpBase.len++] = p; }, baseProvider, this->permLen, gensetD, this->baseFilterTmp);
-//     this->baseDStart = this->permLen - tmpBase.len;
-//     this->getBaseD().copy(tmpBase);
-// #ifdef PPERM_DEBUG
-//     if (this->log) {
-//         *this->log << "initial base(S) = {" << this->getInitialBaseS() << "}" << std::endl
-//             << "initial base (D) = {" << this->getBaseD() << "}" << std::endl;
-//     }
-// #endif
-    this->initialBaseSLen = this->permLen;
-    this->baseSLen = this->permLen;
-    this->baseDLen = this->permLen;
-    auto initialBaseS = this->getInitialBaseS().toSlice(), baseS = this->getBaseS().toSlice(), baseD = this->getBaseD().toSlice();
-    for (upoint_type p = 0; p < this->permLen; p++) {
-        initialBaseS[p] = p;
-        baseS[p] = p;
-        baseD[p] = p;
+    auto baseProvider = [](std::size_t i) { return i; };
+    std::size_t tmpBaseLen = 0;
+    auto tmpBase = MutableSlice(this->getTmpBase(), tmpBaseLen);
+    auto baseAcceptor = [&tmpBase](upoint_type p) { tmpBase.append(p); };
+    filterBasePoints(baseAcceptor, baseProvider, this->permLen, gensetSProvider.getStrongGenSet(), this->baseFilterTmp);
+    this->getInitialBaseS().fullCopy(tmpBase);
+    this->getBaseS().fullCopy(tmpBase);
+    tmpBaseLen = 0;
+    filterBasePoints(baseAcceptor, baseProvider, this->permLen, gensetD, this->baseFilterTmp);
+    this->getBaseD().fullCopy(tmpBase);
+#ifdef PPERM_DEBUG
+    if (this->log) {
+        *this->log << "initial base(S) = {" << this->getInitialBaseS() << "}" << std::endl
+            << "initial base (D) = {" << this->getBaseD() << "}" << std::endl;
     }
+#endif
+    // this->initialBaseSLen = this->permLen;
+    // this->baseSLen = this->permLen;
+    // this->baseDLen = this->permLen;
+    // auto initialBaseS = this->getInitialBaseS().toSlice(), baseS = this->getBaseS().toSlice(), baseD = this->getBaseD().toSlice();
+    // for (upoint_type p = 0; p < this->permLen; p++) {
+    //     initialBaseS[p] = p;
+    //     baseS[p] = p;
+    //     baseD[p] = p;
+    // }
 
-    if (this->useTwoStep) {
-        upoint_type minNonFixedPointOfD = this->permLen;
-        for (auto p : gensetD) {
-            auto p2 = p.firstNonFixedPoint();
-            if (p2 < minNonFixedPointOfD) {
-                minNonFixedPointOfD = p2;
-            }
+    upoint_type minNonFixedPointOfD = this->permLen;
+    for (auto p : gensetD) {
+        auto p2 = p.firstNonFixedPoint();
+        if (p2 < minNonFixedPointOfD) {
+            minNonFixedPointOfD = p2;
         }
+    }
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "minNonFixedPointOfD = " << minNonFixedPointOfD << std::endl;
         }
 #endif
+
+    if (this->useTwoStep) {
         auto start = std::chrono::system_clock::now();
         auto perm2 = this->solveRightCosetRepresentative(perm, gensetSProvider, minNonFixedPointOfD);
         auto middle = std::chrono::system_clock::now();
@@ -983,8 +987,12 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
         }
         return ret;
     } else {
-        // no need to extend base of S, it's full
         auto start = std::chrono::system_clock::now();
+        this->baseSLen = this->permLen;
+        auto base = this->getBaseS().toSlice();
+        for (upoint_type p = 0; p < this->permLen; p++) {
+            base[p] = p;
+        }
         auto ret = this->solveDoubleCosetRepresentative(gensetSProvider, gensetDProvider, perm, 0);
         auto end = std::chrono::system_clock::now();
         if (this->log) {
@@ -1009,7 +1017,7 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
 #ifdef PPERM_DEBUG
     if (this->log) {
         *this->log << "========= begin right coset representative subroutine =======" << std::endl;
-        *this->log << "g = " << this->permFormatter.formatValue(perm) << std::endl;
+        *this->log << "g = " << perm << std::endl;
     }
 #endif
     auto freesOwned = this->boolSetPool.pushStacked(this->permLen), freesOwned2 = this->boolSetPool.pushStacked(this->permLen);
@@ -1036,6 +1044,7 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
     std::size_t foundFrees = 0;
     auto freeCount = std::count(frees, frees + this->permLen, true);
     auto initialBaseS = this->getInitialBaseS().toSlice();
+    auto baseS = this->getBaseS();
     for (upoint_type i = 0; i < initialBaseS.len && foundFrees < freeCount; i++) {
         auto basePoint = initialBaseS[i];
         auto &gensetS = gensetSProvider.getStrongGenSet();
@@ -1043,8 +1052,8 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
         if (this->log) {
             *this->log << "======= iteration i = " << i
                 << ", S = " << this->permFormatter.formatRef(gensetS)
-                << ", base(S) = {" << this->getBaseS() << "}"
-                << ", g = " << this->permFormatter.formatValue(perm2)
+                << ", base(S) = {" << baseS << "}"
+                << ", g = " << perm2
                 << ", frees = " << PointSet{frees, this->permLen} << std::endl;
             *this->log << "working on point " << basePoint << std::endl;
         }
@@ -1094,17 +1103,18 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
         }
 #endif
         this->baseChangeOfSTime += measureElapsed([&]() {
-            gensetSProvider.stabilizeOnePoint(this->permStack, this->getBaseS(), basePoint);
+            gensetSProvider.stabilizeOnePoint(this->permStack, baseS, basePoint);
         }).count();
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "S_" << basePoint << " = " << this->permFormatter.formatRef(gensetSProvider.getStrongGenSet()) << std::endl;
+            *this->log << "new base(S) = {" << baseS << "}" << std::endl;
         }
 #endif
     }
 #ifdef PPERM_DEBUG
     if (this->log) {
-        *this->log << "end of right coset representative, g = " << this->permFormatter.formatValue(perm2) << std::endl;
+        *this->log << "end of right coset representative, g = " << perm2 << std::endl;
     }
 #endif
     return perm2;
@@ -1126,6 +1136,7 @@ void DoubleCosetRepresentativeSolver::extendBaseS(upoint_type minNonFixedPointOf
     for (auto b : this->getBaseS()) {
         nonFixedPoints[b] = true;
     }
+    // FIXME: generally wrong as this reorders base points in S, but may valid for tensor symmetries.
     this->baseSLen = 0;
     auto baseS = this->getBaseS();
     for (upoint_type p = 0; p < this->permLen; p++) if (nonFixedPoints[p]) {
@@ -1227,6 +1238,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 
         // Note: the ordering for determining the minimal point is just a convention
         auto pi = findFirstPoint(images.begin(), this->permLen);
+        // auto pi = minPointWithRespectToBase(images.begin(), this->permLen, baseS);
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "pi = " << pi << std::endl;
@@ -1359,7 +1371,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
     ret.multiply(ret, firstEntry.getD());
 #ifdef PPERM_DEBUG
     if (this->log) {
-        *this->log << "end of double coset representative, result ret = " << this->permFormatter.formatValue(ret) << std::endl;
+        *this->log << "end of double coset representative, result ret = " << ret << std::endl;
     }
 #endif
     return ret;

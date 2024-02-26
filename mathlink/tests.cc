@@ -177,7 +177,6 @@ static bool testBaseChange1() {
     genset.push().identity().cycle(1, 2);
     genset.push().identity().cycle(2, 3);
     upoint_type base[]{0, 1, 2, 3};
-    std::size_t len;
 
     BaseChanger changer;
     changer.setSGS(genset);
@@ -403,6 +402,7 @@ static bool testDoubleCosetRep() {
         GenSet<>,
         Neg<Images<0, 1, 2, 3>>
     >()) return false;
+    if (!doubleCosetRepRiemannMonomialCase<1, 2, Images<2, 1, 0, 3>, Neg<Images<0, 2, 1, 3>>>()) return false;
     if (!doubleCosetRepRiemannMonomialCase<2, 0, Images<5, 6, 1, 3, 2, 4, 7, 0>, Images<0, 2, 4, 6, 1, 5, 3, 7>>()) return false;
     if (!doubleCosetRepRiemannMonomialCase<2, 4, Images<7, 2, 5, 0, 4, 6, 3, 1>, Neg<Images<0, 4, 2, 6, 1, 3, 5, 7>>>()) return false;
     if (!doubleCosetRepRiemannMonomialCase<

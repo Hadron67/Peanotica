@@ -664,7 +664,7 @@ struct BaseChanger {
             pos--;
         }
     }
-    void makeFirstPoint(Slice<upoint_type> base, upoint_type point, PermutationStack &stack);
+    void makeFirstPoint(MutableSlice<upoint_type> base, upoint_type point, PermutationStack &stack);
     void completeBaseChange(MutableSlice<upoint_type> base, Slice<upoint_type> newBase, PermutationStack &stack);
     private:
     PermutationSet newGens;

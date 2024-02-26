@@ -159,7 +159,7 @@ struct SliceTraits {
     }
     void copy(CC l) const {
         auto ptr = static_cast<const CC *>(this)->ptr, ptr2 = l.ptr;
-        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength() && i < l.len; i++, ptr++, ptr2++) {
+        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength() && i < l.getLength(); i++, ptr++, ptr2++) {
             *ptr = *ptr2;
         }
     }
@@ -228,6 +228,10 @@ struct MutableSlice : SliceTraits<T, MutableSlice<T>> {
     std::size_t getLength() const {
         return *this->len;
     }
+    void fullCopy(Slice<T> other) {
+        *this->len = other.len;
+        copyArray(this->ptr, other.ptr, other.len);
+    }
     T shift() {
         auto len = *this->len;
 #ifdef PPERM_DEBUG
@@ -267,83 +271,6 @@ template<typename T>
 inline Slice<T> MutableSlice<T>::toSlice() const {
     return Slice(*this);
 }
-
-// template<typename T>
-// struct Slice {
-//     T *ptr;
-//     std::size_t len;
-
-//     Slice<T> slice(std::size_t begin, std::size_t len) const {
-//         return Slice<T>{this->ptr + begin, len};
-//     }
-//     Slice<T> slice(std::size_t begin) const {
-//         return Slice<T>{this->ptr + begin, this->len - begin};
-//     }
-//     T *begin() const {
-//         return this->ptr;
-//     }
-//     T *end() const {
-//         return this->ptr + this->len;
-//     }
-//     void copy(Slice<T> l) const {
-//         auto ptr = this->ptr, ptr2 = l.ptr;
-//         for (std::size_t i = 0; i < this->len && i < l.len; i++, ptr++, ptr2++) {
-//             *ptr = *ptr2;
-//         }
-//     }
-
-//     const T &operator [] (std::size_t i) const {
-// #ifdef PPERM_DEBUG
-//         if (i >= this->len) {
-//             throw std::runtime_error("index out of bounds");
-//         }
-// #endif
-//         return this->ptr[i];
-//     }
-//     T &operator [] (std::size_t i) {
-// #ifdef PPERM_DEBUG
-//         if (i >= this->len) {
-//             throw std::runtime_error("index out of bounds");
-//         }
-// #endif
-//         return this->ptr[i];
-//     }
-//     std::size_t indexOf(const T &val) {
-//         auto ptr = this->ptr;
-//         for (std::size_t i = 0; i < this->len; i++, ptr++) {
-//             if (*ptr == val) {
-//                 return i;
-//             }
-//         }
-//         return this->len;
-//     }
-
-//     int compare(Slice<T> other) const {
-//         if (this->len != other.len) {
-//             return this->len > other.len ? 1 : -1;
-//         }
-//         auto ptr1 = this->ptr, ptr2 = other.ptr;
-//         for (std::size_t i = 0; i < this->len; i++, ptr1++, ptr2++) {
-//             auto c1 = *ptr1, c2 = *ptr2;
-//             if (c1 > c2) {
-//                 return 1;
-//             }
-//             if (c1 < c2) {
-//                 return -1;
-//             }
-//         }
-//         return 0;
-//     }
-//     std::size_t hash() const {
-//         // TODO: use a better hasher
-//         std::size_t ret = 5381;
-//         auto ptr = this->ptr;
-//         for (std::size_t i = 0; i < this->len; i++) {
-//             ret = ret * 33 + *ptr++;
-//         }
-//         return ret;
-//     }
-// };
 
 template<typename T>
 Slice(T *, std::size_t) -> Slice<T>;
