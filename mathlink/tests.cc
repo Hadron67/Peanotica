@@ -177,10 +177,11 @@ static bool testBaseChange1() {
     genset.push().identity().cycle(1, 2);
     genset.push().identity().cycle(2, 3);
     upoint_type base[]{0, 1, 2, 3};
+    std::size_t len;
 
     BaseChanger changer;
     changer.setSGS(genset);
-    changer.interchange(makeSlice(base, 4), 1, stack);
+    changer.interchange(Slice(base, 1), 1, 2, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(1, 3)).isPresent());
 
     return true;
@@ -198,11 +199,11 @@ static bool testBaseChange2() {
     genset.push().identity().cycle(7, 12, 20).cycle(9, 13, 15);
     genset.push().identity().cycle(1, 5, 2).cycle(3, 4, 6);
     genset.push().identity().cycle(11, 19, 14).cycle(16, 18, 17);
-    upoint_type base[]{0, 8, 7, 9, 1, 11};
+    // upoint_type base[]{0, 8, 7, 9, 1, 11};
 
     BaseChanger changer;
     changer.setSGS(genset);
-    changer.interchange(makeSlice(base, 6), 0, stack);
+    changer.interchange(Slice<upoint_type>{}, 0, 8, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 1, 2, 3, 5, 4, 6)).isPresent());
 
     return true;
@@ -217,12 +218,12 @@ static bool testBaseChange3() {
 
     BaseChanger changer;
     changer.setSGS(genset);
-    changer.moveToFirst(makeSlice(base, DEG), 3, stack);
+    changer.moveToFirstDirectly(makeSlice(base, DEG), 3, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 6).cycle(1, 8).cycle(2, 7)).isPresent());
 
     upoint_type base2[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
     changer.setSGS(genset);
-    changer.moveToFirst(makeSlice(base2, DEG), 4, stack);
+    changer.moveToFirstDirectly(makeSlice(base2, DEG), 4, stack);
     EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 6).cycle(1, 8).cycle(2, 7)).isPresent());
     return true;
 }
@@ -232,12 +233,12 @@ static bool testCompleteBaseChange() {
     PermutationStack stack(DEG * 8);
     auto genset = Symmetric<0, 1, 2, 3>::build(DEG);
     upoint_type base[]{0, 1, 2, 3};
+    std::size_t baseLen = 4;
     upoint_type newBase[]{3};
-    auto baseSlice = makeSlice(base, 4);
     BaseChanger changer;
     changer.setSGS(genset);
-    changer.completeBaseChange(baseSlice, makeSlice(newBase, 1), stack);
-    std::cout << "new base = " << baseSlice << std::endl;
+    changer.completeBaseChange(MutableSlice(base, baseLen), Slice(newBase, 1), stack);
+    EXPECT(3, base[0]);
     return true;
 }
 

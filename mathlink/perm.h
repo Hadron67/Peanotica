@@ -383,6 +383,7 @@ struct PermutationSet {
         this->setPermutationLength(set.getPermutationLength());
         this->addAll(set.begin(), set.end());
     }
+    void updateIndex();
     private:
     HashTable<std::uint32_t> permToId;
 };
@@ -654,14 +655,17 @@ inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationLis
 struct BaseChanger {
     PermutationSet genset;
     void setSGS(PermutationList &genset);
-    void interchange(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack);
-    void moveToFirst(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack) {
+    void interchange(Slice<upoint_type> partialBase, upoint_type b1, upoint_type b2, PermutationStack &stack);
+    void moveToFirstDirectly(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack) {
         while (pos > 0) {
-            this->interchange(base, --pos, stack);
+            auto &b1 = base[pos - 1], &b2 = base[pos];
+            this->interchange(base.slice(0, pos - 1), b1, b2, stack);
+            std::swap(b1, b2);
+            pos--;
         }
     }
-    // Assuming enough 
-    void completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type> newBase, PermutationStack &stack);
+    void makeFirstPoint(Slice<upoint_type> base, upoint_type point, PermutationStack &stack);
+    void completeBaseChange(MutableSlice<upoint_type> base, Slice<upoint_type> newBase, PermutationStack &stack);
     private:
     PermutationSet newGens;
     PermutationList stabilizer, stabilizer2;
@@ -671,7 +675,7 @@ struct BaseChanger {
 };
 
 struct StrongGenSetProvider {
-    virtual void stabilizeOnePoint(PermutationStack &stack, Slice<upoint_type> base, upoint_type point) = 0;
+    virtual void stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) = 0;
     virtual PermutationList &getStrongGenSet() = 0;
 };
 
@@ -680,7 +684,7 @@ struct BaseChangingStrongGenSetProvider : StrongGenSetProvider {
     BaseChanger *baseChanger = nullptr;
     BaseChangingStrongGenSetProvider() = default;
     BaseChangingStrongGenSetProvider(BaseChanger &baseChanger): baseChanger(&baseChanger) {}
-    virtual void stabilizeOnePoint(PermutationStack &stack, Slice<upoint_type> base, upoint_type point) override final;
+    virtual void stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) override final;
     virtual PermutationList &getStrongGenSet() override final;
 };
 
@@ -789,7 +793,7 @@ struct DoubleCosetRepresentativeSolver {
     unsigned int alphaPtr;
 
     Array<upoint_type> bases;
-    std::size_t initialBaseSLen, baseSStart, baseDStart;
+    std::size_t initialBaseSLen, baseSLen, baseDLen;
     PermutationList baseFilterTmp;
 
     std::size_t baseChangeOfDTime, baseChangeOfSTime;
@@ -801,16 +805,14 @@ struct DoubleCosetRepresentativeSolver {
         this->permStack.setBlockSize(this->permLen * 16);
         this->bases.ensureSize(permLen * 4);
     }
-    Slice<upoint_type> getInitialBaseS() const {
-        return Slice<upoint_type>{this->bases.get(), this->initialBaseSLen};
+    MutableSlice<upoint_type> getInitialBaseS() {
+        return MutableSlice{this->bases.get(), this->initialBaseSLen};
     }
-    Slice<upoint_type> getBaseS() const {
-        auto ptr = this->bases.get() + this->permLen;
-        return Slice<upoint_type>{ptr + this->baseSStart, this->permLen - this->baseSStart};
+    MutableSlice<upoint_type> getBaseS() {
+        return MutableSlice{this->bases.get() + this->permLen, this->baseSLen};
     }
-    Slice<upoint_type> getBaseD() const {
-        auto ptr = this->bases.get() + this->permLen * 2;
-        return Slice<upoint_type>{ptr + this->baseDStart, this->permLen - this->baseDStart};
+    MutableSlice<upoint_type> getBaseD() {
+        return MutableSlice{this->bases.get() + this->permLen * 2, this->baseDLen};
     }
     upoint_type *getTmpBase() const {
         return this->bases.get() + this->permLen * 3;

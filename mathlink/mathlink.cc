@@ -270,14 +270,15 @@ static void registerFunctions(WSTPEnv &env) {
         [](WSTPEnv &env) -> bool {
             int permLen;
             TRY(WSGetInteger32(env.stdlink, &permLen));
-            std::vector<upoint_type> base;
+            Array<upoint_type> base;
             int baseLen;
             TRY(WSTestHead(env.stdlink, "List", &baseLen));
+            base.ensureSize(baseLen);
             for (int i = 0; i < baseLen; i++) {
                 int val;
                 TRY(WSGetInteger32(env.stdlink, &val));
                 TRY(val > 0 && val <= permLen);
-                base.push_back(val - 1);
+                base.get()[i] = val - 1;
             }
             PermutationList genset(permLen);
             TRY(readPermutationList(env.stdlink, genset));
@@ -288,8 +289,9 @@ static void registerFunctions(WSTPEnv &env) {
 
             PermutationStack stack(permLen * 8);
             BaseChanger changer;
+            std::size_t baseLen2 = baseLen;
             changer.setSGS(genset);
-            changer.moveToFirst(makeSlice(base.data(), baseLen), pos, stack);
+            changer.moveToFirstDirectly(MutableSlice(base.get(), baseLen2), pos, stack);
 
             TRY(WSNewPacket(env.stdlink));
             TRY(writePermutationList(env.stdlink, changer.genset.permutations));

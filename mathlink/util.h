@@ -143,62 +143,59 @@ struct Ptr {
     }
 };
 
-template<typename T>
-struct Slice {
-    T *ptr;
-    std::size_t len;
-
-    Slice<T> slice(std::size_t begin, std::size_t len) const {
-        return Slice<T>{this->ptr + begin, len};
+template<typename T, typename CC>
+struct SliceTraits {
+    CC slice(std::size_t begin, std::size_t len) const {
+        return CC{static_cast<const CC *>(this)->ptr + begin, len};
     }
-    Slice<T> slice(std::size_t begin) const {
-        return Slice<T>{this->ptr + begin, this->len - begin};
+    CC slice(std::size_t begin) const {
+        return CC{static_cast<const CC *>(this)->ptr + begin, static_cast<const CC *>(this)->getLength() - begin};
     }
     T *begin() const {
-        return this->ptr;
+        return static_cast<const CC *>(this)->ptr;
     }
     T *end() const {
-        return this->ptr + this->len;
+        return static_cast<const CC *>(this)->ptr + static_cast<const CC *>(this)->getLength();
     }
-    void copy(Slice<T> l) const {
-        auto ptr = this->ptr, ptr2 = l.ptr;
-        for (std::size_t i = 0; i < this->len && i < l.len; i++, ptr++, ptr2++) {
+    void copy(CC l) const {
+        auto ptr = static_cast<const CC *>(this)->ptr, ptr2 = l.ptr;
+        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength() && i < l.len; i++, ptr++, ptr2++) {
             *ptr = *ptr2;
         }
     }
 
     const T &operator [] (std::size_t i) const {
 #ifdef PPERM_DEBUG
-        if (i >= this->len) {
+        if (i >= static_cast<const CC *>(this)->getLength()) {
             throw std::runtime_error("index out of bounds");
         }
 #endif
-        return this->ptr[i];
+        return static_cast<const CC *>(this)->ptr[i];
     }
     T &operator [] (std::size_t i) {
 #ifdef PPERM_DEBUG
-        if (i >= this->len) {
+        if (i >= static_cast<const CC *>(this)->getLength()) {
             throw std::runtime_error("index out of bounds");
         }
 #endif
-        return this->ptr[i];
+        return static_cast<CC *>(this)->ptr[i];
     }
-    std::size_t indexOf(const T &val) {
-        auto ptr = this->ptr;
-        for (std::size_t i = 0; i < this->len; i++, ptr++) {
+    std::size_t indexOf(const T &val) const {
+        auto ptr = static_cast<const CC *>(this)->ptr;
+        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++, ptr++) {
             if (*ptr == val) {
                 return i;
             }
         }
-        return this->len;
+        return static_cast<const CC *>(this)->getLength();
     }
 
-    int compare(Slice<T> other) const {
-        if (this->len != other.len) {
-            return this->len > other.len ? 1 : -1;
+    int compare(CC other) const {
+        if (static_cast<const CC *>(this)->getLength() != other.len) {
+            return static_cast<const CC *>(this)->getLength() > other.len ? 1 : -1;
         }
-        auto ptr1 = this->ptr, ptr2 = other.ptr;
-        for (std::size_t i = 0; i < this->len; i++, ptr1++, ptr2++) {
+        auto ptr1 = static_cast<const CC *>(this)->ptr, ptr2 = other.ptr;
+        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++, ptr1++, ptr2++) {
             auto c1 = *ptr1, c2 = *ptr2;
             if (c1 > c2) {
                 return 1;
@@ -212,21 +209,158 @@ struct Slice {
     std::size_t hash() const {
         // TODO: use a better hasher
         std::size_t ret = 5381;
-        auto ptr = this->ptr;
-        for (std::size_t i = 0; i < this->len; i++) {
+        auto ptr = static_cast<const CC *>(this)->ptr;
+        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++) {
             ret = ret * 33 + *ptr++;
         }
         return ret;
     }
 };
 
+template<typename T> struct Slice;
+
+template<typename T>
+struct MutableSlice : SliceTraits<T, MutableSlice<T>> {
+    T *ptr = nullptr;
+    std::size_t *len = nullptr;
+    MutableSlice() = default;
+    MutableSlice(T *ptr, std::size_t &len): ptr(ptr), len(&len) {}
+    std::size_t getLength() const {
+        return *this->len;
+    }
+    T shift() {
+        auto len = *this->len;
+#ifdef PPERM_DEBUG
+        if (this->len == 0) {
+            throw std::runtime_error("index out of range");
+        }
+#endif
+        auto ptr = this->ptr;
+        T ret = this->ptr[0];
+        for (std::size_t i = 0; i < len - 1; i++, ptr++) {
+            *ptr = ptr[1];
+        }
+        *this->len = len - 1;
+        return ret;
+    }
+    void append(T value) {
+        this->ptr[(*this->len)++] = value;
+    }
+    inline Slice<T> toSlice() const;
+};
+
+template<typename T>
+struct Slice : SliceTraits<T, Slice<T>> {
+    T *ptr = nullptr;
+    std::size_t len = 0;
+    Slice() = default;
+    Slice(T *ptr, std::size_t len): ptr(ptr), len(len) {}
+    Slice(MutableSlice<T> other): ptr(other.ptr), len(*other.len) {}
+    template<unsigned int N>
+    Slice(T (&arr)[N]): ptr(arr), len(N) {}
+    std::size_t getLength() const {
+        return this->len;
+    }
+};
+
+template<typename T>
+inline Slice<T> MutableSlice<T>::toSlice() const {
+    return Slice(*this);
+}
+
+// template<typename T>
+// struct Slice {
+//     T *ptr;
+//     std::size_t len;
+
+//     Slice<T> slice(std::size_t begin, std::size_t len) const {
+//         return Slice<T>{this->ptr + begin, len};
+//     }
+//     Slice<T> slice(std::size_t begin) const {
+//         return Slice<T>{this->ptr + begin, this->len - begin};
+//     }
+//     T *begin() const {
+//         return this->ptr;
+//     }
+//     T *end() const {
+//         return this->ptr + this->len;
+//     }
+//     void copy(Slice<T> l) const {
+//         auto ptr = this->ptr, ptr2 = l.ptr;
+//         for (std::size_t i = 0; i < this->len && i < l.len; i++, ptr++, ptr2++) {
+//             *ptr = *ptr2;
+//         }
+//     }
+
+//     const T &operator [] (std::size_t i) const {
+// #ifdef PPERM_DEBUG
+//         if (i >= this->len) {
+//             throw std::runtime_error("index out of bounds");
+//         }
+// #endif
+//         return this->ptr[i];
+//     }
+//     T &operator [] (std::size_t i) {
+// #ifdef PPERM_DEBUG
+//         if (i >= this->len) {
+//             throw std::runtime_error("index out of bounds");
+//         }
+// #endif
+//         return this->ptr[i];
+//     }
+//     std::size_t indexOf(const T &val) {
+//         auto ptr = this->ptr;
+//         for (std::size_t i = 0; i < this->len; i++, ptr++) {
+//             if (*ptr == val) {
+//                 return i;
+//             }
+//         }
+//         return this->len;
+//     }
+
+//     int compare(Slice<T> other) const {
+//         if (this->len != other.len) {
+//             return this->len > other.len ? 1 : -1;
+//         }
+//         auto ptr1 = this->ptr, ptr2 = other.ptr;
+//         for (std::size_t i = 0; i < this->len; i++, ptr1++, ptr2++) {
+//             auto c1 = *ptr1, c2 = *ptr2;
+//             if (c1 > c2) {
+//                 return 1;
+//             }
+//             if (c1 < c2) {
+//                 return -1;
+//             }
+//         }
+//         return 0;
+//     }
+//     std::size_t hash() const {
+//         // TODO: use a better hasher
+//         std::size_t ret = 5381;
+//         auto ptr = this->ptr;
+//         for (std::size_t i = 0; i < this->len; i++) {
+//             ret = ret * 33 + *ptr++;
+//         }
+//         return ret;
+//     }
+// };
+
+template<typename T>
+Slice(T *, std::size_t) -> Slice<T>;
+
+template<typename T, unsigned int N>
+Slice(T (&)[N]) -> Slice<T>;
+
+template<typename T>
+MutableSlice(T *, std::size_t &) -> MutableSlice<T>;
+
 template<typename T>
 inline Slice<T> makeSlice(T *ptr, std::size_t len) {
     return Slice<T>{ptr, len};
 }
 
-template<typename T>
-inline std::ostream &operator << (std::ostream &os, Slice<T> slice) {
+template<typename T, typename CC>
+inline std::ostream &operator << (std::ostream &os, const SliceTraits<T, CC> &slice) {
     bool first = true;
     for (auto t : slice) {
         if (!first) {

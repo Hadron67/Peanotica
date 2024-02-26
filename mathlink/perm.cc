@@ -261,6 +261,12 @@ void PermutationSet::remove(std::size_t index) {
     this->permutations.remove(index);
 }
 
+void PermutationSet::updateIndex() {
+    this->permToId.clear();
+    for (std::size_t i = 0; i < this->permutations.getSize(); i++) {
+        this->permToId.putIfAbsent(i, PermutationHashContext{this}, i);
+    }
+}
 
 template<typename T>
 static inline OptionalUInt<std::size_t> firstNonePos(const OptionalUInt<T> *ptr, std::size_t len) {
@@ -662,43 +668,41 @@ void BaseChanger::setSGS(PermutationList &genset) {
     this->newGens.setPermutationLength(permLen);
 }
 
-void BaseChanger::interchange(Slice<upoint_type> base, std::size_t pos, PermutationStack &stack) {
+void BaseChanger::interchange(Slice<upoint_type> partialBase, upoint_type b1, upoint_type b2, PermutationStack &stack) {
     auto permLen = this->genset.getPermutationLength();
     this->orbitSets.ensureSize(permLen * 3);
     auto gamma = this->orbitSets.get(), deltai = gamma + permLen, tmpPointSet = deltai + permLen;
     arraySet(gamma, permLen * 3, false);
 
-    auto bp1 = base[pos], bp2 = base[pos + 1];
-
     this->stabilizer.copy(this->genset);
-    stabilizerPointsInPlace(this->stabilizer, base.slice(0, pos));
+    stabilizerPointsInPlace(this->stabilizer, partialBase);
     this->stabilizer2.copy(this->stabilizer);
-    stabilizerInPlace(this->stabilizer2, bp1);
+    stabilizerInPlace(this->stabilizer2, b1);
 
     this->newGens.copy(this->stabilizer2);
-    stabilizerInPlace(this->newGens, bp2);
+    stabilizerInPlace(this->newGens, b2);
     this->orbit1.reset(permLen);
     this->orbit2.reset(permLen);
-    this->orbit1.appendOrbit(bp1, this->stabilizer, this->queue);
-    this->orbit2.appendOrbit(bp2, this->stabilizer2, this->queue);
+    this->orbit1.appendOrbit(b1, this->stabilizer, this->queue);
+    this->orbit2.appendOrbit(b2, this->stabilizer2, this->queue);
 
-    computeOrbit(tmpPointSet, bp2, this->stabilizer, this->queue);
+    computeOrbit(tmpPointSet, b2, this->stabilizer, this->queue);
     auto barDeltaj1Size = this->orbit1.allOrbitSize() *  this->orbit2.allOrbitSize() / std::count(tmpPointSet, tmpPointSet + permLen, true);
 
-    deltai[bp1] = true;
+    deltai[b1] = true;
     this->orbit1.collectAllOrbit([gamma](upoint_type p, upoint_type orbit){ gamma[p] = true; });
-    gamma[bp1] = false;
-    gamma[bp2] = false;
+    gamma[b1] = false;
+    gamma[b2] = false;
 
     while (std::count(deltai, deltai + permLen, true) < barDeltaj1Size) {
         auto gamma0 = findFirstPoint(gamma, permLen);
         auto g1 = traceSchreierVector(stack, gamma0, this->stabilizer, this->orbit1.vector.get());
-        auto g1InvMapBp2 = g1.inverseMapPoint(bp2);
+        auto g1InvMapBp2 = g1.inverseMapPoint(b2);
         if (this->orbit2.pointToOrbitId[g1InvMapBp2].isPresent()) {
             auto g2 = traceSchreierVector(stack, g1InvMapBp2, this->stabilizer2, this->orbit2.vector.get());
             g2.multiply(g2, g1);
             this->newGens.addPermutation(g2);
-            computeOrbit(deltai, bp1, this->newGens.permutations, this->queue);
+            computeOrbit(deltai, b1, this->newGens.permutations, this->queue);
             boolListComplement(gamma, deltai, permLen);
         } else {
             computeOrbit(tmpPointSet, gamma0, this->newGens.permutations, this->queue);
@@ -706,10 +710,9 @@ void BaseChanger::interchange(Slice<upoint_type> base, std::size_t pos, Permutat
         }
     }
     this->genset.addAll(this->newGens.begin(), this->newGens.end());
-    std::swap(base[pos], base[pos + 1]);
 }
 
-void BaseChanger::completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type> newBase, PermutationStack &stack) {
+void BaseChanger::completeBaseChange(MutableSlice<upoint_type> base, Slice<upoint_type> newBase, PermutationStack &stack) {
     auto permLen = this->genset.getPermutationLength();
     std::size_t i = 0;
     auto conjPerm = stack.pushStacked(permLen);
@@ -719,6 +722,7 @@ void BaseChanger::completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type
 
     this->stabilizer.copy(this->genset);
     this->orbit1.reset(permLen);
+    base.begin();
     this->orbit1.appendOrbit(base[0], this->stabilizer, this->queue);
     if (this->orbit1.pointToOrbitId[newBase[0]].isPresent()) {
         auto perm2 = stack.pushStacked(permLen);
@@ -728,7 +732,7 @@ void BaseChanger::completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type
             conjPerm.copy(perm2);
             permInv.inverse(conjPerm);
             i++;
-            if (i >= base.len || i >= newBase.len) {
+            if (i >= base.getLength() || i >= newBase.len) {
                 break;
             }
             stabilizerInPlace(this->stabilizer, base[i - 1]);
@@ -741,7 +745,7 @@ void BaseChanger::completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type
     }
     if (!conjPerm.isIdentity()) {
         auto tmp = stack.pushStacked(permLen);
-        for (upoint_type p = 0; p < base.len; p++) {
+        for (upoint_type p = 0; p < base.getLength(); p++) {
             base[p] = conjPerm.mapPoint(base[p]);
         }
         for (auto gen : this->genset) {
@@ -749,14 +753,43 @@ void BaseChanger::completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type
             tmp.multiply(tmp, conjPerm);
             gen.copy(tmp);
         }
+        this->genset.updateIndex();
     }
     for (std::size_t j = i; j < newBase.len; j++) {
         auto pos = base.indexOf(newBase[j]);
-        if (pos == base.len) {
-            base[base.len++] = newBase[j];
+        upoint_type extraPoint = 0;
+        if (pos == base.getLength()) {
+            extraPoint = newBase[j];
+            base.append(newBase[j]);
         }
-        this->moveToFirst(base, pos, stack);
+        this->moveToFirstDirectly(base, pos, stack);
     }
+}
+
+void BaseChanger::makeFirstPoint(Slice<upoint_type> base, upoint_type point, PermutationStack &stack) {
+    auto permLen = this->genset.getPermutationLength();
+    std::size_t pos = 0;
+    this->orbit1.reset(permLen);
+    this->orbit1.appendOrbit(point, this->genset.permutations, this->queue);
+    while (pos < base.len) {
+        if (this->orbit1.pointToOrbitId[base[pos]].isPresent()) {
+            auto gInv = traceSchreierVector(stack, base[pos], this->genset.permutations, this->orbit1.vector.get());
+            auto g = stack.pushStacked(permLen);
+            g.inverse(gInv);
+            for (std::size_t i = 0; i < base.len; i++) {
+                base[i] = g.mapPoint(base[i]);
+            }
+            auto tmp = stack.pushStacked(permLen);
+            for (auto gen : this->genset) {
+                tmp.multiply(gInv, gen);
+                tmp.multiply(tmp, g);
+            }
+            this->genset.updateIndex();
+            break;
+        }
+        pos++;
+    }
+
 }
 
 std::size_t GroupOrderCalculator::nextFactor() {
@@ -782,7 +815,7 @@ std::size_t GroupOrderCalculator::order() {
     return ret;
 }
 
-void BaseChangingStrongGenSetProvider::stabilizeOnePoint(PermutationStack &stack, Slice<upoint_type> base, upoint_type point) {
+void BaseChangingStrongGenSetProvider::stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) {
     auto pos = base.indexOf(point);
     if (pos > 0) {
         this->baseChanger->setSGS(this->genset);
@@ -791,6 +824,7 @@ void BaseChangingStrongGenSetProvider::stabilizeOnePoint(PermutationStack &stack
         // this->baseChanger->moveToFirst(base, pos, stack);
         this->baseChanger->completeBaseChange(base, newBaseSlice, stack);
     }
+    base.shift();
     stabilizerInPlace(this->genset, point);
 }
 PermutationList &BaseChangingStrongGenSetProvider::getStrongGenSet() {
@@ -913,9 +947,9 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
 //     }
 // #endif
     this->initialBaseSLen = this->permLen;
-    this->baseSStart = 0;
-    this->baseDStart = 0;
-    auto initialBaseS = this->getInitialBaseS(), baseS = this->getBaseS(), baseD = this->getBaseD();
+    this->baseSLen = this->permLen;
+    this->baseDLen = this->permLen;
+    auto initialBaseS = this->getInitialBaseS().toSlice(), baseS = this->getBaseS().toSlice(), baseD = this->getBaseD().toSlice();
     for (upoint_type p = 0; p < this->permLen; p++) {
         initialBaseS[p] = p;
         baseS[p] = p;
@@ -1001,7 +1035,7 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
     auto orbitBInFreesPerm = this->boolSetPool.pushStacked(this->permLen);
     std::size_t foundFrees = 0;
     auto freeCount = std::count(frees, frees + this->permLen, true);
-    auto initialBaseS = this->getInitialBaseS();
+    auto initialBaseS = this->getInitialBaseS().toSlice();
     for (upoint_type i = 0; i < initialBaseS.len && foundFrees < freeCount; i++) {
         auto basePoint = initialBaseS[i];
         auto &gensetS = gensetSProvider.getStrongGenSet();
@@ -1062,7 +1096,6 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
         this->baseChangeOfSTime += measureElapsed([&]() {
             gensetSProvider.stabilizeOnePoint(this->permStack, this->getBaseS(), basePoint);
         }).count();
-        this->baseSStart++;
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "S_" << basePoint << " = " << this->permFormatter.formatRef(gensetSProvider.getStrongGenSet()) << std::endl;
@@ -1093,11 +1126,10 @@ void DoubleCosetRepresentativeSolver::extendBaseS(upoint_type minNonFixedPointOf
     for (auto b : this->getBaseS()) {
         nonFixedPoints[b] = true;
     }
-    auto newBaseSLen = std::count(nonFixedPoints.begin(), nonFixedPoints.end(), true);
-    this->baseSStart = this->permLen - newBaseSLen;
-    auto ptr = this->getBaseS().ptr;
+    this->baseSLen = 0;
+    auto baseS = this->getBaseS();
     for (upoint_type p = 0; p < this->permLen; p++) if (nonFixedPoints[p]) {
-        *ptr++ = p;
+        baseS.append(p);
     }
 #ifdef PPERM_DEBUG
     if (this->log) {
@@ -1133,8 +1165,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
     auto orbitB = this->boolSetPool.pushStacked(this->permLen);
     auto orbitPi = this->boolSetPool.pushStacked(this->permLen);
     auto images = this->boolSetPool.pushStacked(this->permLen);
-    auto baseLen = this->permLen - this->baseSStart;
-    auto baseS0 = this->getBaseS();
+    auto baseLen = this->baseSLen;
     for (upoint_type i = 0; i < baseLen; i++) {
         auto baseS = this->getBaseS();
         auto baseD = this->getBaseD();
@@ -1309,8 +1340,6 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
         this->baseChangeOfDTime += measureElapsed([&]() {
             gensetSProvider.stabilizeOnePoint(this->permStack, baseS, currentBaseSPoint);
             gensetDProvider.stabilizeOnePoint(this->permStack, baseD, pi);
-            this->baseSStart++;
-            this->baseDStart++;
         }).count();
 
 #ifdef PPERM_DEBUG
