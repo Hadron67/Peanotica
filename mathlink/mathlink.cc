@@ -73,6 +73,7 @@ namespace {
         WSLINK stdlink = nullptr;
         WSEnvironment stdenv = nullptr;
         std::fstream logFile;
+        bool enableLog = false;
 
         using Func = bool(WSTPEnv &);
         struct FunctionEntry {
@@ -179,6 +180,20 @@ static void registerFunctions(WSTPEnv &env) {
         }
     );
     env.registerFunction(
+        P_PREFIX "MathLinkSetPPermVerbose[" P_PREFIX "b_]",
+        "{" P_PREFIX "b}",
+        [](WSTPEnv &env) -> bool {
+            if (WSTestSymbol(env.stdlink, "True")) {
+                env.enableLog = true;
+            } else if (WSTestSymbol(env.stdlink, "False")) {
+                env.enableLog = false;
+            } else return false;
+            TRY(WSNewPacket(env.stdlink));
+            TRY(WSPutSymbol(env.stdlink, env.enableLog ? "True" : "False"));
+            return true;
+        }
+    );
+    env.registerFunction(
         P_PREFIX "MathLinkConstructStrongGenSet[" P_PREFIX "GS_List, " P_PREFIX "n_Integer]",
         "{" P_PREFIX "n, " P_PREFIX "GS}",
         [](WSTPEnv &env) -> bool {
@@ -210,8 +225,17 @@ static void registerFunctions(WSTPEnv &env) {
             TRY(readPermutation(env.stdlink, perm));
             TRY(readPermutationList(env.stdlink, gensetD));
 
+            BaseChanger baseChanger;
+            BaseChangingStrongGenSetProvider gensetSProvider(baseChanger), gensetDProvider(baseChanger);
+            gensetSProvider.genset.copy(gensetS);
+            gensetDProvider.genset.copy(gensetD);
+
             DoubleCosetRepresentativeSolver solver;
-            auto ret = solver.solve(gensetS, gensetD, perm);
+            if (env.enableLog) {
+                solver.log = &env.logFile;
+                solver.permFormatter.useCycles = true;
+            }
+            auto ret = solver.solve(gensetSProvider, gensetDProvider, perm);
             TRY(WSNewPacket(env.stdlink));
             if (ret.has_value()) {
                 TRY(writePermutation(env.stdlink, *ret));
@@ -237,6 +261,38 @@ static void registerFunctions(WSTPEnv &env) {
             for (int i = 0; i < permLen; i++) {
                 TRY(WSPutInteger64(env.stdlink, calc.nextFactor()));
             }
+            return true;
+        }
+    );
+    env.registerFunction(
+        P_PREFIX "MathLinkMoveBasePoint[" P_PREFIX "base_List, " P_PREFIX "S_List, " P_PREFIX "pos_Integer, " P_PREFIX "n_Integer]",
+        "{" P_PREFIX "n, " P_PREFIX "base, " P_PREFIX "S, " P_PREFIX "pos}",
+        [](WSTPEnv &env) -> bool {
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            std::vector<upoint_type> base;
+            int baseLen;
+            TRY(WSTestHead(env.stdlink, "List", &baseLen));
+            for (int i = 0; i < baseLen; i++) {
+                int val;
+                TRY(WSGetInteger32(env.stdlink, &val));
+                TRY(val > 0 && val <= permLen);
+                base.push_back(val - 1);
+            }
+            PermutationList genset(permLen);
+            TRY(readPermutationList(env.stdlink, genset));
+            int pos;
+            TRY(WSGetInteger32(env.stdlink, &pos));
+            TRY(pos > 0 && pos + 1 <= baseLen);
+            pos--;
+
+            PermutationStack stack(permLen * 8);
+            BaseChanger changer;
+            changer.setSGS(genset);
+            changer.moveToFirst(makeSlice(base.data(), baseLen), pos, stack);
+
+            TRY(WSNewPacket(env.stdlink));
+            TRY(writePermutationList(env.stdlink, changer.genset.permutations));
             return true;
         }
     );

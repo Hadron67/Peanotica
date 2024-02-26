@@ -208,6 +208,39 @@ static bool testBaseChange2() {
     return true;
 }
 
+static bool testBaseChange3() {
+    constexpr int DEG = 9;
+    auto genset = GenSet<SCycles<List<0, 4>, List<1, 5>, List<2, 3>>, SCycles<List<3, 7>, List<4, 6>, List<5, 8>>>::build(DEG);
+    PermutationStack stack(DEG * 8);
+    auto tmp = stack.pushStacked(DEG);
+    upoint_type base[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
+
+    BaseChanger changer;
+    changer.setSGS(genset);
+    changer.moveToFirst(makeSlice(base, DEG), 3, stack);
+    EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 6).cycle(1, 8).cycle(2, 7)).isPresent());
+
+    upoint_type base2[]{0, 1, 2, 3, 4, 5, 6, 7, 8};
+    changer.setSGS(genset);
+    changer.moveToFirst(makeSlice(base2, DEG), 4, stack);
+    EXPECT(true, changer.genset.findPermutation(tmp.identity().cycle(0, 6).cycle(1, 8).cycle(2, 7)).isPresent());
+    return true;
+}
+
+static bool testCompleteBaseChange() {
+    constexpr int DEG = 4;
+    PermutationStack stack(DEG * 8);
+    auto genset = Symmetric<0, 1, 2, 3>::build(DEG);
+    upoint_type base[]{0, 1, 2, 3};
+    upoint_type newBase[]{3};
+    auto baseSlice = makeSlice(base, 4);
+    BaseChanger changer;
+    changer.setSGS(genset);
+    changer.completeBaseChange(baseSlice, makeSlice(newBase, 1), stack);
+    std::cout << "new base = " << baseSlice << std::endl;
+    return true;
+}
+
 static bool testGroupOrder() {
     auto genset = GenSet<Neg<SCycles<List<0, 1>>>, Neg<SCycles<List<2, 3>>>, SCycles<List<0, 2>, List<1, 3>>>::build(4);
     GroupOrderCalculator calc;
@@ -241,37 +274,106 @@ namespace {
             }
         }
     };
+
+    inline std::ostream &operator << (std::ostream &os, const OptPermutationView &perm) {
+        if (perm.perm.has_value()) {
+            os << perm.perm.value();
+        } else {
+            os << "0";
+        }
+        return os;
+    }
+
+    struct DoubleCosetRepTester {
+        bool verbose;
+        PermutationStack stack;
+        PermutationList gensetS, gensetD;
+        DoubleCosetRepTester() = default;
+        DoubleCosetRepTester(std::size_t permLen) {
+            this->setPermutationLength(permLen);
+        }
+        void setPermutationLength(std::size_t len) {
+            this->stack.setBlockSize(len * 16);
+            this->gensetS.setPermutationLength(len);
+            this->gensetD.setPermutationLength(len);
+        }
+        bool run(PermutationView input, const std::optional<StackedPermutation> &expected) {
+            this->gensetSProvider.baseChanger = &this->baseChanger;
+            this->gensetDProvider.baseChanger = &this->baseChanger;
+            this->gensetSProvider.genset.copy(this->gensetS);
+            this->gensetDProvider.genset.copy(this->gensetD);
+            if (this->verbose) {
+                this->solver.log = &std::cout;
+            } else {
+                this->solver.log = nullptr;
+            }
+            this->solver.permFormatter.useCycles = true;
+            auto actual = this->solver.solve(this->gensetSProvider, this->gensetDProvider, input);
+            if (expected != actual) {
+                auto &formatter = this->solver.permFormatter;
+                std::cout << "unexpected results on input g = " << input
+                    << ", S = " << formatter.formatRef(gensetS)
+                    << ", D = " << formatter.formatRef(gensetD)
+                    << ", " << std::endl
+                    << "    expected: " << OptPermutationView{expected}
+                    << ", actual " << OptPermutationView{actual}
+                    << std::endl;
+                return false;
+            }
+            return true;
+        }
+        private:
+        BaseChanger baseChanger;
+        BaseChangingStrongGenSetProvider gensetSProvider, gensetDProvider;
+        DoubleCosetRepresentativeSolver solver;
+    };
 };
 
-template<unsigned int N, typename InputPerm, typename S, typename D, typename ExpectedPerm, bool Verbose = false>
-bool doubleCosetRepCase() {
-    PermutationStack stack(N * 16);
-    PermutationFormatter formatter;
-    formatter.useCycles = true;
-    auto gensetS = S::build(N);
-    auto gensetD = D::build(N);
-    auto input = stack.pushStacked(N);
+template<unsigned int N, typename InputPerm, typename S, typename D, typename ExpectedPerm, bool verbose = false>
+static inline bool doubleCosetRepCase() {
+    DoubleCosetRepTester tester(N);
+    tester.verbose = verbose;
+    S::buildInPlace(tester.gensetS);
+    D::buildInPlace(tester.gensetD);
+    auto input = tester.stack.pushStacked(N);
     InputPerm::assignPermutation(input);
-    auto expected = OptPermutationBuilder<ExpectedPerm>::build(stack, N);
+    auto expected = OptPermutationBuilder<ExpectedPerm>::build(tester.stack, N);
 
-    DoubleCosetRepresentativeSolver solver;
-    solver.verbose = Verbose;
-    solver.setUseCycles(true);
-    auto actual = solver.solve(gensetS, gensetD, input);
-    if (expected != actual) {
-        std::cout << "unexpected results on input g = " << formatter.formatValue(input)
-            << ", S = " << formatter.formatRef(gensetS)
-            << ", D = " << formatter.formatRef(gensetD)
-            << ", " << std::endl
-            << "    expected: " << formatter.formatValue(OptPermutationView{expected})
-            << ", actual " << formatter.formatValue(OptPermutationView{actual})
-            << std::endl;
-        return false;
-    }
-    return true;
+    return tester.run(input, expected);
 }
 
-bool testDoubleCosetRep() {
+static bool doubleCosetRepRiemannMonomialCaseGeneral(DoubleCosetRepTester &tester, std::size_t n, std::size_t freen, PermutationView input, const std::optional<StackedPermutation> &expected) {
+    std::size_t permLen = n * 4;
+    auto &gensetS = tester.gensetS, &gensetD = tester.gensetD;
+    for (std::size_t b = 0; b < permLen; b += 4) {
+        gensetS.push().identity().setNegative(true).cycle(b, b + 1);
+        gensetS.push().identity().setNegative(true).cycle(b + 2, b + 3);
+        gensetS.push().identity().cycle(b, b + 2).cycle(b + 1, b + 3);
+        if (b + 4 < permLen) {
+            gensetS.push().identity().cycle(b, b + 4).cycle(b + 1, b + 5).cycle(b + 2, b + 6).cycle(b + 3, b + 7);
+        }
+    }
+    for (std::size_t i = freen; i < permLen; i += 2) {
+        gensetD.push().identity().cycle(i, i + 1);
+        if (i + 2 < permLen) {
+            gensetD.push().identity().cycle(i, i + 2).cycle(i + 1, i + 3);
+        }
+    }
+    return tester.run(input, expected);
+}
+
+template<std::size_t n, std::size_t freen, typename Input, typename Expected, bool verbose = false>
+static bool doubleCosetRepRiemannMonomialCase() {
+    DoubleCosetRepTester tester(n * 4);
+    tester.verbose = verbose;
+    auto input = tester.stack.pushStacked(n * 4);
+    Input::assignPermutation(input);
+    auto expected = OptPermutationBuilder<Expected>::build(tester.stack, n * 4);
+
+    return doubleCosetRepRiemannMonomialCaseGeneral(tester, n, freen, input, expected);
+}
+
+static bool testDoubleCosetRep() {
     if(!doubleCosetRepCase<
         4,
         Images<1, 3, 2, 0>,
@@ -300,6 +402,20 @@ bool testDoubleCosetRep() {
         GenSet<>,
         Neg<Images<0, 1, 2, 3>>
     >()) return false;
+    if (!doubleCosetRepRiemannMonomialCase<2, 0, Images<5, 6, 1, 3, 2, 4, 7, 0>, Images<0, 2, 4, 6, 1, 5, 3, 7>>()) return false;
+    if (!doubleCosetRepRiemannMonomialCase<2, 4, Images<7, 2, 5, 0, 4, 6, 3, 1>, Neg<Images<0, 4, 2, 6, 1, 3, 5, 7>>>()) return false;
+    if (!doubleCosetRepRiemannMonomialCase<
+        5,
+        0,
+        Images<19, 7, 2, 17, 11, 4, 3, 13, 18, 5, 14, 6, 0, 16, 1, 12, 9, 15, 10, 8>,
+        Neg<Images<0, 2, 1, 4, 3, 6, 8, 10, 5, 7, 12, 14, 9, 13, 11, 16, 15, 18, 17, 19>>
+    >()) return false;
+    if (!doubleCosetRepRiemannMonomialCase<
+        5,
+        10,
+        Images<8, 15, 11, 5, 3, 7, 19, 14, 1, 18, 16, 12, 13, 17, 9, 10, 4, 0, 2, 6>,
+        Neg<Images<0, 4, 2, 6, 1, 10, 12, 14, 3, 7, 11, 16, 5, 18, 8, 17, 9, 19, 13, 15>>
+    >()) return false;
     return true;
 }
 
@@ -313,6 +429,8 @@ int main(int argc, const char *args[]) {
     TEST(testCyclesConvert());
     TEST(testBaseChange1());
     TEST(testBaseChange2());
+    TEST(testBaseChange3());
+    TEST(testCompleteBaseChange());
     TEST(testGroupOrder());
     TEST(testDoubleCosetRep());
     if (passed) {

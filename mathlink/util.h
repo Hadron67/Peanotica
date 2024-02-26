@@ -5,6 +5,7 @@
 #include <vector>
 #include <functional>
 #include <exception>
+#include <chrono>
 
 namespace pperm {
 
@@ -1014,10 +1015,10 @@ struct HashTable {
     using AVLNodeType = AVLNode<PtrType>;
     struct Entry {
         const T &getValue() const { return this->value; }
+        T value;
         private:
         AVLNodeType avlNode;
         bool occupied;
-        T value;
         Entry(): occupied(false) {}
 
         friend struct HashTable<T, PtrType, loadFactor>;
@@ -1466,6 +1467,7 @@ struct ArrayVector {
     ArrayVector(std::size_t elementLen): elementLen(elementLen) {}
     ArrayVector(const ArrayVector &) = default;
     ArrayVector(ArrayVector &&) = default;
+    ArrayVector<T> &operator = (ArrayVector<T> &&) = default;
     void setElementLen(std::size_t elementLen) {
         auto size = this->getSize();
         this->elementLen = elementLen;
@@ -1539,6 +1541,23 @@ struct BindLeftShift {
 template<typename Self, typename Arg>
 inline std::ostream &operator << (std::ostream &os, BindLeftShift<Self, Arg> &b) {
     b.self.applyLeftShift(b.arg);
+}
+
+template<typename T>
+struct SwappingPair {
+    SwappingPair() = default;
+    template<typename T2>
+    SwappingPair(T2 &&val): first(std::forward<T2>(val)), second{} {}
+    private:
+    T first, second;
+};
+
+template<typename Fn, typename Unit = std::chrono::microseconds>
+inline Unit measureElapsed(Fn &&fn) {
+    auto start = std::chrono::steady_clock::now();
+    fn();
+    auto end = std::chrono::steady_clock::now();
+    return std::chrono::duration_cast<Unit>(end - start);
 }
 
 struct Logger {

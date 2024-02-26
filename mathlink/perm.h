@@ -57,15 +57,6 @@ struct PermutationView {
     std::size_t getLength() const {
         return this->len;
     }
-    // template<typename... T>
-    // PermutationView &cycle(T... args) {
-    //     upoint_type arr[sizeof...(args)]{upoint_type(args)...};
-    //     auto images = this->images();
-    //     for (unsigned int i = 0; i < sizeof...(args); i++) {
-    //         images[arr[i]] = arr[(i + 1) % sizeof...(args)];
-    //     }
-    //     return *this;
-    // }
     template<typename... T>
     inline PermutationView &cycle(T... args);
     PermutationView &assign(bool isNegative, std::initializer_list<upoint_type> list);
@@ -220,6 +211,7 @@ struct PermutationList {
     PermutationList(const PermutationList &) = default;
     PermutationList(PermutationList &&) = default;
     void setPermutationLength(std::size_t permLen) {
+        this->clear();
         this->data.setElementLen(PermutationView::storageSize(permLen));
     }
     void clear() {
@@ -273,28 +265,33 @@ struct PermutationList {
 };
 
 template<typename T, typename Fn>
-inline void filterPermutationsInPlace(T &set, Fn &&predicate) {
+inline bool filterPermutationsInPlace(T &set, Fn predicate) {
     auto size = set.getSize();
+    bool ret = false;
     for (std::size_t i = 0; i < size;) {
         if (!predicate(set.get(i))) {
             set.remove(i);
             size--;
+            ret = true;
         } else {
             i++;
         }
     }
+    return ret;
 }
 
 template<typename T>
-inline void stabilizerInPlace(T &set, upoint_type point) {
-    filterPermutationsInPlace(set, [=](PermutationView perm){ return perm.fixesPoint(point); });
+inline bool stabilizerInPlace(T &set, upoint_type point) {
+    return filterPermutationsInPlace(set, [=](PermutationView perm){ return perm.fixesPoint(point); });
 }
 
 template<typename T>
-inline void stabilizerPointsInPlace(T &set, Slice<upoint_type> point) {
+inline bool stabilizerPointsInPlace(T &set, Slice<upoint_type> point) {
+    bool ret = false;
     for (std::size_t i = 0; i < point.len; i++) {
-        stabilizerInPlace(set, point[i]);
+        ret = stabilizerInPlace(set, point[i]) || ret;
     }
+    return ret;
 }
 
 struct PermutationSet {
@@ -431,6 +428,11 @@ struct SchreierOrbit {
     SchreierOrbit(SchreierOrbit &&other) = default;
     SchreierOrbit &operator = (SchreierOrbit &&other) = default;
     void appendOrbit(upoint_type point, PermutationList &genset, std::deque<upoint_type> &queue);
+    void appendAllOrbits(PermutationList &genset, std::deque<upoint_type> &queue) {
+        for (upoint_type p = 0; p < this->permLen; p++) {
+            this->appendOrbit(p, genset, queue);
+        }
+    }
 
     template<typename Iter1, typename Iter2>
     void appendOrbits(Iter1 begin, Iter2 end, PermutationList &genset, std::deque<upoint_type> &queue) {
@@ -658,12 +660,28 @@ struct BaseChanger {
             this->interchange(base, --pos, stack);
         }
     }
+    // Assuming enough 
+    void completeBaseChange(Slice<upoint_type> &base, Slice<upoint_type> newBase, PermutationStack &stack);
     private:
     PermutationSet newGens;
     PermutationList stabilizer, stabilizer2;
     SchreierOrbit orbit1, orbit2;
     Array<bool> orbitSets;
     std::deque<upoint_type> queue;
+};
+
+struct StrongGenSetProvider {
+    virtual void stabilizeOnePoint(PermutationStack &stack, Slice<upoint_type> base, upoint_type point) = 0;
+    virtual PermutationList &getStrongGenSet() = 0;
+};
+
+struct BaseChangingStrongGenSetProvider : StrongGenSetProvider {
+    PermutationList genset;
+    BaseChanger *baseChanger = nullptr;
+    BaseChangingStrongGenSetProvider() = default;
+    BaseChangingStrongGenSetProvider(BaseChanger &baseChanger): baseChanger(&baseChanger) {}
+    virtual void stabilizeOnePoint(PermutationStack &stack, Slice<upoint_type> base, upoint_type point) override final;
+    virtual PermutationList &getStrongGenSet() override final;
 };
 
 struct AlphaTable {
@@ -742,6 +760,9 @@ struct AlphaTable {
     void clear() {
         this->data.clear();
     }
+    std::size_t getSize() const {
+        return this->data.getSize();
+    }
     private:
     std::size_t permLen = 0;
     ArrayVector<upoint_type> data;
@@ -750,19 +771,15 @@ struct AlphaTable {
 std::ostream &operator << (std::ostream &os, AlphaTable::Entry entry);
 
 struct DoubleCosetRepresentativeSolver {
-    bool verbose;
-    std::optional<StackedPermutation> solve(PermutationList &gensetS, PermutationList &gensetD, PermutationView perm);
-    void setUseCycles(bool b) {
-        this->permFormatter.useCycles = b;
-    }
+    std::ostream *log = nullptr;
+    bool useTwoStep = true;
+    PermutationFormatter permFormatter;
+    std::optional<StackedPermutation> solve(StrongGenSetProvider &gensetS, StrongGenSetProvider &gensetD, PermutationView perm);
     private:
     using TableEntry = AlphaTable::Entry;
-    PermutationFormatter permFormatter;
     std::size_t permLen;
     PermutationStack permStack;
-    PermutationList gensetS, gensetD;
     PermutationSet sgdSet;
-    std::vector<upoint_type> gensetDBase;
     SchreierOrbit orbitS, orbitD;
     BaseChanger baseChanger;
     OBStack<bool> boolSetPool;
@@ -771,18 +788,37 @@ struct DoubleCosetRepresentativeSolver {
     AlphaTable alphas[2];
     unsigned int alphaPtr;
 
-    Array<upoint_type> tmpL;
+    Array<upoint_type> bases;
+    std::size_t initialBaseSLen, baseSStart, baseDStart;
+    PermutationList baseFilterTmp;
+
+    std::size_t baseChangeOfDTime, baseChangeOfSTime;
 
     void setPermutationLength(std::size_t permLen) {
         this->permLen = permLen;
-        this->gensetS.setPermutationLength(permLen);
-        this->gensetD.setPermutationLength(permLen);
         this->sgdSet.setPermutationLength(permLen);
         this->boolSetPool.blockSize = this->permLen * 16;
         this->permStack.setBlockSize(this->permLen * 16);
+        this->bases.ensureSize(permLen * 4);
+    }
+    Slice<upoint_type> getInitialBaseS() const {
+        return Slice<upoint_type>{this->bases.get(), this->initialBaseSLen};
+    }
+    Slice<upoint_type> getBaseS() const {
+        auto ptr = this->bases.get() + this->permLen;
+        return Slice<upoint_type>{ptr + this->baseSStart, this->permLen - this->baseSStart};
+    }
+    Slice<upoint_type> getBaseD() const {
+        auto ptr = this->bases.get() + this->permLen * 2;
+        return Slice<upoint_type>{ptr + this->baseDStart, this->permLen - this->baseDStart};
+    }
+    upoint_type *getTmpBase() const {
+        return this->bases.get() + this->permLen * 3;
     }
     void subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm);
-    void stabilizeOnePoint(upoint_type b, upoint_type p);
+    void extendBaseS(upoint_type minNonFixedPoint, PermutationView perm);
+    StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD);
+    std::optional<StackedPermutation> solveDoubleCosetRepresentative(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm, upoint_type minNonFixedPointOfD);
 };
 
 struct GroupOrderCalculator {
@@ -798,6 +834,114 @@ struct GroupOrderCalculator {
     Array<bool> orbit;
     std::deque<upoint_type> queue;
     std::size_t stabilizer;
+};
+
+struct SymmetricBlock {
+    using InnerIterator = ArrayVector<upoint_type>::Iterator;
+    struct Iterator;
+    struct Block {
+        bool isNegative() const {
+            return bool(this->data[0]);
+        }
+        void setNegative(bool n) {
+            this->data[0] = upoint_type(n);
+        }
+        Slice<upoint_type> getData() const {
+            return makeSlice(this->data + 1, this->elemLen);
+        }
+        private:
+        Block(upoint_type *data, std::size_t elemLen): data(data), elemLen(elemLen) {}
+        upoint_type *data;
+        std::size_t elemLen;
+        friend SymmetricBlock;
+        friend Iterator;
+    };
+    struct Iterator {
+        bool operator == (Iterator other) const {
+            return this->inner == other.inner;
+        }
+        Iterator &operator ++ () {
+            ++this->inner;
+            return *this;
+        }
+        Block operator * () const {
+            return Block(*this->inner, this->inner.getElementSize() - 1);
+        }
+        Block operator -> () const {
+            return this->operator*();
+        }
+        private:
+        Iterator(InnerIterator inner): inner(inner) {}
+        InnerIterator inner;
+        friend SymmetricBlock;
+    };
+    SymmetricBlock() = default;
+    SymmetricBlock(std::size_t elemLen) {
+        this->setElementLength(elemLen);
+    }
+    SymmetricBlock(const SymmetricBlock &) = delete;
+    SymmetricBlock(SymmetricBlock &&) = default;
+    SymmetricBlock &operator = (SymmetricBlock &&) = default;
+    void setElementLength(std::size_t elemLen) {
+        this->blocks.setElementLen(elemLen + 1);
+    }
+    std::size_t getElementLength() const {
+        return this->blocks.getElementSize() - 1;
+    }
+    Iterator begin() {
+        return Iterator(this->blocks.begin());
+    }
+    Iterator end() {
+        return Iterator(this->blocks.end());
+    }
+    void clear() {
+        this->blocks.clear();
+    }
+    Block pushBlock() {
+        return Block(this->blocks.push(), this->getElementLength());
+    }
+    Block get(std::size_t i) {
+        return Block(this->blocks.get(i), this->getElementLength());
+    }
+    Block getLast() {
+        return Block(this->blocks.get(this->blocks.getSize() - 1), this->getElementLength());
+    }
+    std::size_t getSize() const {
+        return this->blocks.getSize();
+    }
+    private:
+    ArrayVector<upoint_type> blocks;
+};
+
+inline std::ostream &operator << (std::ostream &os, SymmetricBlock::Block block) {
+    if (block.isNegative()) {
+        os << "-";
+    }
+    os << "{" << block.getData() << "}";
+    return os;
+}
+
+std::ostream &operator << (std::ostream &os, SymmetricBlock &block);
+
+struct SymmetricBlockBuilder {
+    bool tryAddOneGenerator(PermutationView perm);
+    private:
+    SymmetricBlock workingBlock;
+    Array<upoint_type> pairs;
+    std::vector<SymmetricBlock> blocks;
+    std::vector<std::size_t> freeBlocks;
+    HashTable<std::size_t> byFirstColumn, byLastColumn;
+    std::size_t allocBlock() {
+        if (this->freeBlocks.empty()) {
+            auto ret = this->blocks.size();
+            this->blocks.emplace_back();
+            return ret;
+        } else {
+            auto ret = this->freeBlocks[this->freeBlocks.size() - 1];
+            this->freeBlocks.pop_back();
+            return ret;
+        }
+    }
 };
 
 namespace meta {
@@ -835,9 +979,12 @@ namespace meta {
     struct GenSet {
         static PermutationList build(unsigned int n) {
             PermutationList ret(n);
-            int perms[]{0, (GenSet<T...>::addOnePermutation<T>(ret), 0)...};
-            (void)perms;
+            GenSet<T...>::buildInPlace(ret);
             return ret;
+        }
+        static void buildInPlace(PermutationList &list) {
+            int perms[]{0, (GenSet<T...>::addOnePermutation<T>(list), 0)...};
+            (void)perms;
         }
         private:
         template<typename T2>
@@ -891,6 +1038,16 @@ namespace meta {
     using RiemannSymmetric = GenSet<Neg<SCycles<List<N1, N2>>>, Neg<SCycles<List<N3, N4>>>, SCycles<List<N1, N3>, List<N2, N4>>>;
 };
 
+template<typename Provider, typename Acceptor>
+inline void filterBasePoints(Acceptor acceptor, Provider provider, std::size_t baseLen, PermutationList &genset, PermutationList &tmp) {
+    tmp.copy(genset);
+    for (std::size_t i = 0; i < baseLen; i++) {
+        upoint_type p = provider(i);
+        if (stabilizerInPlace(tmp, p)) {
+            acceptor(p);
+        }
+    }
+}
 
 }
 
