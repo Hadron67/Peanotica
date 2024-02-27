@@ -227,8 +227,8 @@ static void registerFunctions(WSTPEnv &env) {
 
             BaseChanger baseChanger;
             BaseChangingStrongGenSetProvider gensetSProvider(baseChanger), gensetDProvider(baseChanger);
-            gensetSProvider.genset.copy(gensetS);
-            gensetDProvider.genset.copy(gensetD);
+            gensetSProvider.setSGS(gensetS);
+            gensetDProvider.setSGS(gensetD);
 
             DoubleCosetRepresentativeSolver solver;
             if (env.enableLog) {

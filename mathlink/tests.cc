@@ -300,8 +300,8 @@ namespace {
         bool run(PermutationView input, const std::optional<StackedPermutation> &expected) {
             this->gensetSProvider.baseChanger = &this->baseChanger;
             this->gensetDProvider.baseChanger = &this->baseChanger;
-            this->gensetSProvider.genset.copy(this->gensetS);
-            this->gensetDProvider.genset.copy(this->gensetD);
+            this->gensetSProvider.setSGS(this->gensetS);
+            this->gensetDProvider.setSGS(this->gensetD);
             if (this->verbose) {
                 this->solver.log = &std::cout;
             } else {

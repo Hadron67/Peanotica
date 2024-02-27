@@ -182,7 +182,8 @@ struct SliceTraits {
     }
     std::size_t indexOf(const T &val) const {
         auto ptr = static_cast<const CC *>(this)->ptr;
-        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++, ptr++) {
+        auto len = static_cast<const CC *>(this)->getLength();
+        for (std::size_t i = 0; i < len; i++, ptr++) {
             if (*ptr == val) {
                 return i;
             }
@@ -191,11 +192,12 @@ struct SliceTraits {
     }
 
     int compare(CC other) const {
-        if (static_cast<const CC *>(this)->getLength() != other.len) {
-            return static_cast<const CC *>(this)->getLength() > other.len ? 1 : -1;
+        auto len = static_cast<const CC *>(this)->getLength();
+        if (len != other.len) {
+            return len > other.len ? 1 : -1;
         }
         auto ptr1 = static_cast<const CC *>(this)->ptr, ptr2 = other.ptr;
-        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++, ptr1++, ptr2++) {
+        for (std::size_t i = 0; i < len; i++, ptr1++, ptr2++) {
             auto c1 = *ptr1, c2 = *ptr2;
             if (c1 > c2) {
                 return 1;
@@ -208,9 +210,10 @@ struct SliceTraits {
     }
     std::size_t hash() const {
         // TODO: use a better hasher
+        auto len = static_cast<const CC *>(this)->getLength();
         std::size_t ret = 5381;
         auto ptr = static_cast<const CC *>(this)->ptr;
-        for (std::size_t i = 0; i < static_cast<const CC *>(this)->getLength(); i++) {
+        for (std::size_t i = 0; i < len; i++) {
             ret = ret * 33 + *ptr++;
         }
         return ret;
@@ -1593,14 +1596,12 @@ struct ArrayVector {
 
 template<typename Self, typename Arg>
 struct BindLeftShift {
-    private:
-    Arg arg;
     Self &self;
-    friend std::ostream &operator << (std::ostream &os, BindLeftShift<Self, Arg> &b);
+    Arg arg;
 };
 
 template<typename Self, typename Arg>
-inline std::ostream &operator << (std::ostream &os, BindLeftShift<Self, Arg> &b) {
+inline std::ostream &operator << (std::ostream &os, const BindLeftShift<Self, Arg> &b) {
     b.self.applyLeftShift(b.arg);
 }
 

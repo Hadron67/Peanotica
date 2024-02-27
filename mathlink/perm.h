@@ -67,7 +67,7 @@ struct PermutationView {
         copyArray(this->data, perm.data, this->getStorageSize());
         return *this;
     }
-    int compare(const PermutationView &other) const;
+    int compare(const PermutationView &other, bool ignoreSign) const;
     bool isIdentity() const;
     bool fixesPoint(upoint_type p) const {
         return (this->data + 1)[p] == p;
@@ -80,10 +80,10 @@ struct PermutationView {
     std::size_t hash() const;
     std::size_t getStorageSize() const { return this->len + 1; }
     bool operator == (PermutationView other) const {
-        return this->compare(other) == 0;
+        return this->compare(other, false) == 0;
     }
     bool operator != (PermutationView other) const {
-        return this->compare(other) != 0;
+        return this->compare(other, false) != 0;
     }
     inline void print(std::ostream &os, PermutationFormatter &formatter) const;
     static std::size_t storageSize(std::size_t len) { return len + 1; }
@@ -675,17 +675,25 @@ struct BaseChanger {
 };
 
 struct StrongGenSetProvider {
-    virtual void stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) = 0;
+    virtual void stabilizeOnePoint(PermutationStack &stack, upoint_type point) = 0;
     virtual PermutationList &getStrongGenSet() = 0;
+    virtual void print(std::ostream &os, PermutationFormatter &formatter) = 0;
 };
 
 struct BaseChangingStrongGenSetProvider : StrongGenSetProvider {
-    PermutationList genset;
     BaseChanger *baseChanger = nullptr;
     BaseChangingStrongGenSetProvider() = default;
     BaseChangingStrongGenSetProvider(BaseChanger &baseChanger): baseChanger(&baseChanger) {}
-    virtual void stabilizeOnePoint(PermutationStack &stack, MutableSlice<upoint_type> base, upoint_type point) override final;
+    void setSGS(PermutationList &genset);
+    virtual void stabilizeOnePoint(PermutationStack &stack, upoint_type point) override final;
     virtual PermutationList &getStrongGenSet() override final;
+    virtual void print(std::ostream &os, PermutationFormatter &formatter) override final;
+    private:
+    PermutationList genset;
+    Array<upoint_type> base;
+    std::size_t baseLen;
+    Array<bool> stablePoints;
+    void updateStablePoints();
 };
 
 struct AlphaTable {
@@ -776,7 +784,7 @@ std::ostream &operator << (std::ostream &os, AlphaTable::Entry entry);
 
 struct DoubleCosetRepresentativeSolver {
     std::ostream *log = nullptr;
-    bool useTwoStep = true;
+    bool useTwoStep = false;
     PermutationFormatter permFormatter;
     std::optional<StackedPermutation> solve(StrongGenSetProvider &gensetS, StrongGenSetProvider &gensetD, PermutationView perm);
     private:
@@ -792,10 +800,6 @@ struct DoubleCosetRepresentativeSolver {
     AlphaTable alphas[2];
     unsigned int alphaPtr;
 
-    Array<upoint_type> bases;
-    std::size_t initialBaseSLen, baseSLen, baseDLen;
-    PermutationList baseFilterTmp;
-
     std::size_t baseChangeOfDTime, baseChangeOfSTime;
 
     void setPermutationLength(std::size_t permLen) {
@@ -803,24 +807,11 @@ struct DoubleCosetRepresentativeSolver {
         this->sgdSet.setPermutationLength(permLen);
         this->boolSetPool.blockSize = this->permLen * 16;
         this->permStack.setBlockSize(this->permLen * 16);
-        this->bases.ensureSize(permLen * 4);
-    }
-    MutableSlice<upoint_type> getInitialBaseS() {
-        return MutableSlice{this->bases.get(), this->initialBaseSLen};
-    }
-    MutableSlice<upoint_type> getBaseS() {
-        return MutableSlice{this->bases.get() + this->permLen, this->baseSLen};
-    }
-    MutableSlice<upoint_type> getBaseD() {
-        return MutableSlice{this->bases.get() + this->permLen * 2, this->baseDLen};
-    }
-    upoint_type *getTmpBase() const {
-        return this->bases.get() + this->permLen * 3;
     }
     void subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm);
     void extendBaseS(upoint_type minNonFixedPoint, PermutationView perm);
-    StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD);
-    std::optional<StackedPermutation> solveDoubleCosetRepresentative(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm, upoint_type minNonFixedPointOfD);
+    StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD, bool *finishedPoints);
+    std::optional<StackedPermutation> solveDoubleCosetRepresentative(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm, const bool *finishedPoints);
 };
 
 struct GroupOrderCalculator {
@@ -944,6 +935,15 @@ struct SymmetricBlockBuilder {
             return ret;
         }
     }
+};
+
+struct GroupEnumerator {
+    PermutationStack *permStack = nullptr;
+    PermutationSet elements;
+    private:
+    std::size_t prevCosetRep = 0;
+    PermutationList generators;
+    void addGenerator(PermutationView generator);
 };
 
 namespace meta {
