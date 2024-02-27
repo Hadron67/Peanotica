@@ -494,6 +494,8 @@ OptionalUInt<upoint_type> JerrumBranching::findRoot() const {
 }
 
 void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm) {
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
     StackedPermutation tmp(stack, this->permLen), tmp2(stack, this->permLen);
     tmp.copy(perm);
     auto findEdge1 = [this](upoint_type j, upoint_type l) -> OptionalUInt<upoint_type> {
@@ -507,26 +509,33 @@ void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_typ
     while (1) {
         auto j = tmp.firstNonFixedPoint();
         auto l = tmp.mapPoint(j);
+        std::cout << "j = " << j << ", l = " << l << std::endl;
         while (j + 1 < this->permLen && this->hasPath(queue, j, l)) {
             tmp2.inverse(this->getPermutation(this->getVertex(l).get()));
             tmp.multiply(tmp, tmp2);
             tmp.multiply(tmp, this->getPermutation(this->getVertex(j).get()));
+            std::cout << "path exists, new g = " << formatter.formatValue(tmp) << std::endl;
             j = tmp.firstNonFixedPoint();
             l = tmp.mapPoint(j);
+            std::cout << "new j = " << j << ", l = " << l << std::endl;
         }
         if (j + 1 == this->permLen) {
+            std::cout << "returning" << std::endl;
             return;
         }
         auto m0 = findEdge1(j, l);
         while (m0.isPresent()) {
             auto m = m0.get();
+            std::cout << "edge ml with m > j exists, m = " << m << std::endl;
             tmp2.inverse(this->getPermutation(this->getEdge(m, l).get()));
             tmp.multiply(tmp, tmp2);
             l = m;
             m0 = findEdge1(j, l);
+            std::cout << "new g = " << formatter.formatValue(tmp) << std::endl;
         }
         m0 = findEdge1(0, l);
         if (m0.isPresent()) {
+            std::cout << "edge ml exists" << std::endl;
             StackedPermutation tmp3(stack, this->permLen);
             auto m = m0.get();
             tmp3.copy(this->getPermutation(this->getEdge(m, l).get()));
@@ -535,8 +544,10 @@ void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_typ
             tmp2.inverse(tmp);
             tmp3.multiply(tmp3, tmp2);
             tmp.copy(tmp3);
+            std::cout << "new g = " << formatter.formatValue(tmp) << std::endl;
             this->recalculateVertices(queue);
         } else {
+            std::cout << "edge ml does not exist" << std::endl;
             this->setEdgePermutation(j, l, tmp);
             this->recalculateVertices(queue);
             return;
@@ -571,16 +582,175 @@ void JerrumBranching::dump(std::ostream &os, PermutationFormatter &formatter) {
     os << "}" << std::endl;
 }
 
+void JerrumBranching2::recalculateVertices(std::deque<upoint_type> &queue) {
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto entry = this->get(p);
+        if (!entry.getParent().isPresent()) {
+            queue.clear();
+            queue.push_back(p);
+            entry.setRoot(p);
+            entry.getVertexLabel().identity();
+            while (!queue.empty()) {
+                auto p2 = queue[0];
+                queue.pop_front();
+                auto entry2 = this->get(p2);
+                for (upoint_type p3 = 0; p3 < this->permLen; p3++) {
+                    auto entry3 = this->get(p3);
+                    if (entry3.getParent() == p2) {
+                        entry3.getVertexLabel().multiply(entry2.getVertexLabel(), entry3.getEdgeLabel());
+                        entry3.setRoot(entry2.getRoot());
+                        queue.push_back(p3);
+                    }
+                }
+            }
+        }
+    }
+}
+
+bool JerrumBranching2::hasPath(upoint_type p1, upoint_type p2) {
+    auto parent = this->get(p2).getParent();
+    while (parent.isPresent()) {
+        auto p3 = parent.get();
+        if (p3 == p1) {
+            return true;
+        }
+        parent = this->get(p3).getParent();
+    }
+    return false;
+}
+
+void JerrumBranching2::dump(std::ostream &os, PermutationFormatter &formatter, std::deque<upoint_type> &queue) {
+    os << "JerrumBraching {" << std::endl;
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto entry = this->get(p);
+        if (!entry.getParent().isPresent()) {
+            queue.clear();
+            queue.push_back(p);
+            while (!queue.empty()) {
+                auto p2 = queue[0];
+                queue.pop_front();
+                for (upoint_type p3 = 0; p3 < this->permLen; p3++) {
+                    auto entry3 = this->get(p3);
+                    if (p2 == entry3.getParent()) {
+                        os << "    " << p2 << " -- " << formatter.formatValue(entry3.getEdgeLabel()) << " --> " << p3 << std::endl;
+                        queue.push_back(p3);
+                    }
+                }
+            }
+        }
+    }
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        os << "    v(" << p << ") = " << formatter.formatValue(this->get(p).getVertexLabel()) << std::endl;
+    }
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        std::cout << "    root(" << p << ") = " << this->get(p).getRoot() << std::endl;
+    }
+    os << "}" << std::endl;
+}
+
+void JerrumBranching2::reset() {
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto entry = this->get(p);
+        entry.setParent(None{});
+        entry.setRoot(p);
+    }
+}
+
+void JerrumBranching2::siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm, SiftLogger log) {
+    StackedPermutation tmp(stack, this->permLen), tmp2(stack, this->permLen);
+    tmp.copy(perm);
+    while (1) {
+        auto j = tmp.firstNonFixedPoint();
+        auto l = tmp.mapPoint(j);
+#ifdef PPERM_DEBUG
+        if (log.os) {
+            *log.os << "j = " << j << ", l = " << l << std::endl;
+        }
+#endif
+        while (j + 1 < this->permLen && this->hasPath(j, l)) {
+            tmp2.inverse(this->get(l).getVertexLabel());
+            tmp.multiply(tmp, tmp2);
+            tmp.multiply(tmp, this->get(j).getVertexLabel());
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "path exists, new g = " << log.formatter->formatValue(tmp) << std::endl;
+            }
+#endif
+            j = tmp.firstNonFixedPoint();
+            l = tmp.mapPoint(j);
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "new j = " << j << ", l = " << l << std::endl;
+            }
+#endif
+        }
+        if (j + 1 == this->permLen) {
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "returning" << std::endl;
+            }
+#endif
+            return;
+        }
+        auto m0 = this->get(l).getParent();
+        while (m0.isPresent() && m0.get() > j) {
+            auto m = m0.get();
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "edge ml with m > j exists, m = " << m << std::endl;
+            }
+#endif
+            tmp2.inverse(this->get(l).getEdgeLabel());
+            tmp.multiply(tmp, tmp2);
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "new g = " << log.formatter->formatValue(tmp) << std::endl;
+            }
+#endif
+            l = m;
+            m0 = this->get(l).getParent();
+        }
+        auto entry = this->get(l);
+        if (entry.getParent().isPresent()) {
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "edge ml exists" << std::endl;
+            }
+#endif
+            StackedPermutation tmp3(stack, this->permLen);
+            tmp3.copy(entry.getEdgeLabel());
+            entry.setParent(j);
+            entry.getEdgeLabel().copy(tmp);
+            tmp2.inverse(tmp);
+            tmp3.multiply(tmp3, tmp2);
+            tmp.copy(tmp3);
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "new g = " << log.formatter->formatValue(tmp) << std::endl;
+            }
+#endif
+            this->recalculateVertices(queue);
+        } else {
+#ifdef PPERM_DEBUG
+            if (log.os) {
+                *log.os << "edge ml does not exist" << std::endl;
+            }
+#endif
+            entry.setParent(j);
+            entry.getEdgeLabel().copy(tmp);
+            this->recalculateVertices(queue);
+            return;
+        }
+    }
+}
+
 void JerrumBranchingBuilder::augment(upoint_type i) {
     auto permLen = this->currentGens.getPermutationLength();
     for (upoint_type p = 0; p < permLen; p++) if(p != i && this->orbit.pointToOrbitId[p].isPresent()) {
-        for (upoint_type l = 0; l < permLen; l++) {
-            this->branching.setEdge(l, p, None{});
-        }
+        auto entry = this->branching.get(p);
         auto u1 = traceSchreierVector(*this->permStack, p, this->currentGens, this->orbit.vector.get());
-        auto permPtr = this->branching.allocPermutation();
-        this->branching.getPermutation(permPtr).copy(u1);
-        this->branching.setEdge(i, p, permPtr);
+        entry.setParent(i);
+        entry.getEdgeLabel().copy(u1);
     }
 }
 
@@ -616,11 +786,13 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
                 *this->log << "sifting element " << this->formatter.formatValue(perm) << std::endl;
             }
 #endif
-            this->siftingBranching.siftElement(*this->permStack, this->queue, perm);
+            this->siftingBranching.siftElement(*this->permStack, this->queue, perm, JerrumBranching2::SiftLogger(this->log, this->formatter));
 #ifdef PPERM_DEBUG
             if (this->log) {
+                std::deque<upoint_type> queue;
                 *this->log << "the branching is: ";
-                this->siftingBranching.dump(*this->log, this->formatter);
+                this->siftingBranching.dump(*this->log, this->formatter, queue);
+                // this->siftingBranching.dump(*this->log, this->formatter);
                 *this->log << std::endl;
             }
 #endif

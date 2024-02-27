@@ -117,10 +117,10 @@ static bool testJerrumFilter() {
     list.push().identity().cycle(1, 5, 4).cycle(2, 6, 3);
     list.push().identity().cycle(3, 4).cycle(5, 6);
     list.push().identity().cycle(1, 5).cycle(2, 6);
-    JerrumBranching branching(7);
+    JerrumBranching2 branching(7);
     std::deque<upoint_type> queue;
     for (auto perm : list) {
-        branching.siftElement(stack, queue, perm);
+        branching.siftElement(stack, queue, perm, JerrumBranching2::SiftLogger{});
     }
     list.clear();
     branching.collectLabels([&](PermutationView perm){ list.addPermutation(perm); });
@@ -165,8 +165,16 @@ static bool testSchreierSims2() {
     PermutationStack stack(DEG * 16);
 
     JerrumBranchingBuilder builder;
-    builder.formatter.useCycles = true;
-    builder.log = &std::cout;
+    builder.build(stack, genset);
+    return true;
+}
+
+static bool testSchreierSims3() {
+    constexpr int DEG = 4;
+    auto genset = GenSet<SCycles<List<0, 2, 3>>, SCycles<List<0, 1>>, SCycles<List<0, 3, 2, 1>>>::build(DEG);
+    PermutationStack stack(DEG * 16);
+
+    JerrumBranchingBuilder builder;
     builder.build(stack, genset);
     return true;
 }
@@ -440,6 +448,7 @@ int main(int argc, const char *args[]) {
     TEST(testSchreierVector());
     TEST(testSchreierSims());
     TEST(testSchreierSims2());
+    TEST(testSchreierSims3());
     TEST(testJerrumFilter());
     TEST(testCyclesConvert());
     TEST(testBaseChange1());

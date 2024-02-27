@@ -613,17 +613,83 @@ struct JerrumBranching {
     std::vector<Ptr> freePermutations;
 };
 
+struct JerrumBranching2 {
+    struct Entry {
+        OptionalUInt<upoint_type> getParent() const {
+            return OptionalUInt<upoint_type>::fromRaw(this->data[0]);
+        }
+        void setParent(OptionalUInt<upoint_type> p) {
+            this->data[0] = p.getRaw();
+        }
+        upoint_type getRoot() const {
+            return this->data[1];
+        }
+        void setRoot(upoint_type p) {
+            this->data[1] = p;
+        }
+        PermutationView getEdgeLabel() {
+            return PermutationView{this->data + 2, this->permLen};
+        }
+        PermutationView getVertexLabel() {
+            return PermutationView{this->data + 2 + PermutationView::storageSize(this->permLen), this->permLen};
+        }
+        static std::size_t storageSize(std::size_t permLen) {
+            return 2 + 2 * PermutationView::storageSize(permLen);
+        }
+        private:
+        upoint_type *data;
+        std::size_t permLen;
+        Entry(upoint_type *data, std::size_t permLen): data(data), permLen(permLen) {}
+        friend JerrumBranching2;
+    };
+    struct SiftLogger {
+        std::ostream *os = nullptr;
+        PermutationFormatter *formatter = nullptr;
+        SiftLogger() = default;
+        SiftLogger(std::ostream *os, PermutationFormatter &formatter): os(os), formatter(&formatter) {}
+    };
+    JerrumBranching2() = default;
+    JerrumBranching2(std::size_t permLen) {
+        this->setPermutationLength(permLen);
+    }
+    void setPermutationLength(std::size_t permLen) {
+        this->permLen = permLen;
+        this->storage.ensureSize(permLen * Entry::storageSize(permLen));
+        this->reset();
+    }
+    Entry get(upoint_type p) {
+        return Entry(this->storage.get() + p * Entry::storageSize(this->permLen), this->permLen);
+    }
+    void recalculateVertices(std::deque<upoint_type> &queue);
+    bool hasPath(upoint_type p1, upoint_type p2);
+    void dump(std::ostream &os, PermutationFormatter &formatter, std::deque<upoint_type> &queue);
+    void reset();
+    void siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm, SiftLogger log);
+    template<typename Fn>
+    void collectLabels(Fn consumer) {
+        for (upoint_type i = 0; i < this->permLen; i++) {
+            auto entry = this->get(i);
+            if (entry.getParent().isPresent()) {
+                consumer(entry.getEdgeLabel());
+            }
+        }
+    }
+    private:
+    std::size_t permLen = 0;
+    Array<upoint_type> storage;
+};
+
 struct JerrumBranchingBuilder {
     std::ostream *log = nullptr;
     PermutationFormatter formatter;
-    JerrumBranching branching;
+    JerrumBranching2 branching;
     void build(PermutationStack &permStack, PermutationList &genset);
     private:
     PermutationStack *permStack;
     SchreierOrbit orbit;
     PermutationList currentGens;
     PermutationSet schreierGens; // maybe PermutationList is also ok? cause we don't know whether the Schreier generators contain dupes
-    JerrumBranching siftingBranching;
+    JerrumBranching2 siftingBranching;
     std::deque<upoint_type> queue;
     void augment(upoint_type i);
 };
