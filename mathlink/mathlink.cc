@@ -69,6 +69,20 @@ static bool writePermutationList(WSLINK link, PermutationList &list) {
 }
 
 namespace {
+    struct WSString {
+        const char *str = nullptr;
+        WSLINK link;
+        WSString() = default;
+        ~WSString() {
+            if (this->str) {
+                WSReleaseString(this->link, this->str);
+            }
+        }
+        bool init(WSLINK link) {
+            this->link = link;
+            return WSGetString(link, &this->str);
+        }
+    };
     struct WSTPEnv {
         WSLINK stdlink = nullptr;
         WSEnvironment stdenv = nullptr;
@@ -94,12 +108,6 @@ namespace {
             TRY(WSSetMessageHandler(this->stdlink, WSDefaultHandler));
             WSSetUserData(this->stdlink, static_cast<void *>(this), nullptr);
 
-            const char *logFileName = std::getenv("PPERM_LOG_FILE");
-            if (logFileName == nullptr) {
-                logFileName = "ppermlog.txt";
-            }
-            this->logFile.open(logFileName, std::ios_base::app);
-            this->logFile << std::endl;
             return true;
         };
         void mainLoop() {
@@ -180,20 +188,6 @@ static void registerFunctions(WSTPEnv &env) {
         }
     );
     env.registerFunction(
-        P_PREFIX "MathLinkSetPPermVerbose[" P_PREFIX "b_]",
-        "{" P_PREFIX "b}",
-        [](WSTPEnv &env) -> bool {
-            if (WSTestSymbol(env.stdlink, "True")) {
-                env.enableLog = true;
-            } else if (WSTestSymbol(env.stdlink, "False")) {
-                env.enableLog = false;
-            } else return false;
-            TRY(WSNewPacket(env.stdlink));
-            TRY(WSPutSymbol(env.stdlink, env.enableLog ? "True" : "False"));
-            return true;
-        }
-    );
-    env.registerFunction(
         P_PREFIX "MathLinkConstructStrongGenSet[" P_PREFIX "GS_List, " P_PREFIX "n_Integer]",
         "{" P_PREFIX "n, " P_PREFIX "GS}",
         [](WSTPEnv &env) -> bool {
@@ -213,8 +207,8 @@ static void registerFunctions(WSTPEnv &env) {
         }
     );
     env.registerFunction(
-        P_PREFIX "MathLinkDoubleCosetRepresentative[" P_PREFIX "S_List, " P_PREFIX "g_List, " P_PREFIX "D_List, " P_PREFIX "n_Integer" "]",
-        "{" P_PREFIX "n, " P_PREFIX "S, " P_PREFIX "g, " P_PREFIX "D}",
+        P_PREFIX "MathLinkDoubleCosetRepresentative[" P_PREFIX "S_List, " P_PREFIX "g_List, " P_PREFIX "D_List, " P_PREFIX "n_Integer, " P_PREFIX "useTwoStep_Integer, " P_PREFIX "verbose_Integer]",
+        "{" P_PREFIX "n, " P_PREFIX "S, " P_PREFIX "g, " P_PREFIX "D, " P_PREFIX "useTwoStep, " P_PREFIX "verbose}",
         [](WSTPEnv &env) -> bool {
             int permLen;
             TRY(WSGetInteger32(env.stdlink, &permLen));
@@ -224,6 +218,9 @@ static void registerFunctions(WSTPEnv &env) {
             TRY(readPermutationList(env.stdlink, gensetS));
             TRY(readPermutation(env.stdlink, perm));
             TRY(readPermutationList(env.stdlink, gensetD));
+            int twoStep, verbose;
+            TRY(WSGetInteger32(env.stdlink, &twoStep));
+            TRY(WSGetInteger32(env.stdlink, &verbose));
 
             BaseChanger baseChanger;
             BaseChangingStrongGenSetProvider gensetSProvider(baseChanger), gensetDProvider(baseChanger);
@@ -231,10 +228,11 @@ static void registerFunctions(WSTPEnv &env) {
             gensetDProvider.setSGS(gensetD);
 
             DoubleCosetRepresentativeSolver solver;
-            if (env.enableLog) {
+            if (verbose && env.logFile.is_open()) {
                 solver.log = &env.logFile;
                 solver.permFormatter.useCycles = true;
             }
+            solver.useTwoStep = bool(twoStep);
             auto ret = solver.solve(gensetSProvider, gensetDProvider, perm);
             TRY(WSNewPacket(env.stdlink));
             if (ret.has_value()) {
@@ -298,6 +296,31 @@ static void registerFunctions(WSTPEnv &env) {
             return true;
         }
     );
+    env.registerFunction(
+        P_PREFIX "MathLinkOpenLogFile[" P_PREFIX "path_String]",
+        "{" P_PREFIX "path}",
+        [](WSTPEnv &env) -> bool {
+            WSString path;
+            TRY(path.init(env.stdlink));
+            if (env.logFile.is_open()) {
+                env.logFile.close();
+            }
+            env.logFile.open(path.str, std::ios_base::app);
+            TRY(WSNewPacket(env.stdlink));
+            TRY(WSPutSymbol(env.stdlink, "True"));
+            return true;
+        }
+    );
+    env.registerFunction(
+        PREFIX "PPermCloseLogFile[]",
+        "{}",
+        [](WSTPEnv &env) -> bool {
+            env.logFile.close();
+            TRY(WSNewPacket(env.stdlink));
+            TRY(WSPutSymbol(env.stdlink, "True"));
+            return true;
+        }
+    );
 }
 
 WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n)) {
@@ -305,11 +328,13 @@ WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n)) {
     switch (message) {
         case WSTerminateMessage:
             WSDone = 1;
-            env.logFile << "terminated message received" << std::endl;
+            if (env.logFile.is_open()) {
+                env.logFile << "terminated message received" << std::endl;
+            }
         case WSInterruptMessage:
         case WSAbortMessage:
             WSAbort = 1;
-            env.logFile << "aborting message received, exiting" << std::endl;
+            if (env.logFile.is_open()) env.logFile << "aborting message received, exiting" << std::endl;
             std::exit(0);
         default:
             return;
@@ -320,7 +345,6 @@ int main(int argc, char *args[]) {
     WSTPEnv env;
     if (env.initialize(args, args + argc, nullptr)) {
         registerFunctions(env);
-        env.logFile << "successfully initialized" << std::endl;
         env.mainLoop();
     }
 

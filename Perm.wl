@@ -18,13 +18,21 @@ SymmetricGenSet;
 RiemannSymmetricGenSet;
 BlockSymmetricGenSet;
 RiemannMonomialGenSet;
+ScalarMonomialDummiesGenSet;
+DummiesGenSet;
 DummyIndicesGenSet;
 RubiksCubeGenSet;
 
 (* mathlink functions *)
-ConstructStrongGenSet;
-DoubleCosetRepresentative;
-GroupOrderFromStrongGenSet;
+ConstructStrongGenSet::usage = "ConstructStrongGenSet[G] returns a strong generating set relative to the base [1, 2, ..., n] of the group \[LeftAngleBracket]G\[RightAngleBracket], using Jerrum's variant of Schreier-Sims algorithm.";
+DoubleCosetRepresentative::usage = "DoubleCosetRepresentative[S, g, D] returns a canonical representative of the double coset \[LeftAngleBracket]S\[RightAngleBracket]\[CenterDot]g\[CenterDot]\[LeftAngleBracket]D\[RightAngleBracket] using Butler's algorithm. S and D are assumed to be strong generating sets relative to the base [1, 2, ..., n].";
+GroupOrderFromStrongGenSet::usage = "GroupOrderFromStrongGenSet[g] gives the order of the group \[LeftAngleBracket]g\[RightAngleBracket], where g is assumed to be a strong generating set relative to the base [1, 2, ..., n].";
+MoveBasePoint;
+PPermOpenLogFile::usage = "PPermOpenLogFile[path] opens a log file for the logs to be printed.";
+PPermCloseLogFile::usage = "PPermCloseLogFile[] closes the current log file."; (* defined in mathlink directly *)
+
+UseTwoStep;
+PPermVerbose;
 
 (* mathlink management *)
 $PPermLink;
@@ -38,12 +46,15 @@ CheckLink;
 MathLinkConstructStrongGenSet;
 MathLinkDoubleCosetRepresentative;
 MathLinkGroupOrderFromStrongGenSet;
+MathLinkMoveBasePoint;
+MathLinkOpenLogFile;
 
 FormatOneCycle[cyc_List] := RowBox@Join[{"("}, Riffle[MakeBoxes /@ cyc, ","], {")"}];
-SCycles /: MakeBoxes[expr_SCycles, StandardForm] := InterpretationBox[RowBox@#, expr] &[FormatOneCycle /@ Apply[List, expr]];
+SCycles /: MakeBoxes[expr_SCycles, StandardForm] := InterpretationBox[RowBox@#, expr] &@If[Length@expr === 0, {"I"}, FormatOneCycle /@ Apply[List, expr]];
 
 SCyclesToImages[-a_, n_] := -SCyclesToImages[a, n];
 SCyclesToImages[SCycles[inds__], n_] := Images @@ PermutationList[Cycles@{inds}, n];
+SCyclesToImages[SCycles[], n_] := Images @@ Range[n];
 SyntaxInformation@SCyclesToImages = {"ArgumentsPattern" -> {_, _}};
 
 ImagesToSCycles[-a_] := -ImagesToSCycles[a];
@@ -51,6 +62,7 @@ ImagesToSCycles[Images[inds__]] := SCycles @@ First@PermutationCycles@{inds};
 SyntaxInformation@ImagesToSCycles = {"ArgumentsPattern" -> {_}};
 
 MinPermutationLength[-a_] := MinPermutationLength@a;
+MinPermutationLength[SCycles[]] = 0;
 MinPermutationLength[SCycles[inds__]] := Max @@ Apply[Max, {inds}, {2}];
 MinPermutationLength[Images[inds__]] := Max[inds];
 MinPermutationLength[expr_List] := Max @@ Map[MinPermutationLength, expr];
@@ -73,10 +85,17 @@ RiemannSymmetricGenSet[n1_, n2_, n3_, n4_] := {-SCycles@{n1, n2}, -SCycles@{n3, 
 SyntaxInformation@RiemannSymmetricGenSet = {"ArgumentsPattern" -> {_, _., _., _.}};
 
 BlockSymmetricGenSet[blocks__] := MapThread[SCycles @@ Thread[{#1, #2}] &, {Drop[{blocks}, -1], Drop[{blocks}, 1]}];
+BlockSymmetricGenSet[] = {};
 SyntaxInformation@BlockSymmetricGenSet = {"ArgumentsPattern" -> {__}};
 
 RiemannMonomialGenSet[n_] := With[{blocks = Partition[Range[4n], 4]}, Join[Join @@ RiemannSymmetricGenSet @@@ blocks, BlockSymmetricGenSet @@ blocks]];
 SyntaxInformation@RiemannMonomialGenSet = {"ArgumentsPattern" -> {_}};
+
+ScalarMonomialDummiesGenSet[n_] := With[{inds = Partition[Range[n], 2]}, Join[Join @@ (SymmetricGenSet @@@ inds), BlockSymmetricGenSet @@ inds]];
+SyntaxInformation@ScalarMonomialDummiesGenSet = {"ArgumentsPattern" -> {_}};
+
+DummiesGenSet[sign_, dummies_] := Join[sign * Join @@ (SymmetricGenSet @@@ dummies), BlockSymmetricGenSet @@ dummies];
+SyntaxInformation@DummiesGenSet = {"ArgumentsPattern" -> {_, _}};
 
 DummyIndicesGenSet[sign : 0 | 1 | -1, indGroups_List];
 
@@ -90,29 +109,44 @@ PermToMLPerm[e_List, n_] := PermToMLPerm[#, n] & /@ e;
 MLPermToPerm[{n_, inds__}] := n * Images[inds];
 MLPermToPerm[0] = 0;
 
-ConstructStrongGenSet::usage = "ConstructStrongGenSet[G, n] returns a strong generating set relative to the base [1, 2, ..., n] of the group \[LeftAngleBracket]G\[RightAngleBracket], using Jerrum's variant of Schreier-Sims algorithm. ConstructStrongGenSet[g] infers the argument n from g.";
-ConstructStrongGenSet[gs_] := ConstructStrongGenSet[gs, MinPermutationLength@gs];
-ConstructStrongGenSet[gs_, n_] := (
+Options[CollectMathLinkOptions] = {
+    UseTwoMethod -> False,
+    PPermVerbose -> False
+};
+CollectMathLinkOptions[opt : OptionsPattern[]];
+
+ConstructStrongGenSet[gs_] := With[{n = MinPermutationLength@gs},
     PPermEnsureLink[];
     ImagesToSCycles /@ MLPermToPerm /@ MathLinkConstructStrongGenSet[PermToMLPerm[gs, n], n]
-);
+];
 SyntaxInformation@ConstructStrongGenSet = {"ArgumentsPattern" -> {_, _.}};
 
-DoubleCosetRepresentative::usage = "DoubleCosetRepresentative[S, g, D, n] returns a canonical representative of the double coset \[LeftAngleBracket]S\[RightAngleBracket]\[CenterDot]g\[CenterDot]\[LeftAngleBracket]D\[RightAngleBracket], with n being the permutation length. S and D are assumed to be strong generating sets relative to the base [1, 2, ..., n]. DoubleCosetRepresentative[S, g, D] infers the argument n from the other three arguments.";
-DoubleCosetRepresentative[s_, g_, d_] := DoubleCosetRepresentative[s, g, d, Max[MinPermutationLength[s], MinPermutationLength[g], MinPermutationLength[d]]];
-DoubleCosetRepresentative[s_, g_, d_, n_] := (
+Options[DoubleCosetRepresentative] = {
+    UseTwoStep -> False,
+    PPermVerbose -> False
+};
+DoubleCosetRepresentative[s_, g_, d_, opt : OptionsPattern[]] := With[{
+    n = Max[MinPermutationLength[s], MinPermutationLength[g], MinPermutationLength[d]]
+},
     PPermEnsureLink[];
-    MLPermToPerm@MathLinkDoubleCosetRepresentative[PermToMLPerm[s, n], PermToMLPerm[g, n], PermToMLPerm[d, n], n]
-);
-SyntaxInformation@DoubleCosetRepresentative = {"ArgumentsPattern" -> {_, _, _, _.}};
+    MLPermToPerm@MathLinkDoubleCosetRepresentative[PermToMLPerm[s, n], PermToMLPerm[g, n], PermToMLPerm[d, n], n, Boole[OptionValue[UseTwoStep]], Boole[OptionValue[PPermVerbose]]]
+];
+SyntaxInformation@DoubleCosetRepresentative = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
 
-GroupOrderFromStrongGenSet::usage = "GroupOrderFromStrongGenSet[g, n] gives the order of the group \[LeftAngleBracket]g\[RightAngleBracket], where g is assumed to be a strong generating set relative to the base [1, 2, ..., n]. GroupOrderFromStrongGenSet[g] infers n from g.";
-GroupOrderFromStrongGenSet[gs_] := GroupOrderFromStrongGenSet[gs, MinPermutationLength@gs];
-GroupOrderFromStrongGenSet[gs_, n_] := (
+GroupOrderFromStrongGenSet[gs_] := With[{
+    n = MinPermutationLength@gs
+},
     PPermEnsureLink[];
     MathLinkGroupOrderFromStrongGenSet[PermToMLPerm[gs, n], n]
-);
-SyntaxInformation@GroupOrderFromStrongGenSet = {"ArgumentsPattern" -> {_, _.}};
+];
+SyntaxInformation@GroupOrderFromStrongGenSet = {"ArgumentsPattern" -> {_}};
+
+MoveBasePoint[base_, gs_, pos_] := With[{
+    n = Max[MinPermutationLength@gs, Max @@ base]
+},
+    PPermEnsureLink[];
+    ImagesToSCycles /@ MLPermToPerm /@ MathLinkMoveBasePoint[base, PermToMLPerm[gs, n], pos, n]
+];
 
 PPermDisconnect[] := If[Head@$PPermLink === LinkObject, Quiet[Uninstall@$PPermLink, LinkObject::linkn]; $PPermLink =.];
 SyntaxInformation@PPermDisconnect = {"ArgumentsPattern" -> {}};
@@ -126,6 +160,12 @@ SyntaxInformation@PPermConnect = {"ArgumentsPattern" -> {}};
 PPermEnsureLink::reconn = "Link is dead, trying to reconnect.";
 PPermEnsureLink[] := With[{chk = CheckLink[]}, If[chk =!= True, If[chk === $Failed, Message[PPermEnsureLink::reconn]]; PPermConnect[]]];
 SyntaxInformation@PPermEnsureLink = {"ArgumentsPattern" -> {}};
+
+PPermOpenLogFile[path_] := (
+    PPermEnsureLink[];
+    MathLinkOpenLogFile[path];
+);
+SyntaxInformation@PPermOpenLogFile = {"ArgumentsPattern" -> {_}};
 
 End[];
 

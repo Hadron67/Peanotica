@@ -594,14 +594,36 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
     this->currentGens.addAll(genset.begin(), genset.end());
 
     for (upoint_type p = 0; p < permLen; p++) {
+#ifdef PPERM_DEBUG
+        if (this->log) {
+            *this->log << "========= iteration p = " << p << std::endl;
+        }
+#endif
         this->orbit.reset(this->currentGens.getPermutationLength());
         this->orbit.appendOrbit(p, this->currentGens, this->queue);
         this->augment(p);
         this->schreierGens.clear();
         schreierGenerators(this->schreierGens, *this->permStack, this->currentGens, this->orbit);
+#ifdef PPERM_DEBUG
+        if (this->log) {
+            *this->log << "schreier generators = " << this->formatter.formatRef(this->schreierGens) << std::endl;
+        }
+#endif
         this->siftingBranching.reset();
         for (auto perm : this->schreierGens) {
+#ifdef PPERM_DEBUG
+            if (this->log) {
+                *this->log << "sifting element " << this->formatter.formatValue(perm) << std::endl;
+            }
+#endif
             this->siftingBranching.siftElement(*this->permStack, this->queue, perm);
+#ifdef PPERM_DEBUG
+            if (this->log) {
+                *this->log << "the branching is: ";
+                this->siftingBranching.dump(*this->log, this->formatter);
+                *this->log << std::endl;
+            }
+#endif
         }
         this->currentGens.clear();
         this->siftingBranching.collectLabels([this](PermutationView perm) { this->currentGens.addPermutation(perm); });
@@ -746,9 +768,7 @@ void BaseChanger::completeBaseChange(MutableSlice<upoint_type> base, Slice<upoin
     }
     for (std::size_t j = i; j < newBase.len; j++) {
         auto pos = base.indexOf(newBase[j]);
-        upoint_type extraPoint = 0;
         if (pos == base.getLength()) {
-            extraPoint = newBase[j];
             base.append(newBase[j]);
         }
         this->moveToFirstDirectly(base, pos, stack);
@@ -920,7 +940,8 @@ void DoubleCosetRepresentativeSolver::subroutineF1(bool *ret, const bool *orbitB
 std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm) {
 #ifdef PPERM_DEBUG
     if (this->log) {
-        *this->log << "============== Begin double coset representative algorithm on g = " << this->permFormatter.formatValue(perm) << std::endl
+        *this->log << "============== Begin double coset representative algorithm ==========" << std::endl
+            << "g = " << perm << std::endl
             << "S = " << this->permFormatter.formatRef(gensetSProvider) << std::endl
             << "D = " << this->permFormatter.formatRef(gensetDProvider) << std::endl;
     }
@@ -1089,8 +1110,8 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
         *this->log << "========= begin double coset representative subroutine =======" << std::endl;
         *this->log << "S = " << this->permFormatter.formatRef(gensetSProvider) << std::endl
             << "D = " << this->permFormatter.formatRef(gensetDProvider) << std::endl
-            << "g = " << this->permFormatter.formatValue(perm) << std::endl
-            << "finishedPoints = {" << PointSet{finishedPoints, this->permLen} << "}" << std::endl;
+            << "g = " << perm << std::endl
+            << "finishedPoints = " << PointSet{finishedPoints, this->permLen} << std::endl;
     }
 #endif
     auto ret = this->permStack.pushStacked(this->permLen);
@@ -1220,7 +1241,10 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 
 #ifdef PPERM_DEBUG
                 if (this->log) {
-                    *this->log << "for j = " << j << ", new sgd = " << this->permFormatter.formatValue(newsgd) << std::endl;
+                    *this->log << "for j = " << j
+                        << ", s = " << this->permFormatter.formatValue(s1)
+                        << ", d = " << this->permFormatter.formatValue(d1)
+                        << ", new sgd = " << newsgd << std::endl;
                 }
 #endif
                 auto newsgdNeg = this->permStack.pushStacked(this->permLen);
@@ -1306,48 +1330,6 @@ namespace {
             return d.compare(this->blocks->at(i).getLast().getData());
         }
     };
-}
-
-bool SymmetricBlockBuilder::tryAddOneGenerator(PermutationView perm) {
-    auto images = perm.images();
-    this->pairs.ensureSize(perm.len * 2);
-    std::size_t pairCount = 0;
-    auto pairFirst = this->pairs.get(), pairLast = pairFirst + perm.len;
-    for (upoint_type p = 0; p < perm.len; p++) {
-        auto pImage = images[p];
-        if (pImage > p) {
-            if (images[pImage] == p) {
-                pairFirst[pairCount] = p;
-                pairLast[pairCount] = pImage;
-                pairCount++;
-            } else return false;
-        }
-    }
-    auto column1 = makeSlice(pairFirst, pairCount), column2 = makeSlice(pairLast, pairCount);
-    auto lastMatching = this->byLastColumn.find(column1, SymmetricBlockLastColumnHashContext{&this->blocks});
-    auto firstMatching = this->byFirstColumn.find(column2, SymmetricBlockFirstColumnHashContext{&this->blocks});
-    if (firstMatching.isNonNull() && lastMatching.isNonNull()) {
-        auto firstMatchingBlockId = this->byFirstColumn.getEntry(firstMatching)->value;
-        auto lastMatchingBlockId = this->byLastColumn.getEntry(lastMatching)->value;
-        auto &lastMatchingBlock = this->blocks[lastMatchingBlockId];
-        auto &firstMatchingBlock = this->blocks[firstMatchingBlockId];
-        for (auto entry : firstMatchingBlock) {
-            auto newBlock = lastMatchingBlock.pushBlock();
-            newBlock.setNegative(perm.isNegative() != entry.isNegative());
-            newBlock.getData().copy(entry.getData());
-        }
-        firstMatchingBlock.clear();
-        this->freeBlocks.push_back(firstMatchingBlockId);
-        this->byLastColumn.remove(lastMatching);
-        this->byFirstColumn.remove(firstMatching);
-        auto newLast = lastMatchingBlock.getLast().getData();
-        auto lastOfFirstMatchingBlock = this->byLastColumn.find(newLast, SymmetricBlockLastColumnHashContext{&this->blocks});
-        this->byLastColumn.getEntry(lastOfFirstMatchingBlock)->value = lastMatchingBlockId;
-    } else if (firstMatching.isNonNull()) {
-        auto firstMatchingBlockId = this->byFirstColumn.getEntry(firstMatching)->value;
-        auto &firstMatchingBlock = this->blocks[firstMatchingBlockId];
-
-    }
 }
 
 void GroupEnumerator::addGenerator(PermutationView generator) {

@@ -614,6 +614,8 @@ struct JerrumBranching {
 };
 
 struct JerrumBranchingBuilder {
+    std::ostream *log = nullptr;
+    PermutationFormatter formatter;
     JerrumBranching branching;
     void build(PermutationStack &permStack, PermutationList &genset);
     private:
@@ -823,27 +825,6 @@ inline std::ostream &operator << (std::ostream &os, SymmetricBlock::Block block)
 }
 
 std::ostream &operator << (std::ostream &os, SymmetricBlock &block);
-
-struct SymmetricBlockBuilder {
-    bool tryAddOneGenerator(PermutationView perm);
-    private:
-    SymmetricBlock workingBlock;
-    Array<upoint_type> pairs;
-    std::vector<SymmetricBlock> blocks;
-    std::vector<std::size_t> freeBlocks;
-    HashTable<std::size_t> byFirstColumn, byLastColumn;
-    std::size_t allocBlock() {
-        if (this->freeBlocks.empty()) {
-            auto ret = this->blocks.size();
-            this->blocks.emplace_back();
-            return ret;
-        } else {
-            auto ret = this->freeBlocks[this->freeBlocks.size() - 1];
-            this->freeBlocks.pop_back();
-            return ret;
-        }
-    }
-};
 
 struct GroupEnumerator {
     PermutationStack *permStack = nullptr;

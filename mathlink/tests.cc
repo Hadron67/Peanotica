@@ -159,6 +159,18 @@ static bool testSchreierSims() {
     return true;
 }
 
+static bool testSchreierSims2() {
+    constexpr int DEG = 5;
+    auto genset = GenSet<SCycles<List<0, 1, 3, 4, 2>>, SCycles<List<1, 4, 3, 2>>, SCycles<List<0, 1, 3>, List<2, 4>>>::build(DEG);
+    PermutationStack stack(DEG * 16);
+
+    JerrumBranchingBuilder builder;
+    builder.formatter.useCycles = true;
+    builder.log = &std::cout;
+    builder.build(stack, genset);
+    return true;
+}
+
 static bool testCyclesConvert() {
     PermutationStack stack(32);
     StackedPermutation perm{stack, 7};
@@ -427,6 +439,7 @@ int main(int argc, const char *args[]) {
     TEST(testOrderedMap(9));
     TEST(testSchreierVector());
     TEST(testSchreierSims());
+    TEST(testSchreierSims2());
     TEST(testJerrumFilter());
     TEST(testCyclesConvert());
     TEST(testBaseChange1());
