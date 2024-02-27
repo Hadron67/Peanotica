@@ -235,8 +235,8 @@ struct PermutationList {
     void pop() {
         this->data.pop();
     }
-    void remove(std::size_t i) {
-        this->data.remove(i);
+    void removeAndFetchLast(std::size_t i) {
+        this->data.removeAndFetchLast(i);
     }
     void addPermutation(PermutationView perm) {
         this->push().copy(perm);
@@ -270,7 +270,7 @@ inline bool filterPermutationsInPlace(T &set, Fn predicate) {
     bool ret = false;
     for (std::size_t i = 0; i < size;) {
         if (!predicate(set.get(i))) {
-            set.remove(i);
+            set.removeAndFetchLast(i);
             size--;
             ret = true;
         } else {
@@ -329,11 +329,11 @@ struct PermutationSet {
     void addPermutation(const PermutationView &perm);
     PermutationView appendPermutation(bool isNegative, std::initializer_list<upoint_type> list);
     OptionalUInt<std::size_t> findPermutation(const PermutationView &perm);
-    void remove(std::size_t index);
+    void removeAndFetchLast(std::size_t index);
     void removePermutation(PermutationView perm) {
         auto p = this->findPermutation(perm);
         if (p.isPresent()) {
-            this->remove(p.get());
+            this->removeAndFetchLast(p.get());
         }
     }
     bool contains(const PermutationView &perm) { return this->findPermutation(perm).isPresent(); }
@@ -344,7 +344,7 @@ struct PermutationSet {
         auto size = this->getSize();
         for (std::size_t i = 0; i < size;) {
             if (!predicate(this->get(i))) {
-                this->remove(i);
+                this->removeAndFetchLast(i);
                 size--;
             } else {
                 i++;

@@ -1583,6 +1583,14 @@ struct ArrayVector {
         }
         this->data.resize(this->data.size() - this->elementLen);
     }
+    void removeAndFetchLast(std::size_t index) {
+        if (index + 1 < this->getSize()) {
+            auto ptr = this->data.data() + index * this->elementLen;
+            auto lastPtr = this->data.data() + (this->data.size() - this->elementLen);
+            copyArray(ptr, lastPtr, this->elementLen);
+        }
+        this->data.resize(this->data.size() - this->elementLen);
+    }
     Iterator begin() {
         return Iterator(this->data.data(), this->elementLen);
     }

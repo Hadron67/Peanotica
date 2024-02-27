@@ -251,15 +251,14 @@ OptionalUInt<std::size_t> PermutationSet::findPermutation(const PermutationView 
     }
 }
 
-void PermutationSet::remove(std::size_t index) {
+void PermutationSet::removeAndFetchLast(std::size_t index) {
+    auto size = this->getSize();
     this->permToId.remove(this->permToId.find(index, PermutationHashContext{this, false}));
-    for (auto it = this->permToId.begin(); it != this->permToId.end(); ++it) {
-        auto &val = it.value();
-        if (val > index) {
-            val--;
-        }
+    if (index + 1 < size) {
+        auto last = this->permToId.find(size - 1, PermutationHashContext{this, false});
+        this->permToId.getEntry(last)->value = index;
     }
-    this->permutations.remove(index);
+    this->permutations.removeAndFetchLast(index);
 }
 
 void PermutationSet::updateIndex() {
