@@ -325,9 +325,7 @@ struct PermutationSet {
     PermutationView reservePermutation() {
         return this->permutations.push();
     }
-    void commitPermutation();
     void addPermutation(const PermutationView &perm);
-    PermutationView appendPermutation(bool isNegative, std::initializer_list<upoint_type> list);
     OptionalUInt<std::size_t> findPermutation(const PermutationView &perm);
     void removeAndFetchLast(std::size_t index);
     void removePermutation(PermutationView perm) {
@@ -696,120 +694,30 @@ struct BaseChangingStrongGenSetProvider : StrongGenSetProvider {
     void updateStablePoints();
 };
 
-struct AlphaTable {
-    using InnerIterator = ArrayVector<upoint_type>::Iterator;
-    struct Entry {
-        Slice<upoint_type> getL() const {
-            return makeSlice(this->data + 1, this->data[0]);
-        }
-        void setL(Slice<upoint_type> l) {
-            this->data[0] = l.len;
-            this->getL().copy(l);
-        }
-        void appendToL(upoint_type p) {
-            auto &len = this->data[0];
-            this->data[len++ + 1] = p;
-        }
-        PermutationView getS() const {
-            auto ptr = this->data + 1 + this->permLen;
-            return PermutationView{ptr, this->permLen};
-        }
-        PermutationView getD() const {
-            auto ptr = this->data + 1 + this->permLen + PermutationView::storageSize(this->permLen);
-            return PermutationView{ptr, this->permLen};
-        }
-        std::size_t getStorageSize() const {
-            return storageSize(this->permLen);
-        }
-        static std::size_t storageSize(std::size_t permLen) {
-            return 2 * PermutationView::storageSize(permLen) + permLen + 1;
-        }
-        void print(std::ostream &os, PermutationFormatter &formatter);
-        private:
-        Entry(std::size_t permLen, upoint_type *data): permLen(permLen), data(data) {}
-        std::size_t permLen;
-        upoint_type *data;
-        friend AlphaTable;
-    };
-    struct Iterator {
-        Iterator(InnerIterator inner, std::size_t permLen): inner(inner), permLen(permLen) {}
-        bool operator == (Iterator other) const {
-            return this->inner == other.inner;
-        }
-        Entry operator * () {
-            return Entry(this->permLen, *this->inner);
-        }
-        Entry operator -> () {
-            return this->operator*();
-        }
-        Iterator &operator ++ () {
-            ++this->inner;
-            return *this;
-        }
-        private:
-        InnerIterator inner;
-        std::size_t permLen;
-    };
-    void setPermutationLength(std::size_t permLen) {
-        this->data.setElementLen(Entry::storageSize(permLen));
-        this->permLen = permLen;
-    }
-    std::size_t getPermutationLength() {
-        return this->permLen;
-    }
-    Entry get(std::size_t i) {
-        return Entry(this->getPermutationLength(), this->data[i]);
-    }
-    Entry pushEntry() {
-        return Entry(this->getPermutationLength(), this->data.push());
-    }
-    Iterator begin() {
-        return Iterator(this->data.begin(), this->permLen);
-    }
-    Iterator end() {
-        return Iterator(this->data.end(), this->permLen);
-    }
-    void clear() {
-        this->data.clear();
-    }
-    std::size_t getSize() const {
-        return this->data.getSize();
-    }
-    private:
-    std::size_t permLen = 0;
-    ArrayVector<upoint_type> data;
-};
-
-std::ostream &operator << (std::ostream &os, AlphaTable::Entry entry);
-
 struct DoubleCosetRepresentativeSolver {
     std::ostream *log = nullptr;
     bool useTwoStep = false;
     PermutationFormatter permFormatter;
     std::optional<StackedPermutation> solve(StrongGenSetProvider &gensetS, StrongGenSetProvider &gensetD, PermutationView perm);
     private:
-    using TableEntry = AlphaTable::Entry;
     std::size_t permLen;
     PermutationStack permStack;
-    PermutationSet sgdSet;
     SchreierOrbit orbitS, orbitD;
     BaseChanger baseChanger;
     OBStack<bool> boolSetPool;
     std::deque<upoint_type> queue;
 
-    AlphaTable alphas[2];
+    PermutationSet alphas[2];
     unsigned int alphaPtr;
 
     std::size_t baseChangeOfDTime, baseChangeOfSTime;
 
     void setPermutationLength(std::size_t permLen) {
         this->permLen = permLen;
-        this->sgdSet.setPermutationLength(permLen);
         this->boolSetPool.blockSize = this->permLen * 16;
         this->permStack.setBlockSize(this->permLen * 16);
     }
-    void subroutineF1(bool *ret, const bool *orbitB, TableEntry entry, PermutationView perm);
-    void extendBaseS(upoint_type minNonFixedPoint, PermutationView perm);
+    void subroutineF1(bool *ret, const bool *orbitB, PermutationView perm);
     StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD, bool *finishedPoints);
     std::optional<StackedPermutation> solveDoubleCosetRepresentative(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm, const bool *finishedPoints);
 };

@@ -84,23 +84,24 @@ static bool testHashMap(std::size_t seed) {
 }
 
 static bool testSchreierVector() {
-    PermutationSet genset(4);
+    PermutationList genset(4);
     upoint_type base[] = {0, 2};
-    genset.appendPermutation(true, {1, 0, 2, 3});
-    genset.appendPermutation(true, {0, 1, 3, 2});
-    genset.appendPermutation(false, {2, 3, 0, 1});
+    genset.push().identity().assign(true, {1, 0, 2, 3});
+    genset.push().identity().assign(true, {1, 0, 2, 3});
+    genset.push().identity().assign(true, {0, 1, 3, 2});
+    genset.push().identity().assign(false, {2, 3, 0, 1});
 
     PermutationStack stack(64);
     {
         StackedPermutation perm(stack, 4);
         perm.assign(false, {2, 1, 0, 3});
-        EXPECT(false, isInGroup(stack, perm, genset.permutations, makeSlice(base, 2)));
+        EXPECT(false, isInGroup(stack, perm, genset, makeSlice(base, 2)));
         perm.assign(false, {1, 0, 3, 2});
-        EXPECT(true, isInGroup(stack, perm, genset.permutations, makeSlice(base, 2)));
+        EXPECT(true, isInGroup(stack, perm, genset, makeSlice(base, 2)));
         perm.assign(true, {3, 2, 0, 1});
-        EXPECT(true, isInGroup(stack, perm, genset.permutations, makeSlice(base, 2)));
+        EXPECT(true, isInGroup(stack, perm, genset, makeSlice(base, 2)));
         perm.assign(true, {3, 2, 1, 0});
-        EXPECT(false, isInGroup(stack, perm, genset.permutations, makeSlice(base, 2)));
+        EXPECT(false, isInGroup(stack, perm, genset, makeSlice(base, 2)));
     }
     EXPECT(true, stack.isEmpty());
     return true;

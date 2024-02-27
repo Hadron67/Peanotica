@@ -1195,6 +1195,9 @@ struct HashTable {
 
     template<typename K2, typename Ctx>
     Pointer find(const K2 &key, const Ctx &ctx) const {
+        if (this->bucketSize == 0) {
+            return Pointer::nil();
+        }
         std::size_t hash = ctx.hash(key) % this->bucketSize;
         OptionalUInt<PtrType> entryPtr = this->buckets[hash];
         if (!entryPtr.isPresent()) {
