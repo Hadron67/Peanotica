@@ -775,8 +775,9 @@ struct DoubleCosetRepresentativeSolver {
     OBStack<bool> boolSetPool;
     std::deque<upoint_type> queue;
 
-    PermutationSet alphas[2];
-    unsigned int alphaPtr;
+    PermutationSet sgdSet;
+    PermutationList selectedSgD;
+    upoint_type minP;
 
     std::size_t baseChangeOfDTime, baseChangeOfSTime;
 
@@ -784,8 +785,10 @@ struct DoubleCosetRepresentativeSolver {
         this->permLen = permLen;
         this->boolSetPool.blockSize = this->permLen * 16;
         this->permStack.setBlockSize(this->permLen * 16);
+        this->sgdSet.setPermutationLength(permLen);
+        this->selectedSgD.setPermutationLength(permLen);
     }
-    void subroutineF1(bool *ret, const bool *orbitB, PermutationView perm);
+    void subroutineF1(const bool *orbitB, PermutationView perm);
     StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD, bool *finishedPoints);
     std::optional<StackedPermutation> solveDoubleCosetRepresentative(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm, const bool *finishedPoints);
 };

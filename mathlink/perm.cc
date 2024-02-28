@@ -792,7 +792,6 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
                 std::deque<upoint_type> queue;
                 *this->log << "the branching is: ";
                 this->siftingBranching.dump(*this->log, this->formatter, queue);
-                // this->siftingBranching.dump(*this->log, this->formatter);
                 *this->log << std::endl;
             }
 #endif
@@ -1070,11 +1069,10 @@ static inline void pointSetIntersection(bool *dest, const bool *set2, std::size_
     }
 }
 
-void DoubleCosetRepresentativeSolver::subroutineF1(bool *ret, const bool *orbitB, PermutationView sgd) {
+void DoubleCosetRepresentativeSolver::subroutineF1(const bool *orbitB, PermutationView sgd) {
 #ifdef PPERM_DEBUG
     if (this->log) {
-        *this->log << "calling F1 with ret = " << PointSet{ret, this->permLen}
-            << ", Delta_b = " << PointSet{orbitB, this->permLen}
+        *this->log << "calling F1 with Delta_b = " << PointSet{orbitB, this->permLen}
             << ", sgd = " << this->permFormatter.formatValue(sgd)
             << std::endl;
     }
@@ -1099,14 +1097,31 @@ void DoubleCosetRepresentativeSolver::subroutineF1(bool *ret, const bool *orbitB
     for (upoint_type p = 0; p < this->permLen; p++) {
         auto orbitId0 = pointToOrbitId[p];
         if (orbitId0.isPresent() && selectedOrbits[orbitId0.get()]) {
-            ret[p] = true;
+            if (p == this->minP) {
+#ifdef PPERM_DEBUG
+                if (this->log) {
+                    *this->log << "minimal point " << p << " matches previous one" << std::endl;
+                }
+#endif
+                this->selectedSgD.addPermutation(sgd);
+            } else if (p < this->minP) {
+#ifdef PPERM_DEBUG
+                if (this->log) {
+                    *this->log << "new minimal point " << p << std::endl;
+                }
+#endif
+                this->minP = p;
+                this->selectedSgD.clear();
+                this->selectedSgD.addPermutation(sgd);
+            }
+#ifdef PPERM_DEBUG
+            else if (this->log) {
+                *this->log << "ignoring non-minimal point " << p << std::endl;
+            }
+#endif
+            break;
         }
     }
-#ifdef PPERM_DEBUG
-    if (this->log) {
-        *this->log << "ret = " << PointSet{ret, this->permLen} << ", end of F1" << std::endl;
-    }
-#endif
 }
 
 std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongGenSetProvider &gensetSProvider, StrongGenSetProvider &gensetDProvider, PermutationView perm) {
@@ -1288,29 +1303,23 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #endif
     auto ret = this->permStack.pushStacked(this->permLen);
 
-    this->alphaPtr = 0;
-    for (unsigned int i = 0; i < 2; i++) {
-        this->alphas[i].setPermutationLength(this->permLen);
-        this->alphas[i].clear();
-    }
-    this->alphas[this->alphaPtr].addPermutation(perm);
+    this->sgdSet.clear();
+    this->sgdSet.addPermutation(perm);
 
     auto orbitB = this->boolSetPool.pushStacked(this->permLen);
     auto orbitPi = this->boolSetPool.pushStacked(this->permLen);
-    auto images = this->boolSetPool.pushStacked(this->permLen);
     for (upoint_type i = 0; i < this->permLen; i++) if (!finishedPoints[i]) {
         auto &gensetS = gensetSProvider.getStrongGenSet();
         auto &gensetD = gensetDProvider.getStrongGenSet();
 #ifdef PPERM_DEBUG
         if (this->log) {
-            *this->log << "============ iteration i = " << i
-                << ", S = " << this->permFormatter.formatRef(gensetS)
-                << ", D = " << this->permFormatter.formatRef(gensetD)
-                << std::endl;
+            *this->log << "============ iteration i = " << i << std::endl
+                << "S = " << this->permFormatter.formatRef(gensetSProvider) << std::endl
+                << "D = " << this->permFormatter.formatRef(gensetDProvider) << std::endl
+                << "sgd = " << this->permFormatter.formatRef(this->sgdSet) << std::endl
+                << "Length[sgd] = " << this->sgdSet.getSize() << std::endl;
         }
 #endif
-        auto &currentAlphaTab = this->alphas[this->alphaPtr];
-        auto &nextAlphaTab = this->alphas[(this->alphaPtr + 1) & 1];
 
         this->orbitS.reset(this->permLen);
         // In the original algorithm here we should calculate all orbits of S, but it seems that just calculating the orbit of b_i sufficies
@@ -1341,19 +1350,19 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
         }
 #endif
 
-        arraySet(images.begin(), this->permLen, false);
-        for (auto sgd : currentAlphaTab) {
-            this->subroutineF1(images.begin(), orbitB.begin(), sgd);
+        this->minP = this->permLen;
+        for (auto sgd : this->sgdSet) {
+            this->subroutineF1(orbitB.begin(), sgd);
         }
 #ifdef PPERM_DEBUG
         if (this->log) {
-            *this->log << "IMAGES = " << PointSet{images.begin(), this->permLen} << std::endl;
+            *this->log << "selected sgd = " << this->permFormatter.formatRef(this->selectedSgD) << std::endl
+                << "Length[sgd] = " << this->selectedSgD.getSize() << std::endl;
         }
 #endif
 
         // Note: the ordering for determining the minimal point is just a convention
-        auto pi = findFirstPoint(images.begin(), this->permLen);
-        // auto pi = minPointWithRespectToBase(images.begin(), this->permLen, baseS);
+        auto pi = this->minP;
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "p_i = " << pi << std::endl;
@@ -1377,8 +1386,8 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
         }
 #endif
 
-        nextAlphaTab.clear();
-        for (auto sgd : currentAlphaTab) {
+        this->sgdSet.clear();
+        for (auto sgd : this->selectedSgD) {
 #ifdef PPERM_DEBUG
             if (this->log) {
                 *this->log << "working on sgd = " << this->permFormatter.formatValue(sgd) << std::endl;
@@ -1422,7 +1431,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
                 auto newsgdNeg = this->permStack.pushStacked(this->permLen);
                 newsgdNeg.copy(newsgd);
                 newsgdNeg.setNegative(!newsgdNeg.isNegative());
-                if (nextAlphaTab.findPermutation(newsgdNeg).isPresent()) {
+                if (this->sgdSet.findPermutation(newsgdNeg).isPresent()) {
 #ifdef PPERM_DEBUG
                     if (this->log) {
                         *this->log << "found permutations with opposite signs of " << this->permFormatter.formatValue(newsgd) << std::endl;
@@ -1430,10 +1439,9 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #endif
                     return std::nullopt;
                 }
-                nextAlphaTab.addPermutation(newsgd);
+                this->sgdSet.addPermutation(newsgd);
             }
         }
-        this->alphaPtr = (this->alphaPtr + 1) & 1;
 
         this->baseChangeOfDTime += measureElapsed([&]() {
             gensetSProvider.stabilizeOnePoint(this->permStack, i);
@@ -1444,13 +1452,13 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
         if (this->log) {
             *this->log << "S_" << i << " = " << this->permFormatter.formatRef(gensetSProvider) << std::endl;
             *this->log << "D_" << i << " = " << this->permFormatter.formatRef(gensetDProvider) << std::endl;
-            *this->log << "TAB = " << this->alphas[this->alphaPtr] << std::endl;
-            *this->log << "Length[TAB] = " << this->alphas[this->alphaPtr].getSize() << std::endl;
+            *this->log << "new sgd = " << this->sgdSet << std::endl;
+            *this->log << "Length[sgd] = " << this->sgdSet.getSize() << std::endl;
             *this->log << "iteration i = " << i << " done" << std::endl;
         }
 #endif
     }
-    ret.copy(this->alphas[this->alphaPtr].get(0));
+    ret.copy(this->sgdSet.get(0));
 #ifdef PPERM_DEBUG
     if (this->log) {
         *this->log << "end of double coset representative, result ret = " << ret << std::endl;

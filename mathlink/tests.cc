@@ -306,7 +306,7 @@ namespace {
     }
 
     struct DoubleCosetRepTester {
-        bool verbose;
+        bool verbose, twoStep;
         PermutationStack stack;
         PermutationList gensetS, gensetD;
         DoubleCosetRepTester() = default;
@@ -329,6 +329,7 @@ namespace {
                 this->solver.log = nullptr;
             }
             this->solver.permFormatter.useCycles = true;
+            this->solver.useTwoStep = this->twoStep;
             auto actual = this->solver.solve(this->gensetSProvider, this->gensetDProvider, input);
             if (expected != actual) {
                 auto &formatter = this->solver.permFormatter;
@@ -351,8 +352,9 @@ namespace {
 };
 
 template<unsigned int N, typename InputPerm, typename S, typename D, typename ExpectedPerm, bool verbose = false>
-static inline bool doubleCosetRepCase() {
+static inline bool doubleCosetRepCase(bool twoStep) {
     DoubleCosetRepTester tester(N);
+    tester.twoStep = twoStep;
     tester.verbose = verbose;
     S::buildInPlace(tester.gensetS);
     D::buildInPlace(tester.gensetD);
@@ -384,9 +386,10 @@ static bool doubleCosetRepRiemannMonomialCaseGeneral(DoubleCosetRepTester &teste
 }
 
 template<std::size_t n, std::size_t freen, typename Input, typename Expected, bool verbose = false>
-static bool doubleCosetRepRiemannMonomialCase() {
+static bool doubleCosetRepRiemannMonomialCase(bool twoStep) {
     DoubleCosetRepTester tester(n * 4);
     tester.verbose = verbose;
+    tester.twoStep = twoStep;
     auto input = tester.stack.pushStacked(n * 4);
     Input::assignPermutation(input);
     auto expected = OptPermutationBuilder<Expected>::build(tester.stack, n * 4);
@@ -394,50 +397,50 @@ static bool doubleCosetRepRiemannMonomialCase() {
     return doubleCosetRepRiemannMonomialCaseGeneral(tester, n, freen, input, expected);
 }
 
-static bool testDoubleCosetRep() {
+static bool testDoubleCosetRep(bool twoStep) {
     if(!doubleCosetRepCase<
         4,
         Images<1, 3, 2, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         Symmetric<1, 2>,
         Neg<Images<0, 1, 2, 3>>
-    >()) return false;
+    >(twoStep)) return false;
     if (!doubleCosetRepCase<
         4,
         Images<1, 3, 2, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         Symmetric<1, 3>,
         Zero
-    >()) return false;
+    >(twoStep)) return false;
     if (!doubleCosetRepCase<
         8,
         Images<0, 2, 4, 6, 1, 3, 7, 5>,
         Join<RiemannSymmetric<0, 1, 2, 3>, RiemannSymmetric<4, 5, 6, 7>, GenSet<SCycles<List<0, 4>, List<1, 5>, List<2, 6>, List<3, 7>>>>,
         Join<Symmetric<0, 1>, Symmetric<2, 3>, Symmetric<4, 5>, Symmetric<6, 7>>,
         Neg<Images<0, 2, 4, 6, 1, 3, 5, 7>>
-    >()) return false;
+    >(twoStep)) return false;
     if (!doubleCosetRepCase<
         4,
         Images<2, 3, 1, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         GenSet<>,
         Neg<Images<0, 1, 2, 3>>
-    >()) return false;
-    if (!doubleCosetRepRiemannMonomialCase<1, 2, Images<2, 1, 0, 3>, Neg<Images<0, 2, 1, 3>>>()) return false;
-    if (!doubleCosetRepRiemannMonomialCase<2, 0, Images<5, 6, 1, 3, 2, 4, 7, 0>, Images<0, 2, 4, 6, 1, 5, 3, 7>>()) return false;
-    if (!doubleCosetRepRiemannMonomialCase<2, 4, Images<7, 2, 5, 0, 4, 6, 3, 1>, Neg<Images<0, 4, 2, 6, 1, 3, 5, 7>>>()) return false;
+    >(twoStep)) return false;
+    if (!doubleCosetRepRiemannMonomialCase<1, 2, Images<2, 1, 0, 3>, Neg<Images<0, 2, 1, 3>>>(twoStep)) return false;
+    if (!doubleCosetRepRiemannMonomialCase<2, 0, Images<5, 6, 1, 3, 2, 4, 7, 0>, Images<0, 2, 4, 6, 1, 5, 3, 7>>(twoStep)) return false;
+    if (!doubleCosetRepRiemannMonomialCase<2, 4, Images<7, 2, 5, 0, 4, 6, 3, 1>, Neg<Images<0, 4, 2, 6, 1, 3, 5, 7>>>(twoStep)) return false;
     if (!doubleCosetRepRiemannMonomialCase<
         5,
         0,
         Images<19, 7, 2, 17, 11, 4, 3, 13, 18, 5, 14, 6, 0, 16, 1, 12, 9, 15, 10, 8>,
         Neg<Images<0, 2, 1, 4, 3, 6, 8, 10, 5, 7, 12, 14, 9, 13, 11, 16, 15, 18, 17, 19>>
-    >()) return false;
+    >(twoStep)) return false;
     if (!doubleCosetRepRiemannMonomialCase<
         5,
         10,
         Images<8, 15, 11, 5, 3, 7, 19, 14, 1, 18, 16, 12, 13, 17, 9, 10, 4, 0, 2, 6>,
         Neg<Images<0, 4, 2, 6, 1, 10, 12, 14, 3, 7, 11, 16, 5, 18, 8, 17, 9, 19, 13, 15>>
-    >()) return false;
+    >(twoStep)) return false;
     return true;
 }
 
@@ -456,7 +459,8 @@ int main(int argc, const char *args[]) {
     TEST(testBaseChange3());
     TEST(testCompleteBaseChange());
     TEST(testGroupOrder());
-    TEST(testDoubleCosetRep());
+    TEST(testDoubleCosetRep(false));
+    TEST(testDoubleCosetRep(true));
     if (passed) {
         std::cout << "All tests passed" << std::endl;
         return 0;

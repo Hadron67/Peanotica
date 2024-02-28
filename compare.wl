@@ -11,7 +11,7 @@ RandomNonZeroRiemannMonomialIndices[n_, freen_] := NestWhile[
 
 TestRiemannMonomialCanon::wrong = "Different results on input `1`: Peanotica: `2`, xPerm: `3`.";
 
-TestRiemannMonomialCanon[n_, freen_] := TestRiemannMonomialCanon[n, freen, RandomNonZeroRiemannMonomialIndices[n, freen]];
+TestRiemannMonomialCanon[n_, freen_] := TestRiemannMonomialCanon[n, freen, PermutationList[RandomPermutation[4 n], 4 n]];
 TestRiemannMonomialCanon[n_, freen_, testPerm_] := Module[
     {dummySet, peanoticaResult, xPermResult},
     dummySet = Partition[Range[freen + 1, 4 n], 2];
@@ -24,7 +24,7 @@ TestRiemannMonomialCanon[n_, freen_, testPerm_] := Module[
         xAct`xPerm`Images@testPerm,
         4 n,
         StrongGenSet[
-            Range[4 n],
+            2 Range[2 n] - 1,
             GenSet @@ (RiemannMonomialGenSet[n] /. SCycles -> xAct`xPerm`Cycles)
         ],
         Range@freen,
@@ -35,6 +35,12 @@ TestRiemannMonomialCanon[n_, freen_, testPerm_] := Module[
     {peanoticaResult[[1]], xPermResult[[1]]}
 ];
 (* SetPPermVerbose[True]; *)
-(* TestRiemannMonomialCanon[1, 2, {2, 4, 1, 3}]; *)
-Scan[TestRiemannMonomialCanon[10, 20] &, Range@1000];
-Print["Completed 1000 tests"];
+(* TestRiemannMonomialCanon[2, 4, {1, 4, 2, 3, 7, 6, 8, 5}]; *)
+PPermOpenLogFile["hkm.txt"];
+SetOptions[Peanotica`Perm`DoubleCosetRepresentative, PPermVerbose -> True];
+Scan[TestRiemannMonomialCanon[10, 20] &, Range@100];
+Scan[TestRiemannMonomialCanon[10, 0] &, Range@100];
+SetOptions[Peanotica`Perm`DoubleCosetRepresentative, UseTwoStep -> True];
+Scan[TestRiemannMonomialCanon[10, 20] &, Range@100];
+Scan[TestRiemannMonomialCanon[10, 0] &, Range@100];
+Print["Completed 100 tests"];
