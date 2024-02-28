@@ -4,7 +4,12 @@ else
 	UNAME_S := $(shell uname -s)
     UNAME_P := $(shell uname -p)
     ifeq ($(UNAME_S),Linux)
-        CCFLAGS += -D LINUX
+		ifeq ($(UNAME_P),x86_64)
+			DEFAULT_SYS := Linux-x86-64
+		endif
+		ifneq ($(filter arm%,$(UNAME_P)),)
+
+		endif
     endif
     ifeq ($(UNAME_S),Darwin)
 		DEFAULT_MLINKDIR := /Applications/Mathematica.app/Contents/SystemFiles/Links/WSTP/DeveloperKit

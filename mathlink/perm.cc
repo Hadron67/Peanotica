@@ -58,11 +58,12 @@ upoint_type PermutationView::firstNonFixedPoint() const {
     return ret;
 }
 
-std::size_t PermutationView::hash() const {
+std::size_t PermutationView::hash(bool ignoreSign) const {
     // TODO: use a better hasher
     std::size_t ret = 5381;
-    auto ptr = this->data;
-    for (std::size_t i = 0; i < this->len; i++) {
+    auto ptr = this->data, end = ptr + this->getStorageSize();
+    if (ignoreSign) ptr++;
+    while (ptr != end) {
         ret = ret * 33 + *ptr++;
     }
     return ret;
@@ -209,10 +210,10 @@ namespace {
         PermutationSet *genset;
         bool ignoreSign;
         std::size_t hash(const PermutationView &perm) const {
-            return perm.hash();
+            return perm.hash(this->ignoreSign);
         }
         std::size_t hash(std::size_t i) const {
-            return this->genset->get(i).hash();
+            return this->genset->get(i).hash(this->ignoreSign);
         }
         int compare(std::size_t i, std::size_t j) const {
             return this->genset->get(i).compare(this->genset->get(j), this->ignoreSign);
@@ -224,15 +225,30 @@ namespace {
 }
 
 void PermutationSet::addPermutation(const PermutationView &perm) {
-    this->permToId.computeIfAbsent(perm, PermutationHashContext{this, false}, [this](PermutationView perm){
+    this->permToId.computeIfAbsent(perm, PermutationHashContext{this, this->ignoreSign}, [this](PermutationView perm){
         auto id = this->getSize();
         this->permutations.push().copy(perm);
         return id;
     });
 }
 
+bool PermutationSet::checkOppositeSignAndAddPermutation(PermutationView perm) {
+    if (!this->ignoreSign) {
+        return false;
+    }
+    auto ret = this->permToId.computeIfAbsent(perm, PermutationHashContext{this, true}, [this](PermutationView perm) {
+        auto id = this->getSize();
+        this->permutations.push().copy(perm);
+        return id;
+    });
+    if (!ret.second) {
+        return this->permutations.get(this->permToId.getEntry(ret.first)->value).isNegative() != perm.isNegative();
+    }
+    return false;
+}
+
 OptionalUInt<std::size_t> PermutationSet::findPermutation(const PermutationView &perm) {
-    auto pt = this->permToId.find(perm, PermutationHashContext{this, false});
+    auto pt = this->permToId.find(perm, PermutationHashContext{this, this->ignoreSign});
     if (pt.isNonNull()) {
         return this->permToId.getEntry(pt)->getValue();
     } else {
@@ -242,9 +258,9 @@ OptionalUInt<std::size_t> PermutationSet::findPermutation(const PermutationView 
 
 void PermutationSet::removeAndFetchLast(std::size_t index) {
     auto size = this->getSize();
-    this->permToId.remove(this->permToId.find(index, PermutationHashContext{this, false}));
+    this->permToId.remove(this->permToId.find(index, PermutationHashContext{this, this->ignoreSign}));
     if (index + 1 < size) {
-        auto last = this->permToId.find(size - 1, PermutationHashContext{this, false});
+        auto last = this->permToId.find(size - 1, PermutationHashContext{this, this->ignoreSign});
         this->permToId.getEntry(last)->value = index;
     }
     this->permutations.removeAndFetchLast(index);
@@ -253,7 +269,7 @@ void PermutationSet::removeAndFetchLast(std::size_t index) {
 void PermutationSet::updateIndex() {
     this->permToId.clear();
     for (std::size_t i = 0; i < this->permutations.getSize(); i++) {
-        this->permToId.putIfAbsent(i, PermutationHashContext{this, false}, i);
+        this->permToId.putIfAbsent(i, PermutationHashContext{this, this->ignoreSign}, i);
     }
 }
 
@@ -1015,9 +1031,6 @@ void BaseChangingStrongGenSetProvider::stabilizeOnePoint(PermutationStack &stack
     auto stablePoints = this->stablePoints.get();
     if (!stablePoints[point]) {
         this->baseChanger->setSGS(this->genset);
-        // upoint_type newBase[]{point};
-        // auto newBaseSlice = makeSlice(newBase, 1);
-        // this->baseChanger->completeBaseChange(base, newBaseSlice, stack);
         MutableSlice base(this->base.get(), this->baseLen);
         this->baseChanger->makeFirstPoint(base, point, stack);
         if (base.getLength() > 0) {
@@ -1157,7 +1170,6 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
         auto start = std::chrono::system_clock::now();
         auto perm2 = this->solveRightCosetRepresentative(perm, gensetSProvider, minNonFixedPointOfD, finishedPoints.begin());
         auto middle = std::chrono::system_clock::now();
-        // this->extendBaseS(minNonFixedPointOfD, perm2);
         auto ret = this->solveDoubleCosetRepresentative(gensetSProvider, gensetDProvider, perm2, finishedPoints.begin());
         auto end = std::chrono::system_clock::now();
         if (this->log) {
@@ -1304,6 +1316,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
     auto ret = this->permStack.pushStacked(this->permLen);
 
     this->sgdSet.clear();
+    this->sgdSet.setIgnoreSign(true);
     this->sgdSet.addPermutation(perm);
 
     auto orbitB = this->boolSetPool.pushStacked(this->permLen);
@@ -1428,10 +1441,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
                         << ", new sgd = " << newsgd << std::endl;
                 }
 #endif
-                auto newsgdNeg = this->permStack.pushStacked(this->permLen);
-                newsgdNeg.copy(newsgd);
-                newsgdNeg.setNegative(!newsgdNeg.isNegative());
-                if (this->sgdSet.findPermutation(newsgdNeg).isPresent()) {
+                if (this->sgdSet.checkOppositeSignAndAddPermutation(newsgd)) {
 #ifdef PPERM_DEBUG
                     if (this->log) {
                         *this->log << "found permutations with opposite signs of " << this->permFormatter.formatValue(newsgd) << std::endl;
@@ -1439,7 +1449,6 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #endif
                     return std::nullopt;
                 }
-                this->sgdSet.addPermutation(newsgd);
             }
         }
 

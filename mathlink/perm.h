@@ -77,7 +77,7 @@ struct PermutationView {
     }
     upoint_type firstNonFixedPoint() const;
     upoint_type inverseMapPoint(upoint_type point) const;
-    std::size_t hash() const;
+    std::size_t hash(bool ignoreSign) const;
     std::size_t getStorageSize() const { return this->len + 1; }
     bool operator == (PermutationView other) const {
         return this->compare(other, false) == 0;
@@ -307,6 +307,11 @@ struct PermutationSet {
         this->permutations.setPermutationLength(permLen);
         this->permToId.clear();
     }
+    void setIgnoreSign(bool sign) {
+        if (this->getSize() == 0) {
+            this->ignoreSign = sign;
+        }
+    }
     void clear() {
         this->permutations.clear();
         this->permToId.clear();
@@ -326,6 +331,7 @@ struct PermutationSet {
         return this->permutations.push();
     }
     void addPermutation(const PermutationView &perm);
+    bool checkOppositeSignAndAddPermutation(PermutationView perm);
     OptionalUInt<std::size_t> findPermutation(const PermutationView &perm);
     void removeAndFetchLast(std::size_t index);
     void removePermutation(PermutationView perm) {
@@ -384,6 +390,7 @@ struct PermutationSet {
     void updateIndex();
     private:
     HashTable<std::uint32_t> permToId;
+    bool ignoreSign = false;
 };
 
 std::ostream &operator << (std::ostream &os, PermutationSet &genset);
@@ -785,8 +792,8 @@ struct DoubleCosetRepresentativeSolver {
         this->permLen = permLen;
         this->boolSetPool.blockSize = this->permLen * 16;
         this->permStack.setBlockSize(this->permLen * 16);
-        this->sgdSet.setPermutationLength(permLen);
         this->selectedSgD.setPermutationLength(permLen);
+        this->sgdSet.setPermutationLength(permLen);
     }
     void subroutineF1(const bool *orbitB, PermutationView perm);
     StackedPermutation solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD, bool *finishedPoints);
@@ -895,6 +902,17 @@ inline std::ostream &operator << (std::ostream &os, SymmetricBlock::Block block)
 
 std::ostream &operator << (std::ostream &os, SymmetricBlock &block);
 
+template<typename Provider, typename Acceptor>
+inline void filterBasePoints(Acceptor acceptor, Provider provider, std::size_t baseLen, PermutationList &genset, PermutationList &tmp) {
+    tmp.copy(genset);
+    for (std::size_t i = 0; i < baseLen; i++) {
+        upoint_type p = provider(i);
+        if (stabilizerInPlace(tmp, p)) {
+            acceptor(p);
+        }
+    }
+}
+
 struct GroupEnumerator {
     PermutationStack *permStack = nullptr;
     PermutationSet elements;
@@ -997,17 +1015,6 @@ namespace meta {
     template<unsigned int N1, unsigned int N2, unsigned int N3, unsigned int N4>
     using RiemannSymmetric = GenSet<Neg<SCycles<List<N1, N2>>>, Neg<SCycles<List<N3, N4>>>, SCycles<List<N1, N3>, List<N2, N4>>>;
 };
-
-template<typename Provider, typename Acceptor>
-inline void filterBasePoints(Acceptor acceptor, Provider provider, std::size_t baseLen, PermutationList &genset, PermutationList &tmp) {
-    tmp.copy(genset);
-    for (std::size_t i = 0; i < baseLen; i++) {
-        upoint_type p = provider(i);
-        if (stabilizerInPlace(tmp, p)) {
-            acceptor(p);
-        }
-    }
-}
 
 }
 
