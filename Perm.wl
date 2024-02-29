@@ -20,25 +20,24 @@ BlockSymmetricGenSet;
 RiemannMonomialGenSet;
 ScalarMonomialDummiesGenSet;
 DummiesGenSet;
-DummyIndicesGenSet;
 RubiksCubeGenSet;
 
 (* mathlink functions *)
 ConstructStrongGenSet::usage = "ConstructStrongGenSet[G] returns a strong generating set relative to the base [1, 2, ..., n] of the group \[LeftAngleBracket]G\[RightAngleBracket], using Jerrum's variant of Schreier-Sims algorithm.";
-DoubleCosetRepresentative::usage = "DoubleCosetRepresentative[S, g, D] returns a canonical representative of the double coset \[LeftAngleBracket]S\[RightAngleBracket]\[CenterDot]g\[CenterDot]\[LeftAngleBracket]D\[RightAngleBracket] using Butler's algorithm. S and D are assumed to be strong generating sets relative to the base [1, 2, ..., n].";
+DoubleCosetRepresentative::usage = "DoubleCosetRepresentative[S, g, D] returns a canonical representative of the double coset \[LeftAngleBracket]S\[RightAngleBracket]\[CenterDot]g\[CenterDot]\[LeftAngleBracket]D\[RightAngleBracket] using Butler's algorithm. If two identical permutations with opposite signs are in the double coset, 0 is returned. S and D are assumed to be strong generating sets relative to the base [1, 2, ..., n] where n is the degree. The criterium is the minimum permutation in the lexicographic order of its images.";
 GroupOrderFromStrongGenSet::usage = "GroupOrderFromStrongGenSet[g] gives the order of the group \[LeftAngleBracket]g\[RightAngleBracket], where g is assumed to be a strong generating set relative to the base [1, 2, ..., n].";
 MoveBasePoint;
 PPermOpenLogFile::usage = "PPermOpenLogFile[path] opens a log file for the logs to be printed.";
 PPermCloseLogFile::usage = "PPermCloseLogFile[] closes the current log file."; (* defined in mathlink directly *)
 
-UseTwoStep;
-PPermVerbose;
+UseTwoStep::usage = "UseTwoStep is a boolean option for DoubleCosetRepresentative specifying whether to use the two-step method described by Portugal: apply the right coset representative algorithm on the stable points of \[LeftAngleBracket]D\[RightAngleBracket] first, and then apply Butler's algorithm on the result. It's claimed that such method is more efficient, while profiling result shows otherwise. The default is False.";
+PPermVerbose::usage = "PPermVerbose is a boolean option for various PPerm functions specifying whether to print messages to log file. This option is maining for debug purpose, and the messages are only enabled in debug builds. The default is False.";
 
 (* mathlink management *)
-$PPermLink;
-PPermConnect;
-PPermDisconnect;
-PPermEnsureLink;
+$PPermLink::usage = "$PPermLink is a global variable holding the LinkObject of the external executable of PPerm.";
+PPermConnect::usage = "PPermConnect[] creates the connection to the external executable of PPerm.";
+PPermDisconnect::usage = "PPermDisconnect[] disconnects the external executable.";
+PPermEnsureLink::usage = "PPermEnsureLink[] checks if $PPermLink is valid, and calls PPermConnect[] if it's not.";
 
 Begin["`Private`"];
 
@@ -97,8 +96,6 @@ SyntaxInformation@ScalarMonomialDummiesGenSet = {"ArgumentsPattern" -> {_}};
 DummiesGenSet[sign_, dummies_] := Join[sign * Join @@ (SymmetricGenSet @@@ dummies), BlockSymmetricGenSet @@ dummies];
 SyntaxInformation@DummiesGenSet = {"ArgumentsPattern" -> {_, _}};
 
-DummyIndicesGenSet[sign : 0 | 1 | -1, indGroups_List];
-
 RubiksCubeGenSet[n_]
 
 PermToMLPerm[Images[inds__], _] := {1, inds};
@@ -108,12 +105,6 @@ PermToMLPerm[-e_SCycles, n_] := PermToMLPerm[SCyclesToImages[-e, n], n];
 PermToMLPerm[e_List, n_] := PermToMLPerm[#, n] & /@ e;
 MLPermToPerm[{n_, inds__}] := n * Images[inds];
 MLPermToPerm[0] = 0;
-
-Options[CollectMathLinkOptions] = {
-    UseTwoMethod -> False,
-    PPermVerbose -> False
-};
-CollectMathLinkOptions[opt : OptionsPattern[]];
 
 ConstructStrongGenSet[gs_] := With[{n = MinPermutationLength@gs},
     PPermEnsureLink[];
