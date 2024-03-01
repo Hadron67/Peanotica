@@ -12,6 +12,7 @@ ImagesToSCycles;
 MinPermutationLength;
 ShiftPermutation;
 ShiftAndJoinGenSets;
+SignedInversePermutation;
 
 (* predefined symmetry groups *)
 SymmetricGenSet;
@@ -75,6 +76,11 @@ SyntaxInformation@ShiftPermutation = {"ArgumentsPattern" -> {_, _}};
 
 ShiftAndJoinGenSets[gensets_, lengths_] := Join @@ MapThread[ShiftPermutation, {gensets, Drop[FoldList[Plus, 0, lengths], -1]}];
 SyntaxInformation@ShiftAndJoinGenSets = {"ArgumentsPattern" -> {_, _}};
+
+SignedInversePermutation[-expr_] := -SignedInversePermutation[expr];
+SignedInversePermutation[0] = 0;
+SignedInversePermutation[expr_Images] := Images @@ InversePermutation[List @@ expr];
+SyntaxInformation@SignedInversePermutation = {"ArgumentsPattern" -> {_}};
 
 SymmetricGenSet[points__] := MapThread[SCycles[{#1, #2}] &, {Drop[{points}, -1], Drop[{points}, 1]}];
 SyntaxInformation@SymmetricGenSet = {"ArgumentsPattern" -> {__}};

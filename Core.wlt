@@ -1,29 +1,22 @@
 << Peanotica`Core`
 
-SymmetryGroupOfExpression@F[a__] ^:= {-SCycles@{1, 2}};
-SymmetryGroupOfExpression@RiemannTensor[___, Repeated[IndexSlot, {4}]] ^= {-SCycles@{1, 2}, -SCycles@{3, 4}, SCycles[{1, 3}, {2, 4}]};
-StructureOfExpression@F[_, _] ^= IObjectHead[IIndexSlot, IIndexSlot];
-SymmetryGroupOfExpression@F[_, _] ^= {-SCycles@{1, 2}};
-StructureOfExpression@RicciTensor[_, _] ^= IObjectHead[IIndexSlot, IIndexSlot];
-SymmetryGroupOfExpression@RicciTensor[___, Repeated[IndexSlot, {2}]] ^= {SCycles@{1, 2}};
-StructureOfExpression@Pd[_][_] ^= IObjectHead[IIndexSlot][IFunctionSlot[1]];
+FindIndicesSlots[Riemann1[_, _, _, _]] ^= {{None, 1}, {None, 2}, {None, 3}, {None, 4}};
+SymmetryOfExpression@Riemann1[_, _, _, _] ^= RiemannSymmetricGenSet[1];
+
+FindIndicesSlots[g1[inds__]] ^:= Array[{None, #} &, Length@Hold@inds];
+SymmetryOfExpression@g1[inds__] ^:= SymmetricGenSet @@ Range[Length@Hold@inds];
 
 VerificationTest[
-    SymmetryOfSortedObject[ISort[ISum[a[i, i] a[j, j] b[k] b[l], i, j, k, l]]],
-    {SCycles[{1, 3}, {2, 4}], SCycles[{5, 6}]}
+    CanonicalizeOneTerm[g1[b, a]],
+    g1[a, b]
 ];
 
 VerificationTest[
-    SymmetryOfSortedObject@ISort[ISum[F[1, DI@i, j] RicciTensor[i, j], i, j]],
-    {-SCycles[{1, 2}], SCycles[{3, 4}]}
-];
-
-VerificationTest[
-    ISum[a[i] b[i], i] - ISum[a[j] b[j], j] // SameDummies,
+    CanonicalizeOneTerm[Riemann1[a, b, DI@c, DI@d] g1[c, d]],
     0
 ];
 
 VerificationTest[
-    ISum[a[i, i, i, j], i, j] - ISum[a[j, j, j, i], i, j] // SameDummies,
-    0
+    CanonicalizeOneTerm[Riemann1[a, b, c, d] Riemann1[-b, -d, -c, -a]],
+    -Riemann1[a, b, c, d] Riemann1[DI[a], DI[c], DI[b], DI[d]]
 ];
