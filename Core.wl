@@ -5,6 +5,7 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{"Peanotica`Core`*"}];
 PeanoticaGeneral;
 (* interface *)
 FindIndicesSlots;
+FindIndicesSlotsAndNames;
 SymmetryOfExpression;
 UnorderedProductQ;
 TensorTermQ;
@@ -17,41 +18,51 @@ InterchangableIndexPairQ::usage = "InterchangableIndexPairQ[type, a] gives true 
 (* indices *)
 DI::usage = "DI[a] represents a down index, similar to -a or Times[-1, a].";
 LabelI::usage = "LabelI[a] represents a label index, with no name.";
+DefaultIndex::usage = "DefaultIndex[n] is returned by the default definition of GetIndexOfSlotType[type, indices].";
 TempIndex::usage = "TempIndex[n] is a temporary index generated during internal ";
-$TempIndexNumber::usage = "$TempIndexNumber is a global variable giving the next id of TempIndex to be used.";
+$TempIndexNumber::usage = "$TempIndexNumber is a global variable giving the next global unique id of TempIndex to be used.";
 IndexNameSlot;
-SeparateIndexName;
-SortIndices;
-IndexList::usage = "IndexList[i1, i2, ...] represents a list of indices. An overall negative sign may be present.";
+SeparateIndexName::usage = "SeparateIndexName[index] returns {name, pattern} where name is the name of the index, pattern is it's pattern. An index is determined by its name and pattern.";
+GetIndexOfSlotType::usage = "GetIndexOfSlotType[type, inds] returns a new index.";
+IndicesCandidateOfSlotType::usage = "IndicesCandidateOfSlotType[type] returns a list, .";
+GetUniqueIndexOfSlotType::usage = "GetUniqueIndexOfSlotType[type] returns a globally unique index using the given slot type as a hint. the default definition returns TempIndex[++$TempIndexNumber].";
+IndexList::usage = "IndexList[i1, i2, ...] represents a list of indices, similar to List. The purpose of this head is that it may have an overall negative sign.";
 DefautRenamingGroup::usage = "DefaultRenamingGroup is the default renaming group of index name.";
 RenamableIndicesQ::usage = "RenamableIndicesQ[a, b] returns true if index names a and b can be interchanged.";
 GroupedIndexList::usage = "GroupedIndexList[type1 -> {i1 -> {v1, v2, ...}, ...}] represents a grouped list of indices.";
 GroupIndexList::usage = "GroupIndexList[{i1 -> v1, i2 -> v2, ...}] groups the indices list into blocks according to their types.";
 SymmetryOfGroupedIndices::usage = "SymmetryOfGroupedIndices[GroupedIndices[...], pairSymmetryProvider] gives the generators of the symmetry group of the sorted indices.";
 SortGroupedIndexList::usage = "SortGroupedIndexList[GroupedIndexList[...]] returns a sorted version of GroupedIndexList[...].";
-FindAndDropFrees::usage = "FindAndDropFrees[]";
+FindAndDropFrees::usage = "FindAndDropFrees[GroupedIndexList[...], frees] returns a list containing two GroupedIndexList with the first containing only free indices as specified by frees, the other contains no free indices. FindAndDropFrees[GroupedIndexList[...], Automatic] select frees as those only has one occurance.";
 CollectGroupedIndices::usage = "CollectGroupedIndices[GroupedIndexList[...]] returns a list of indices by collecting all the indices in the index list in order.";
+FoldGroupedIndexList::usage = "FoldGroupedIndexList[f, x, GroupedIndexList[...]] returns a new GroupedIndexList with the entries being replaced by f[x, name1, poses1], f[f[x, name1, poses1], name2, poses2], where each time f returns {name -> val, x}.";
+RenameGroupedIndexList::usage = "RenameGroupedIndexList[GroupedIndexList[...], indices, idToType] renames the indices names.";
+PrependPosToSlotSpec::usage = "PrependPosToSlotSpec[]";
+$IndexPairPattern::usage = "$IndexPairPattern is global constant with value given by Sort@{IndexNameSlot, DI[IndexNameSlot]}.";
 ValidateIndex;
 
 (* utility functions *)
 NoIndicesQ;
+GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
 
 (* canonicalization *)
 ISortedProduct;
 ISortedGeneral;
 CanonicalizationUnitQ;
-CanonicalizeOneSorted;
-CanonicalizeOneTerm;
+ITensorReduceOneTerm;
 SymmetryOfIndicesList;
+RenameDummies;
 UseMetricOnSlots;
 FreeIndices;
 FreeIndicesSymmetry;
 PeanoticaVerbose;
-ReleaseSort;
+ReleaseISort;
 ExpandToTensorPolynomial;
+ITensorReduce;
 
 (* formatting *)
 TensorGridBox;
+AllowSubsuperscriptBox;
 DefTensorFormatings;
 
 Begin["`Private`"];
@@ -60,6 +71,8 @@ PeanoticaGeneral::todo = "TODO: `1`";
 
 ValidateIndex::wrongtype = "Contractions of slots of different types: `1` and `2`, assuming the second one to be the same as the first.";
 
+$IndexPairPattern = Sort@{IndexNameSlot, DI@IndexNameSlot};
+
 ToUpIndex[-a_] := a;
 ToUpIndex[a_] := a;
 
@@ -67,18 +80,36 @@ ApplyHold[fn_, Hold[args__], args2___] := fn[args, args2];
 
 IndexNameSlot /: MakeBoxes[IndexNameSlot, StandardForm] = InterpretationBox["\[FilledCircle]", IndexNameSlot];
 
-TempIndex /: MakeBoxes[expr : TempIndex[n__], StandardForm] := InterpretationBox[SubscriptBox["\[FilledVerySmallSquare]", #], expr] &@If[Length@Hold@n == 1, MakeBoxes@n, RowBox@Riffle[MakeBoxes /@ {n}, ","]]
+TempIndex /: MakeBoxes[expr : TempIndex[n__], StandardForm] := InterpretationBox[UnderscriptBox[#, "_"], expr] &@If[Length@Hold@n == 1, MakeBoxes@n, RowBox@Riffle[MakeBoxes /@ {n}, ","]];
+SyntaxInformation@TempIndex = {"ArgumentsPattern" -> {_}};
+
+DefaultIndex /: MakeBoxes[expr : DefaultIndex[n_], StandardForm] := InterpretationBox[SubscriptBox["\[ImaginaryI]", #], expr] &@MakeBoxes[n, StandardForm];
+SyntaxInformation@DefaultIndex = {"ArgumentsPattern" -> {_}};
 
 DI[DI[a_]] := a;
 DI[-a_] := a;
+SyntaxInformation@DI = {"ArgumentsPattern" -> {_}};
 
 SeparateIndexName[-a_] := MapAt[DI, SeparateIndexName@a, 2];
 SeparateIndexName[DI@a_] := MapAt[DI, SeparateIndexName@a, 2];
 SeparateIndexName[a_] := {a, IndexNameSlot};
 SyntaxInformation@SeparateIndexName = {"ArgumentsPattern" -> {_}};
 
-SortIndices[inds_] := SortBy[inds, SeparateIndexName];
-SyntaxInformation@SortIndices = {"ArgumentsPattern" -> {_}};
+IndicesCandidateOfSlotType[_] = {{}, DefaultIndex};
+SyntaxInformation@IndicesCandidateOfSlotType = {"ArgumentsPattern" -> {_}};
+
+GetIndexOfSlotType[type_, inds_] := With[{
+    indCands = IndicesCandidateOfSlotType@type
+}, With[{
+    inds2 = Complement[indCands[[1]], inds]
+}, If[Length@inds2 > 0,
+    First@inds2,
+    indCands[[2]][1 + Max @@ Append[First /@ Cases[inds, Blank[indCands[[2]]]], 0]]
+]]];
+SyntaxInformation@GetIndexOfSlotType = {"ArgumentsPattern" -> {_, _}};
+
+GetUniqueIndexOfSlotType[type_] := TempIndex[++$TempIndexNumber];
+SyntaxInformation@GetUniqueIndexOfSlotType = {"ArgumentsPattern" -> {_}};
 
 RenamingGroupOfIndex[_Integer] = None;
 RenamingGroupOfIndex[_LabelI] = None;
@@ -102,8 +133,11 @@ SetAttributes[SymmetricIndexPairQ, HoldFirst];
 SignOfSymmetricPair[None, None, _] = 1;
 SyntaxInformation@SignOfSymmetricPair = {"ArgumentsPattern" -> {_, _, _}};
 
-PrependPosToSlotSpec[{l___}][{vb_, pos__}] := {vb, l, pos};
+PrependPosToSlotSpec[{vb_, pos__}, {l___}] := {vb, l, pos};
+PrependPosToSlotSpec[l_][expr_] := PrependPosToSlotSpec[expr, l];
+SyntaxInformation@PrependPosToSlotSpec = {"ArgumentsPattern" -> {_, _.}};
 
+FindIndicesSlots[expr_, pos_] := PrependPosToSlotSpec[pos] /@ FindIndicesSlots@expr;
 FindIndicesSlots[fn_[args___]] := Join[
     PrependPosToSlotSpec[{0}] /@ FindIndicesSlots@fn
 ,
@@ -114,6 +148,11 @@ FindIndicesSlots[fn_[args___]] := Join[
 FindIndicesSlots[Subscript[_, inds__]] := {None, #} & /@ Range@Length@Hold@inds;
 FindIndicesSlots[_] = {};
 SetAttributes[FindIndicesSlots, HoldFirst];
+SyntaxInformation@FindIndicesSlots = {"ArgumentsPattern" -> {_, _.}};
+
+FindIndicesSlotsAndNames[expr_] := # -> Extract[Hold@expr, ReplacePart[#, 1 -> 1]] & /@ FindIndicesSlots@expr;
+SetAttributes[FindIndicesSlotsAndNames, HoldFirst];
+SyntaxInformation@FindIndicesSlotsAndNames = {"ArgumentsPattern" -> {_}};
 
 SymmetryOfExpression[_] = {};
 SymmetryOfExpression@ISortedGeneral[expr_] := SymmetryOfExpression@expr;
@@ -132,7 +171,7 @@ UnorderedProductQ[Wedge] = True;
 UnorderedProductQ[Inactive[head_]] := UnorderedProductQ@head;
 SyntaxInformation@UnorderedProductQ = {"ArgumentsPattern" -> {_}};
 
-TensorTermQ[_Plus] = False;
+TensorTermQ[expr_Plus] := AllTrue[List @@ expr, Length@FindIndicesSlots@# === 0 &];
 TensorTermQ[_List] = False;
 TensorTermQ[expr_Times] := And @@ ReleaseHold[Map[TensorTermQ, ReplacePart[Hold@expr, {1, 0} -> List], {2}]];
 TensorTermQ[_] = True;
@@ -166,26 +205,44 @@ ISort[fn_?UnorderedProductQ[args___]] := With[{
 ISort[expr_] := ISortedGeneral@expr;
 SetAttributes[ISort, {HoldAll}];
 
-ReleaseSort[expr_] := ReleaseHold[Hold@expr //. {ISortedGeneral[e_] :> e, ISortedProduct[head_, {args___}, _] :> head[args]}];
-SyntaxInformation@ReleaseSort = {"ArgumentsPattern" -> {_}};
+ReleaseISort[expr_] := ReleaseHold[Hold@expr //. {ISortedGeneral[e_] :> e, ISortedProduct[head_, {args___}, _] :> head[args]}];
+SyntaxInformation@ReleaseISort = {"ArgumentsPattern" -> {_}};
 
 SetAttributes[{ISortedGeneral, ISortedProduct}, {HoldAll}];
 
-TensorGridBox[t_, inds_] := GridBox[{{
-    t, StyleBox[GridBox[Transpose@Map[Replace@{
-        {1, a_} :> {MakeBoxes@a, ""},
-        {-1, a_} :> {"", MakeBoxes@a}
-    }, inds], RowSpacings -> 0, ColumnSpacings -> 0], FontSize -> 39/4]}},
-    ColumnSpacings -> 0.05, RowAlignments -> Center
+Options@TensorGridBox = {
+    AllowSubsuperscriptBox -> False
+};
+SelectUpDownIndices[{{a_, IndexNameSlot}, {b_, DI@IndexNameSlot}}] := {a, b};
+SelectUpDownIndices[{{a_, DI@IndexNameSlot}, {b_, IndexNameSlot}}] := {b, a};
+TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := Which[
+    Length@inds === 1,
+    With[{ind = inds[[1]], indName = inds[[1, 1]]}, Switch[ind[[2]],
+        IndexNameSlot, SuperscriptBox[t, MakeBoxes@indName],
+        DI@IndexNameSlot, SubscriptBox[t, MakeBoxes@indName]
+    ]],
+
+    OptionValue[AllowSubsuperscriptBox] && Sort[inds[[All, 2]]] === $IndexPairPattern,
+    SubsuperscriptBox[t, ##] & @@ Reverse@SelectUpDownIndices@inds,
+
+    True,
+    GridBox[{{t, StyleBox[
+        GridBox[
+            Transpose@Map[Replace@{
+                {a_, IndexNameSlot} :> {MakeBoxes@a, ""},
+                {a_, DI@IndexNameSlot} :> {"", MakeBoxes@a}
+            }, inds], RowSpacings -> 0, ColumnSpacings -> 0
+        ], FontSize -> 39/4
+    ]}}, ColumnSpacings -> 0.05, RowAlignments -> Center]
 ];
-SyntaxInformation@TensorGridBox = {"ArgumentsPattern" -> {_, _}};
+SyntaxInformation@TensorGridBox = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
 SymbolToIndex[-a_] := {-1, a};
 SymbolToIndex[DI[a_]] := {-1, a};
 SymbolToIndex[a_] := {1, a};
 
 DefTensorFormatings[sym_] := DefTensorFormatings[sym, MakeBoxes@sym];
-DefTensorFormatings[sym_, name_] := sym /: MakeBoxes[expr : sym[inds___], StandardForm] := InterpretationBox[StyleBox[#, ShowAutoStyles -> False], expr, Editable -> False] &@TensorGridBox[name, SymbolToIndex /@ {inds}];
+DefTensorFormatings[sym_, name_] := sym /: MakeBoxes[expr : sym[inds___], StandardForm] := InterpretationBox[StyleBox[#, ShowAutoStyles -> False], expr, Editable -> False] &@TensorGridBox[name, SeparateIndexName /@ {inds}];
 SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, _}};
 
 GroupIndexList[list_] := If[Length@list > 0 && Head@list[[1]] =!= Rule,
@@ -201,7 +258,7 @@ GroupIndexList[list_] := If[Length@list > 0 && Head@list[[1]] =!= Rule,
     SortGroupedIndexList;
 SyntaxInformation@GroupIndexList = {"ArgumentsPattern" -> {_}};
 
-MapSkewedIndexed[fn_, list_] := MapThread[fn, {Delete[list, 1], Delete[list, -1], Range[Length@list - 1]}];
+MapSkewedIndexed[fn_, list_] := MapThread[fn, {Delete[list, -1], Delete[list, 1], Range[Length@list - 1]}];
 
 RenamingSymmetryOfInds[inds_] := Join @@ MapShiftedIndexed[
     If[RenamableIndicesQ[#1[[1]], #2[[1]]], With[{len = Length@#1[[2]]}, BlockSymmetricGenSet[len * (#3 - 1) + Range@len, len * #3 + Range@len]], Nothing] &
@@ -231,7 +288,7 @@ SymmetryOfOneIndsBlock[pairSym_, indPat_ -> indsAndPos_] := With[{
     len = Length@indPat
 }, Join[
     Join @@ MapIndexed[ShiftPermutation[baseGenSet, len * (#2[[1]] - 1)] &, indsAndPos],
-    If[indPat === {IndexNameSlot, DI@IndexNameSlot},
+    If[indPat === $IndexPairPattern,
         Join @@ MapIndexed[With[{sign = pairSym[#1[[1]], #1[[2, 1]], #1[[2, 2]]], p = #2[[1]]}, If[sign =!= None, {SCycles@{2p - 1, 2p}}, {}]] &, indsAndPos]
     , {}],
     RenamingSymmetryOfInds@indsAndPos
@@ -267,6 +324,20 @@ CollectGroupedIndices[list_GroupedIndexList] := Join @@ (Function[{pat, inds},
 ] @@@ List @@ list);
 SyntaxInformation@CollectGroupedIndices = {"ArgumentsPattern" -> {_}};
 
+FoldGroupedIndexList[fn_, x_, list_GroupedIndexList] := GroupedIndexList @@ Delete[FoldList[
+    With[{
+        res = Delete[FoldList[fn[#1[[2]], #2[[1]], #2[[2]]] &, {None, #1[[2]]}, #2[[2]]], 1] (* {{name1, inds1}, {name2, inds2}, ...} *)
+    },
+        {#2[[1]] -> res[[All, 1]], res[[-1, 2]]}
+    ] &,
+    {None, x},
+    List @@ list
+], 1][[All, 1]];
+SyntaxInformation@FoldGroupedIndexList = {"ArgumentsPattern" -> {_, _, _}};
+
+RenameGroupedIndexList[list_GroupedIndexList, inds_, idToType_] := FoldGroupedIndexList[With[{ind = GetIndexOfSlotType[idToType[#3[[1]]], #1]}, {ind -> #3, Append[#1, ind]}] &, inds, list];
+SyntaxInformation@RenameGroupedIndexList = {"ArgumentsPattern" -> {_, _, _}};
+
 SymmetryOfIndsBlock[expr_, allIndPos_, dummySpecs_, symDummyPairSelector_] := With[{
     groupedDummySpecs = GroupIndexList@dummySpecs
 },
@@ -295,7 +366,12 @@ PermuteIndexList[list_, a_ * perm_] := a * PermuteIndexList[list, perm];
 PermuteIndexList[list_, perm_Images] := IndexList @@ Permute[list, List @@ perm];
 PermuteIndexList[_, 0] = 0;
 
-CanonicalizeOneSorted[expr_, frees_, freesSym_, symDummyPairSelector_] := With[{
+GetIndicesOfTypes[types_, inds_] := Drop[Fold[Append[#1, GetIndexOfSlotType[#2, #1]] &, inds, types], Length@inds];
+
+MapIf[b_, fn_, expr_] := If[b, fn@expr, expr];
+MapIf[b_, fn_][expr_] := MapIf[b, fn, expr];
+
+CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSelector_] := With[{
     indPos = FindIndicesSlots@expr,
     slotsSym = SymmetryOfExpression@expr
 }, With[{
@@ -311,49 +387,67 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, symDummyPairSelector_] := With[{
         freesSym
     ]
 }, With[{
-    canonIndsAndPos = Join @@ (CollectGroupedIndices /@ groupedInds)
+    canonIndsAndPos = CollectGroupedIndices /@ groupedInds
 }, With[{
-    perm = InversePermutation@canonIndsAndPos[[All, 1]],
-    canonInds = canonIndsAndPos[[All, 2]]
+    perm = InversePermutation@(Join @@ canonIndsAndPos)[[All, 1]],
+    canonInds = (Join @@ canonIndsAndPos)[[All, 2]]
+}, With[{
+    renamedCanonInds = If[renameDummies, (Join @@ (CollectGroupedIndices /@ MapAt[
+        RenameGroupedIndexList[#, canonIndsAndPos[[1, All, 2]], indPos[[#, 1]] &] &,
+        groupedInds,
+        2
+    ]))[[All, 2]], canonInds]
 },
     xToolsDebugPrint[CanonicalizeOneSorted, "input: ", HoldForm@expr];
     xToolsDebugPrint[CanonicalizeOneSorted, "actual indices: ", actualInds];
     xToolsDebugPrint[CanonicalizeOneSorted, "canonical indices: ", canonInds];
+    xToolsDebugPrint[CanonicalizeOneSorted, "renamed indices: ", renamedCanonInds];
     xToolsDebugPrint[CanonicalizeOneSorted, "permutation: ", perm];
     xToolsDebugPrint[CanonicalizeOneSorted, "symmetry of slots: ", slotsSym];
-    xToolsDebugPrint[CanonicalizeOneSorted, "symmetry of indices: ", indsSym]; With[{
-    canonPerm = Function[{arg}, xToolsDebugPrint[CanonicalizeOneSorted, "calling: ", HoldForm@arg]; arg, {HoldAll}][DoubleCosetRepresentative[slotsSym, #, indsSym]] &[Images @@ perm]
-},
-    xToolsDebugPrint[CanonicalizeOneSorted, "canonical permutation: ", canonPerm];
-    With[{ret = ApplyIndices[expr, indPos, PermuteIndexList[canonInds, SignedInversePermutation@canonPerm]]},
-        xToolsDebugPrint[CanonicalizeOneSorted, "result: ", ret];
-        ret
+    xToolsDebugPrint[CanonicalizeOneSorted, "symmetry of indices: ", indsSym];
+    If[Length@indPos > 0,
+        With[{
+            canonPerm = Function[{arg}, xToolsDebugPrint[CanonicalizeOneSorted, "calling: ", HoldForm@arg]; arg, {HoldAll}][DoubleCosetRepresentative[slotsSym, #, indsSym]] &[Images @@ perm]
+        },
+            xToolsDebugPrint[CanonicalizeOneSorted, "canonical permutation: ", canonPerm];
+            With[{ret = ApplyIndices[expr, indPos, PermuteIndexList[renamedCanonInds, SignedInversePermutation@canonPerm]]},
+                xToolsDebugPrint[CanonicalizeOneSorted, "result: ", ret];
+                ret
+            ]
+        ]
+    ,
+        xToolsDebugPrint[CanonicalizeOneSorted, "result: ", HoldForm@expr];
+        expr
     ]
 ]]]]]]];
 
-Options@CanonicalizeOneTerm = {
+Options@ITensorReduceOneTerm = {
     UseMetricOnSlots -> All,
     FreeIndices -> Automatic,
-    FreeIndicesSymmetry -> {}
+    FreeIndicesSymmetry -> {},
+    RenameDummies -> True
 };
-CanonicalizeOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
-CanonicalizeOneTerm[expr_, opt : OptionsPattern[]] := If[TensorTermQ@expr,
-    ReleaseSort@CanonicalizeOneSorted[
+ITensorReduceOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
+ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := If[TensorTermQ@expr,
+    ReleaseISort@CanonicalizeOneSorted[
         ISort@expr,
         OptionValue[FreeIndices],
         OptionValue[FreeIndicesSymmetry],
+        OptionValue[RenameDummies],
         OptionValue[UseMetricOnSlots]
     ]
 ,
-    Message[CanonicalizeOneTerm::nottensorterm, HoldForm@expr];
+    Message[ITensorReduceOneTerm::nottensorterm, HoldForm@expr];
     expr
 ];
-SyntaxInformation@CanonicalizeOneTerm = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+SyntaxInformation@ITensorReduceOneTerm = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
-ExpandToTensorPolynomial[expr_] := expr //. Times[t_, rest_];
+ExpandToTensorPolynomial[expr_] := expr //. Times[p_Plus, rest_] :> (# * rest & /@ p) /; !TensorTermQ@p;
+SyntaxInformation@ExpandToTensorPolynomial = {"ArgumentsPattern" -> {_}};
 
 End[];
 
-Protect @@ Names@{"`*"};
+Protect @@ Select[Names["`*"], !StringMatchQ[#, "$" ~~ __] &];
+Protect[$IndexPairPattern];
 
 EndPackage[];

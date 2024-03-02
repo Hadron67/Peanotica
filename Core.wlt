@@ -7,16 +7,16 @@ FindIndicesSlots[g1[inds__]] ^:= Array[{None, #} &, Length@Hold@inds];
 SymmetryOfExpression@g1[inds__] ^:= SymmetricGenSet @@ Range[Length@Hold@inds];
 
 VerificationTest[
-    CanonicalizeOneTerm[g1[b, a]],
+    ITensorReduceOneTerm[g1[b, a]],
     g1[a, b]
 ];
 
 VerificationTest[
-    CanonicalizeOneTerm[Riemann1[a, b, DI@c, DI@d] g1[c, d]],
+    ITensorReduceOneTerm[Riemann1[a, b, DI@c, DI@d] g1[c, d]],
     0
 ];
 
 VerificationTest[
-    CanonicalizeOneTerm[Riemann1[a, b, c, d] Riemann1[-b, -d, -c, -a]],
+    ITensorReduceOneTerm[Riemann1[a, b, c, d] Riemann1[-b, -d, -c, -a], RenameDummies -> False],
     -Riemann1[a, b, c, d] Riemann1[DI[a], DI[c], DI[b], DI[d]]
 ];

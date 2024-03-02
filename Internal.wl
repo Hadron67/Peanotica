@@ -4,6 +4,7 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{"`*", "`Private`*"}];
 
 xToolsDebugPrint::usage = "xToolsDebugPrint[tag, msg] prints debug message with specified tag.";
 FilterExprList::usage = "FilterExprList[filter, expr] returns true if expr is not filtered by filter.";
+NestWith;
 
 $xToolsDebugFilter;
 $xToolsDebugPrint;
@@ -13,6 +14,7 @@ Begin["`Private`"];
 If[Hold@$xToolsDebugPrint === Hold@Evaluate@$xToolsDebugPrint, $xToolsDebugPrint = Print];
 
 FilterExprList[All, __] = True;
+FilterExprList[None, __] = False;
 FilterExprList[l_List, expr_, ___] := MemberQ[l, expr];
 FilterExprList[func_, args__] := func[args];
 
@@ -21,6 +23,6 @@ SetAttributes[DebugPrint, HoldRest];
 
 End[];
 
-Protect @@ Select[Names["`*"], !MatchQ["$" ~~ _]];
+Protect @@ Select[Names["`*"], !StringMatchQ[#, "$" ~~ __] &];
 
 EndPackage[];
