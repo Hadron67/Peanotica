@@ -11,7 +11,7 @@ UnorderedProductQ;
 TensorTermQ;
 ISort;
 RenamingGroupOfIndex::usage = "RenamingGroupOfIndex[a] gives the renaming group of the index name a. Index names with the same renaming group can be interchanged, while the renaming group None cannot be renamed.";
-SymmetricIndexPairQ::usage = "SymmetricIndexPairQ[T[..., i, ...], pos, type, index] gives True if T[..., i, ...]F[-i] = \[Epsilon]T[..., -i, ...]F[i].";
+MetricPassThroughQ::usage = "MetricPassThroughQ[T[..., i, ...], pos, type, index] gives True if T[..., i, ...]F[-i] = \[Epsilon]T[..., -i, ...]F[i].";
 SignOfSymmetricPair::usage = "SignOfSymmetricPair[type1, type2, ind] returns 1 or -1.";
 InterchangableIndexPairQ::usage = "InterchangableIndexPairQ[type, a] gives true if the index name a and DI[a] can be interchanged.";
 
@@ -34,16 +34,28 @@ GroupIndexList::usage = "GroupIndexList[{i1 -> v1, i2 -> v2, ...}] groups the in
 SymmetryOfGroupedIndices::usage = "SymmetryOfGroupedIndices[GroupedIndices[...], pairSymmetryProvider] gives the generators of the symmetry group of the sorted indices.";
 SortGroupedIndexList::usage = "SortGroupedIndexList[GroupedIndexList[...]] returns a sorted version of GroupedIndexList[...].";
 FindAndDropFrees::usage = "FindAndDropFrees[GroupedIndexList[...], frees] returns a list containing two GroupedIndexList with the first containing only free indices as specified by frees, the other contains no free indices. FindAndDropFrees[GroupedIndexList[...], Automatic] select frees as those only has one occurance.";
+GroupedIndexListMapFold::usage = "GroupedIndexListMapFold[f, x, GroupedIndexList[...]] returns a new GroupedIndexList with the entries being replaced by f[x, type1, name1, poses1], where each time f returns {name -> val, x}.";
+MapGroupedIndexList::usage = "MapGroupedIndexList[f, GroupedIndexList[...]] returns a list by apply f to every entries of the GroupedIndexList with f[type, name, val].";
+MapIndexedGroupedIndexList::usage = "MapIndexedGroupedIndexList[f, GroupedIndexList[...]] returns a list by apply f to every entries of the GroupedIndexList with f[type, name, val, index].";
+FoldListGroupedIndexList::usage = "FoldGroupedIndexList[f, x, GroupedIndexList[...]] returns ";
 CollectGroupedIndices::usage = "CollectGroupedIndices[GroupedIndexList[...]] returns a list of indices by collecting all the indices in the index list in order.";
-FoldGroupedIndexList::usage = "FoldGroupedIndexList[f, x, GroupedIndexList[...]] returns a new GroupedIndexList with the entries being replaced by f[x, name1, poses1], f[f[x, name1, poses1], name2, poses2], where each time f returns {name -> val, x}.";
+CollectGroupedIndicesNames::usage = "CollectGroupedIndices[GroupedIndexList[...]] returns a list containing all the index names in the list.";
 RenameGroupedIndexList::usage = "RenameGroupedIndexList[GroupedIndexList[...], indices, idToType] renames the indices names.";
 PrependPosToSlotSpec::usage = "PrependPosToSlotSpec[]";
 $IndexPairPattern::usage = "$IndexPairPattern is global constant with value given by Sort@{IndexNameSlot, DI[IndexNameSlot]}.";
 ValidateIndex;
 
+(* metric related *)
+DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
+MetricOfSlotType::usage = "MetricOfSlotType[type] represents the default metric of the slot type. MetricOfSlotType[type] can be used directly as the metric tensor, it also can be assigned other tensors to it.";
+ContractableMetricQ::usage = "ContractableMetricQ[expr] returns true of expr is a metric that can be used in ContractMetric.";
+ContractionSlotOfMetric::usage = "ContractionSlotOfMetric[metric] returns 1 or 2, specifiying which slot of the metric to be contracted with. Specifically, for 1 we have p[DI@a] = g[DI@b, DI@a]p[b], while for 2 we have p[DI@a] = g[DI@a, DI@b]p[b]. The default rule returns 1. Note that the value is only relevant for non-symmetric metrics.";
+ContractMetric::usage = "ContractMetric[expr, metrics] tries to contract all the specified metrics in expr. ContractMetric[expr] or ContractMetric[expr, All] contracts all metrics that returns true when acting ContractableMetricQ on them.";
+
 (* utility functions *)
 NoIndicesQ;
 GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
+UseMetricOnIndices::usage = "";
 
 (* canonicalization *)
 ISortedProduct;
@@ -62,6 +74,7 @@ ITensorReduce;
 
 (* formatting *)
 TensorGridBox;
+TensorInterpretationBox;
 AllowSubsuperscriptBox;
 DefTensorFormatings;
 
@@ -124,11 +137,11 @@ InterchangableIndexPairQ[_, _LabelI] = False;
 InterchangableIndexPairQ[_, _] = True;
 SyntaxInformation@InterchangableIndexPairQ = {"ArgumentsPattern" -> {_, _}};
 
-SymmetricIndexPairQ[_, {_}, _, _] = True;
-SymmetricIndexPairQ[expr_Times, pos_, type_, ind_] := Extract[Hold@expr, {1, pos[[1]]}, Function[{a}, SymmetricIndexPairQ[a, Drop[pos, 1], type, ind], {HoldAll}]];
-SymmetricIndexPairQ[ISortedProduct[_, args_, _], {2, pos_, restPos___}, type_, ind_] := Extract[Hold@args, {1, pos}, Function[{a}, SymmetricIndexPairQ[a, {restPos}, type, ind], {HoldAll}]];
-SymmetricIndexPairQ[ISortedGeneral[arg_], {1, pos__}, type_, ind_] := SymmetricIndexPairQ[arg, {pos}, type, ind];
-SetAttributes[SymmetricIndexPairQ, HoldFirst];
+MetricPassThroughQ[_, {_}, _, _] = True;
+MetricPassThroughQ[expr_Times, pos_, type_, ind_] := Extract[Hold@expr, {1, pos[[1]]}, Function[{a}, MetricPassThroughQ[a, Drop[pos, 1], type, ind], {HoldAll}]];
+MetricPassThroughQ[ISortedProduct[_, args_, _], {2, pos_, restPos___}, type_, ind_] := Extract[Hold@args, {1, pos}, Function[{a}, MetricPassThroughQ[a, {restPos}, type, ind], {HoldAll}]];
+MetricPassThroughQ[ISortedGeneral[arg_], {1, pos__}, type_, ind_] := MetricPassThroughQ[arg, {pos}, type, ind];
+SetAttributes[MetricPassThroughQ, HoldFirst];
 
 SignOfSymmetricPair[None, None, _] = 1;
 SyntaxInformation@SignOfSymmetricPair = {"ArgumentsPattern" -> {_, _, _}};
@@ -188,6 +201,65 @@ NoIndicesQ[expr_List] := AllTrue[expr, NoIndicesQ];
 NoIndicesQ[expr_Plus] := AllTrue[List @@ expr, NoIndicesQ];
 SetAttributes[NoIndicesQ, HoldAll];
 
+(* metric related *)
+DimensionOfSlotType /: FindIndicesSlots@DimensionOfSlotType[_] = {};
+SyntaxInformation@DimensionOfSlotType = {"ArgumentsPattern" -> {_}};
+
+ContractableMetricQ[_] = False;
+SyntaxInformation@ContractableMetricQ = {"ArgumentsPattern" -> {_}};
+
+ContractionSlotOfMetric[_] = 1;
+SyntaxInformation@ContractionSlotOfMetric = {"ArgumentsPattern" -> {_}};
+
+MetricOfSlotType /: FindIndicesSlots@MetricOfSlotType[type_][_, _] := {{type, 1}, {type, 2}};
+MetricOfSlotType /: SymmetryOfExpression@MetricOfSlotType[type_][_, _] = SymmetricGenSet[1, 2];
+MetricOfSlotType /: ContractableMetricQ@MetricOfSlotType[_][_, _] = True;
+MetricOfSlotType /: MakeBoxes[expr : MetricOfSlotType[type_], StandardForm] := InterpretationBox[#, expr] &@MakeBoxes["g"[type]];
+MetricOfSlotType /: MakeBoxes[expr : MetricOfSlotType[type_][a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[MakeBoxes["g"[type], StandardForm], SeparateIndexName /@ {a, b}]];
+MetricOfSlotType[type_][a_, DI@a_] := DimensionOfSlotType[type];
+MetricOfSlotType[type_][DI@a_, a_] := DimensionOfSlotType[type];
+MetricOfSlotType /: MetricOfSlotType[type_][a_, b_]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][b_, a_]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][b_, a_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][a_, b_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
+SyntaxInformation@MetricOfSlotType = {"ArgumentsPattern" -> {_}};
+
+SignOf2SymGroup[{}] = 0;
+SignOf2SymGroup[{SCycles@{1, 2}}] = 1;
+SignOf2SymGroup[{-SCycles@{1, 2}}] = -1;
+SelectMetricForContraction[All][expr_] := ContractableMetricQ@expr;
+SelectMetricForContraction[metrics_List][expr_] := MatchQ[expr, Alternatives @@ metrics];
+SelectMetricForContraction[metrics_][expr_] := MatchQ[expr, metrics];
+ContractMetricExpanded[expr_Plus, metrics_] := ContractMetricExpanded[#, metrics] & /@ expr;
+ContractMetricExpanded[expr_List, metrics_] := ContractMetricExpanded[#, metrics] & /@ expr;
+ContractOneMetric[expr_, metric_] := With[{
+    exprIndToPos = First /@ Select[GroupBy[FindIndicesSlotsAndNames@expr, Extract[2] -> First], Length@# === 1 &],
+    metricInds = FindIndicesSlotsAndNames[metric][[All, 2]],
+    contractionSlot = ContractionSlotOfMetric@metric,
+    metricSym = SignOf2SymGroup@SymmetryOfExpression@metric
+}, With[{
+    pos1 = Lookup[exprIndToPos, DI /@ metricInds, None]
+}, Which[
+    pos1[[1]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 1) && MetricPassThroughQ[expr, Delete[pos1[[1]], 1], pos1[[1, 1]], SeparateIndexName[metricInds[[1]]][[1]]],
+    If[contractionSlot =!= 1, metricSym, 1] * ReplacePart[expr, Delete[pos1[[1]], 1] -> metricInds[[2]]],
+
+    pos1[[2]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 2) && MetricPassThroughQ[expr, Delete[pos1[[2]], 1], pos1[[2, 1]], SeparateIndexName[metricInds[[2]]][[1]]],
+    If[contractionSlot =!= 2, metricSym, 1] * ReplacePart[expr, Delete[pos1[[2]], 1] -> metricInds[[1]]],
+
+    True,
+    expr * metric
+]]];
+ContractMetricExpanded[expr_Times, metrics_] := With[{
+    selected = Lookup[GroupBy[List @@ expr, SelectMetricForContraction[metrics]], {True, False}, {}]
+},
+    Fold[ContractOneMetric, Times @@ selected[[2]], selected[[1]]]
+];
+ContractMetricExpanded[expr_, _] := expr;
+
+ContractMetric[expr_, metrics_] := ContractMetricExpanded[ExpandToTensorPolynomial@expr, metrics];
+ContractMetric[expr_] := ContractMetric[expr, All];
+SyntaxInformation@ContractMetric = {"ArgumentsPattern" -> {_, _.}};
+
 MapShiftedIndexed[f_, expr_] := MapThread[f, {Drop[expr, -1], Drop[expr, 1], Range[Length@expr - 1]}];
 
 ISortArgToSortTag[arg_] := With[{
@@ -237,12 +309,16 @@ TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := Which[
 ];
 SyntaxInformation@TensorGridBox = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
+TensorInterpretationBox[expr_, box_] := InterpretationBox[StyleBox[box, ShowAutoStyles -> False], expr, Editable -> False];
+SetAttributes[TensorInterpretationBox, HoldFirst];
+SyntaxInformation@TensorInterpretationBox = {"ArgumentsPattern" -> {_, _}};
+
 SymbolToIndex[-a_] := {-1, a};
 SymbolToIndex[DI[a_]] := {-1, a};
 SymbolToIndex[a_] := {1, a};
 
 DefTensorFormatings[sym_] := DefTensorFormatings[sym, MakeBoxes@sym];
-DefTensorFormatings[sym_, name_] := sym /: MakeBoxes[expr : sym[inds___], StandardForm] := InterpretationBox[StyleBox[#, ShowAutoStyles -> False], expr, Editable -> False] &@TensorGridBox[name, SeparateIndexName /@ {inds}];
+DefTensorFormatings[sym_, name_] := sym /: MakeBoxes[expr : sym[inds___], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[name, SeparateIndexName /@ {inds}]];
 SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, _}};
 
 GroupIndexList[list_] := If[Length@list > 0 && Head@list[[1]] =!= Rule,
@@ -273,7 +349,7 @@ SymmetryOfOneIndsBlock[pairSym_][{IndexNameSlot, DI@IndexNameSlot} -> indsAndPos
     }, If[
         FilterExprList[symDummyPairSelector, pos1[[1]]] && FilterExprList[symDummyPairSelector, pos2[[1]]] &&
         InterchangableIndexPairQ[pos1[[1]], indName] && InterchangableIndexPairQ[pos2[[1]], indName] &&
-        SymmetricIndexPairQ[expr, Drop[pos1, 1], pos1[[1]], indName] && SymmetricIndexPairQ[expr, Drop[pos2, 1], pos2[[1]], indName]
+        MetricPassThroughQ[expr, Drop[pos1, 1], pos1[[1]], indName] && MetricPassThroughQ[expr, Drop[pos2, 1], pos2[[1]], indName]
     ,
         {SignOfSymmetricPair[pos1[[1]], pos2[[1]], indName] * SCycles@{2 #2[[1]] - 1, 2 #2[[1]]}}
     ,
@@ -324,18 +400,34 @@ CollectGroupedIndices[list_GroupedIndexList] := Join @@ (Function[{pat, inds},
 ] @@@ List @@ list);
 SyntaxInformation@CollectGroupedIndices = {"ArgumentsPattern" -> {_}};
 
-FoldGroupedIndexList[fn_, x_, list_GroupedIndexList] := GroupedIndexList @@ Delete[FoldList[
+CollectGroupedIndicesNames[list_GroupedIndexList] := Join @@ (List @@ list)[[All, 2, All, 1]];
+SyntaxInformation@CollectGroupedIndicesNames = {"ArgumentsPattern" -> {_}};
+
+GroupedIndexListMapFold[fn_, x_, list_GroupedIndexList] := GroupedIndexList @@ Delete[FoldList[
     With[{
-        res = Delete[FoldList[fn[#1[[2]], #2[[1]], #2[[2]]] &, {None, #1[[2]]}, #2[[2]]], 1] (* {{name1, inds1}, {name2, inds2}, ...} *)
+        patt = #2[[1]]
+    }, With[{
+        res = Delete[FoldList[fn[#1[[2]], patt, #2[[1]], #2[[2]]] &, {None, #1[[2]]}, #2[[2]]], 1] (* {{name1, inds1}, {name2, inds2}, ...} *)
     },
-        {#2[[1]] -> res[[All, 1]], res[[-1, 2]]}
-    ] &,
+        {patt -> res[[All, 1]], res[[-1, 2]]}
+    ]] &,
     {None, x},
     List @@ list
 ], 1][[All, 1]];
-SyntaxInformation@FoldGroupedIndexList = {"ArgumentsPattern" -> {_, _, _}};
+SyntaxInformation@GroupedIndexListMapFold = {"ArgumentsPattern" -> {_, _, _}};
 
-RenameGroupedIndexList[list_GroupedIndexList, inds_, idToType_] := FoldGroupedIndexList[With[{ind = GetIndexOfSlotType[idToType[#3[[1]]], #1]}, {ind -> #3, Append[#1, ind]}] &, inds, list];
+MapGroupedIndexList[fn_, list_GroupedIndexList] := Join @@ Map[
+    With[{
+        patt = #[[1]]
+    }, Map[
+        fn[patt, #[[1]], #[[2]]] &,
+        #[[2]]
+    ]] &,
+    List @@ list
+];
+SyntaxInformation@MapGroupedIndexList = {"ArgumentsPattern" -> {_, _}};
+
+RenameGroupedIndexList[list_GroupedIndexList, inds_, idToType_] := GroupedIndexListMapFold[With[{ind = GetIndexOfSlotType[idToType[#4[[1]]], #1]}, {ind -> #4, Append[#1, ind]}] &, inds, list];
 SyntaxInformation@RenameGroupedIndexList = {"ArgumentsPattern" -> {_, _, _}};
 
 SymmetryOfIndsBlock[expr_, allIndPos_, dummySpecs_, symDummyPairSelector_] := With[{
@@ -353,7 +445,7 @@ ExpressionPairSymProvider[expr_, allIndPos_, symDummyPairSelector_][indName_, po
 }, If[
     FilterExprList[symDummyPairSelector, type1] && FilterExprList[symDummyPairSelector, type2] &&
     InterchangableIndexPairQ[type1, indName] && InterchangableIndexPairQ[type2, indName] &&
-    SymmetricIndexPairQ[expr, Delete[allIndPos[[pos1]], 1], type1, indName] && SymmetricIndexPairQ[expr, Delete[allIndPos[[pos2]], 1], type2, indName]
+    MetricPassThroughQ[expr, Delete[allIndPos[[pos1]], 1], type1, indName] && MetricPassThroughQ[expr, Delete[allIndPos[[pos2]], 1], type2, indName]
 ,
     SignOfSymmetricPair[type1, type2, indName],
     None
@@ -393,7 +485,7 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
     canonInds = (Join @@ canonIndsAndPos)[[All, 2]]
 }, With[{
     renamedCanonInds = If[renameDummies, (Join @@ (CollectGroupedIndices /@ MapAt[
-        RenameGroupedIndexList[#, canonIndsAndPos[[1, All, 2]], indPos[[#, 1]] &] &,
+        RenameGroupedIndexList[#, CollectGroupedIndicesNames@groupedInds[[1]], indPos[[#, 1]] &] &,
         groupedInds,
         2
     ]))[[All, 2]], canonInds]
