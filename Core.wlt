@@ -1,6 +1,6 @@
 << Peanotica`Core`
 
-IndicesCandidateOfSlotType@TangentMf ^= {{a, b, c, d}, DefaultIndex};
+IndicesCandidateOfSlotType@TangentMf ^= {{a, b, c, d, e, f, g, h, i, j, k, l}, DefaultIndex};
 
 FindIndicesSlots[Riemann1[_, _, _, _]] ^= {{1} -> TangentMf, {2} -> TangentMf, {3} -> TangentMf, {4} -> TangentMf};
 SymmetryOfExpression@Riemann1[_, _, _, _] ^= RiemannSymmetricGenSet[1];
@@ -58,4 +58,14 @@ VerificationTest[
 VerificationTest[
     ITensorTranspose[ETensor[Riemann1[a, b, c, d], {a, b, c, d}], {1, 1, 2, 2}],
     ETensor[Riemann1[a, a, c, c], {a, c}]
+];
+
+VerificationTest[
+    ITensorOutter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}}],
+    ETensor[g1[e, f, b, h]Riemann1[a, b, c, d], {a, b, c, d, e, f, h}]
+];
+
+VerificationTest[
+    ITensorOutter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}, {1, 4}}],
+    ETensor[g1[e, f, b, a]Riemann1[a, b, c, d], {a, b, c, d, e, f}]
 ];

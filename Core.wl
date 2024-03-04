@@ -104,8 +104,7 @@ INATensorOf;
 ITensorProduct::usage = "ITensorProduct[t1, t2, ...] represents a tensor product.";
 ITensorContract::usage = "ITensorContract[t, {{s11, s12, s13, ...}, {s21, s22, s23, ...}, ...}]";
 ITensorTranspose::usage = "ITensorTranspose[t, permutation]";
-ITensorFlatten::usage = "ITensorFlatten[t, {{s11, s12, ...}, ...}]";
-ITensorFlattenTwo::usage = "ITensorFlattenTwo[t1, t2, {{}}]";
+ITensorOutter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
 ITensorSum::usage = "ITensorSum[t, {a1, a2, ...}]";
 
 Begin["`Private`"];
@@ -785,6 +784,7 @@ UncatchedETensorTranspose[ETensor[expr_, frees_], perm_List] := With[{
 ]];
 ETensor /: ITensorProduct[l___, e1_ETensor, e2_ETensor, r___] := ITensorProduct[l, ETensorProduct[Times, e1, e2], r];
 ETensor /: ITensorTranspose[expr_ETensor, perm_List] := With[{ret = Catch@UncatchedETensorTranspose[expr, perm]}, ret /; ret =!= Err];
+
 ETensor::cantcontract = "Cannot contract slots `1`.";
 CombineContractedInds[inds_List] := If[Head@inds[[1]] === List,
     inds,
@@ -804,18 +804,26 @@ UncatchedETensorContract[ETensor[expr_, frees_], cont_, deleteFrees_] := With[{
     ]
 ]];
 ETensor /: ITensorContract[e_ETensor, cont_] := With[{ret = Catch@UncatchedETensorContract[e, cont, True]}, ret /; ret =!= Err];
-ETensor /: ITensorFlatten[ETensor[expr_, inds_], cont_] := With[{ret = Catch@UncatchedETensorContract[e, cont, False]}, ret /; ret =!= Err];
+
+ETensor /: ITensorOutter[prod_, e1_ETensor, e2_ETensor, cont_] := ITensorTranspose[
+    ETensorProduct[prod, e1, e2],
+    With[{
+        l1 = Length@e1[[2]],
+        l2 = Length@e2[[2]]
+    }, Join[
+        Range@l1,
+        FoldPairList[If[#2 === None, {#1, #1 + 1}, {#2, #1}] &, l1 + 1, ReplacePart[ConstantArray[None, l2], #2 -> #1 & @@@ cont]]
+    ]]
+];
 
 ITensorProduct[s_] := s;
 ITensorProduct[] = 1;
 SetAttributes[ITensorProduct, {OneIdentity, Flat}];
 SyntaxInformation@ITensorProduct = {"ArgumentsPattern" -> {___}};
 
-ITensorTranspose[s_?ArrayQ, perm_] := Transpose[s, InversePermutation@perm];
-ITensorTranspose[CETensor[arr_], perm_] := CETensor@Transpose[Map[ITensorTranspose[#, perm] &, arr, {ArrayDepth@arr}], InversePermutation@perm];
+ITensorTranspose[s_?ArrayQ, perm_] := Transpose[s, perm];
+ITensorTranspose[CETensor[arr_], perm_] := CETensor@Transpose[Map[ITensorTranspose[#, perm] &, arr, {ArrayDepth@arr}], perm];
 SyntaxInformation@ITensorTranspose = {"ArgumentsPattern" -> {_, _}};
-
-(* ITensorFlatten[s_?ArrayQ, cont_] := ; *)
 
 SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
 
