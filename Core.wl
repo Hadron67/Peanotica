@@ -773,7 +773,7 @@ UncatchedETensorPlus[head_, exprs_] := With[{
     ]
 ]]]]];
 ETensor /: e1_ETensor + e2_ETensor := With[{ret = Catch@UncatchedETensorPlus[Plus, {e1, e2}]}, ret /; ret =!= Err];
-ETensor /: x_ * ETensor[expr_, arg__] := ETensor[x * expr, arg];
+ETensor /: prod_?ProductQ[x_, ETensor[expr_, arg__]] := ETensor[prod[x, expr], arg];
 ETensor /: D[ETensor[expr_, frees_], args__] := ETensor[D[expr, args], frees];
 
 ETensorProduct[prod_, ETensor[expr1_, frees1_], ETensor[expr2_, frees2_]] := With[{
@@ -797,7 +797,11 @@ ETensorProduct[prod_, ETensor[expr1_, frees1_], ETensor[expr2_, frees2_]] := Wit
     ]
 ]]]];
 
-ITensorTranspose[s_?ArrayQ, perm_] := Transpose[s, perm];
+TensorValueQ[_?ArrayQ] = True;
+TensorValueQ[_ETensor] = True;
+TensorValueQ[_] = False;
+
+ITensorTranspose[s_?ArrayQ, perm_] := Map[If[TensorValueQ@#, ITensorTranspose[#, perm], #] &, Transpose[s, perm], {ArrayDepth@s}];
 ITensorTranspose::emptyslot = "Permutation `1` does not specify destination for level `2`.";
 ITensorTranspose::incompatslot = "Cannot combine slots `1` and `2`.";
 ConvertTransposeIndsGroup[list_] := If[Head@list[[1]] === List, Sequence @@ Transpose@list, list];
@@ -822,7 +826,8 @@ UncatchedETensorTranspose[ETensor[expr_, frees_], perm_List] := With[{
     ]
 ]]];
 ITensorTranspose[e1_ETensor, perm_] := With[{ret = UncatchedETensorTranspose[e1, perm]}, ret /; ret =!= Err];
-ITensorTranspose[s_, _] := s;
+ITensorTranspose[Plus[l___, ITensorTranspose[t2_, perm2_], r___], perm_] := ITensorTranspose[Plus[l, r], perm] + ITensorTranspose[t2, PermutationProduct[perm2, perm]];
+ITensorTranspose[expr_, perm_] := expr /; perm === Range[Length@perm];
 SyntaxInformation@ITensorTranspose = {"ArgumentsPattern" -> {_, _}};
 
 SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
@@ -830,21 +835,39 @@ SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
 ITensorOuter[prod_, s1_, s2_] := ITensorOuter[prod, s1, s2, {}];
 PermutationOfMovingToFirst[points_List] := InversePermutation[Join[points, Delete[Range[Max @@ points], Transpose@{points}]]];
 PermutationOfMovingToLast[points_List] := InversePermutation[Join[Delete[Range[Max @@ points], Transpose@{points}], points]];
+FillNoneSlots[arr_, l_] := FoldPairList[If[#2 === None, {#1, #1 + 1}, {#2, #1}] &, l, arr];
+ITensorOuter::nonzeronontensor = "Multiplication of non-zero non-tensor value `1` and `2` encountered.";
+ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1 && TensorValueQ@s2},
+    {True, True},
+    ITensorOuter[prod, s1, s2],
+
+    {False, False},
+    prod[s1, s2],
+
+    _,
+    If[s1 === 0 || s2 === 0, 0, Message[ITensorOuter::nonzeronontensor, s1, s2]; Throw@Err;]
+];
 ITensorOuter[prod_, s1_?ArrayQ, s2_?ArrayQ, cont_] := With[{
-    perm1 = PermutationOfMovingToFirst[cont[[All, 1]]],
-    perm2 = PermutationOfMovingToFirst[cont[[All, 2]]]
-}, With[{
-    s22 = Transpose[s2, perm2]
-},
-    Transpose[
-        MapIndexed[
-            Outer[ITensorOuter[prod, #1, #2, cont] &, #1, Extract[s22, #2]] &,
-            Transpose[s1, perm1],
-            {Length@cont}
-        ],
-        InversePermutation@perm1
-    ]
-]];
+    ret = With[{
+        perm1 = PermutationOfMovingToFirst[cont[[All, 1]]],
+        perm2 = PermutationOfMovingToFirst[cont[[All, 2]]]
+    }, With[{
+        s22 = Transpose[s2, perm2]
+    },
+        Transpose[
+            MapIndexed[
+                Outer[
+                    ITensorOuterInner[prod, #1, #2, cont] &,
+                    #1,
+                    Extract[s22, #2]
+                ] &,
+                Transpose[s1, perm1],
+                {Length@cont}
+            ],
+            InversePermutation@perm1
+        ]
+    ]]
+}, ret /; ret =!= Err];
 ITensorOuter[prod_, e1_ETensor, e2_ETensor, cont_] := ITensorTranspose[
     ETensorProduct[prod, e1, e2],
     With[{
@@ -852,20 +875,109 @@ ITensorOuter[prod_, e1_ETensor, e2_ETensor, cont_] := ITensorTranspose[
         l2 = Length@e2[[2]]
     }, Join[
         Range@l1,
-        FoldPairList[If[#2 === None, {#1, #1 + 1}, {#2, #1}] &, l1 + 1, ReplacePart[ConstantArray[None, l2], #2 -> #1 & @@@ cont]]
+        FillNoneSlots[ReplacePart[ConstantArray[None, l2], #2 -> #1 & @@@ cont], l1 + 1]
     ]]
 ];
-ITensorOuter[prod_, s1_, s2_, _] := If[s1 === 0 || s2 === 0, 0, prod[s1, s2]];
+ITensorOuter[_, 0, _, _] = 0;
+ITensorOuter[_, _, 0, _] = 0;
 SyntaxInformation@ITensorOuter = {"ArgumentsPattern" -> {_, _, _, _}};
 
 ITensorSum[expr_, {}] := expr;
-ITensorSum[s_?ArrayQ, dims_] := Map[ITensorSum[#, dims] &, Total@Flatten[ITensorTranspose[s, PermutationOfMovingToFirst[dims]], Length@dims - 1], {ArrayDepth@s - Length@dims}];
+ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
+    Transpose[Map[If[TensorValueQ@#, ITensorSum[#, dims], #] &, s, {ArrayDepth@s}], PermutationOfMovingToFirst@dims],
+    Length@dims - 1
+];
 ITensorSum[ETensor[expr_, frees_], dims_] := ETensor[expr, Delete[frees, Transpose@{dims}]];
-ITensorSum[expr_, _] := expr;
 SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
 
+OneIndexOfNITensor[ind_ -> _] := ind;
+OneIndexOfNITensor[ind_] := ind;
 NITensor::incompatinds = "Cannot add tensors with incompatible indices `1` and `2`.";
-(* NITensor /: NITensor[t1_, inds1_] + NITensor[t2_, inds2_] := With[{ret = Catch@}, ret /; ret =!= Err]; *)
+NITensor[t_, {}] := t;
+NITensor /: NITensor[t1_, inds1_] + NITensor[t2_, inds2_] := With[{
+    perm = FirstPosition[OneIndexOfNITensor /@ inds1, OneIndexOfNITensor@#, None][[1]] & /@ inds2
+}, NITensor[t1 + ITensorTranspose[t2, perm], inds1]];
+NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds];
+SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
+
+FreesByArgs[frees_, freeArgs_] := Array[Union@Append[Delete[freeArgs, #], frees] &, Length@freeArgs];
+ITensorToNIExpression[expr_] := ITensorToNIExpression[expr, {}];
+ITensorToNIExpression[prod_?ProductQ[args__], frees_] := With[{
+    freesByArg = FreesByArgs[frees, Keys@FindAllIndicesNames@# & /@ {args}]
+},
+    prod @@ MapThread[ITensorToNIExpression, {{args}, freesByArg}] //. prod[e__NITensor] :> ProcessContraction[frees, {e}]
+];
+PermutationOfMergeIndices[inds_, n_] := With[{
+    firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)
+}, Fold[
+    With[{
+        arr = #1[[1]],
+        c = #1[[2]]
+    }, If[arr[[#2]] === None,
+        With[{
+            g = Lookup[firstIndToIndGroup, #2, None]
+        }, {
+            If[g =!= None,
+                ReplacePart[arr, Thread[g -> c]],
+                ReplacePart[arr, #2 -> c]
+            ],
+            c + 1
+        }]
+    ,
+        {arr, c}
+    ]] &,
+    {ConstantArray[None, n], 1},
+    Range@n
+]][[1]];
+ContractOneNITensor[NITensor[t1_, inds_], frees_] := With[{
+    indsByName = Sort /@ GroupBy[MapIndexed[{SeparateIndexName[OneIndexOfNITensor@#1][[1]], #2[[1]]} &, inds], First -> Extract[2]]
+}, With[{
+    toContract = Select[indsByName, Length@# >= 2 &]
+}, With[{
+    ret = If[Length@toContract > 0,
+        With[{
+            perm = PermutationOfMergeIndices[Values@toContract, Length@inds]
+        }, {
+            ITensorTranspose[t1, perm],
+            Delete[inds, Transpose@{Flatten[Delete[1] /@ Values@toContract]}],
+            Union /@ (indsByName /. Dispatch[Thread[Range@Length@perm -> perm]])
+        }]
+    ,
+        {t1, inds, indsByName}
+    ]
+}, With[{
+    summed = Delete[ret[[3]], {Key@#} & /@ frees]
+},
+    If[Length@summed > 0,
+        NITensor[ITensorSum[ret[[1]], Join @@ (Values@summed)], Delete[ret[[2]], Values@summed]],
+        NITensor[ret[[1]], ret[[2]]]
+    ]
+]]]];
+ContractTwoNITensors[prod_, NITensor[t1_, inds1_], NITensor[t2_, inds2_], frees_] := With[{
+    inds1ByName = Association @@ MapIndexed[OneIndexOfNITensor@#1 -> #2[[1]] &, inds1],
+    inds2ByName = Association @@ MapIndexed[OneIndexOfNITensor@#1 -> #2[[1]] &, inds2]
+}, With[{
+    toContract = Intersection[Keys@inds1ByName, Keys@inds2ByName]
+}, With[{
+    pos1 = inds1ByName /@ toContract,
+    pos2 = inds2ByName /@ toContract
+}, With[{
+    inner = ITensorOuter[prod, t1, t2, Thread@{pos1, pos2}],
+    summed = Complement[toContract, frees]
+},
+    If[Length@summed > 0,
+        NITensor[ITensorSum[inner, inds1ByName /@ summed], Join[
+            Delete[inds1, Transpose@{inds1ByName /@ summed}],
+            Delete[inds2, Transpose@{pos2}]
+        ]],
+        NITensor[inner, Join[inds1, Delete[inds2, Transpose@{pos2}]]]
+    ]
+]]]];
+ProcessContraction[frees_, factors_] := With[{
+    freesByArg = FreesByArgs[frees, OneIndexOfNITensor /@ factors[[All, 2]]]
+}, With[{
+    contractionWays = Array[a |-> Sequence @@ Array[{a, #} &, Length@factors - a, a + 1], Length@factors]
+}]];
 
 End[];
 
