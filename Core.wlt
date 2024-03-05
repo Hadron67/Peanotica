@@ -51,6 +51,11 @@ VerificationTest[
 ];
 
 VerificationTest[
+    ETensor[g1[a], {a, None}] + ETensor[t1[a], {None, a}],
+    ETensor[g1[a] + t1[b], {a, b}]
+];
+
+VerificationTest[
     ITensorTranspose[ETensor[Riemann1[a, b, c, d], {{a, b}, {c, d}}], {1, 1}],
     ETensor[Riemann1[a, b, a, b], {{a, b}}]
 ];
@@ -61,11 +66,11 @@ VerificationTest[
 ];
 
 VerificationTest[
-    ITensorOutter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}}],
+    ITensorOuter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}}],
     ETensor[g1[e, f, b, h]Riemann1[a, b, c, d], {a, b, c, d, e, f, h}]
 ];
 
 VerificationTest[
-    ITensorOutter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}, {1, 4}}],
+    ITensorOuter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}, {1, 4}}],
     ETensor[g1[e, f, b, a]Riemann1[a, b, c, d], {a, b, c, d, e, f}]
 ];
