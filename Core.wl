@@ -11,11 +11,13 @@ UnorderedProductQ;
 ProductQ;
 TensorTermQ;
 ISort;
-RenamingGroupOfIndex::usage = "RenamingGroupOfIndex[a] gives the renaming group of the index name a. Index names with the same renaming group can be interchanged, while the renaming group None cannot be renamed.";
+RenamingGroupOfIndexName::usage = "RenamingGroupOfIndexName[a] gives the renaming group of the index name a. Index names with the same renaming group can be interchanged, while the renaming group None cannot be renamed.";
 MetricPassThroughQ::usage = "MetricPassThroughQ[T[..., i, ...], pos, type, index] gives True if T[..., i, ...]F[-i] = \[Epsilon]T[..., -i, ...]F[i].";
 SignOfSymmetricPair::usage = "SignOfSymmetricPair[type1, type2, ind] returns 1 or -1.";
 InterchangableIndexPairQ::usage = "InterchangableIndexPairQ[type, a] gives true if the index name a and DI[a] can be interchanged.";
 ITensor::usage = "ITensor[expr, indices] represents a general tensor object.";
+AbsIndexNameQ::usage = "";
+DisplayName::usage = "";
 
 (* indices *)
 DI::usage = "DI[a] represents a down index, similar to -a or Times[-1, a].";
@@ -54,16 +56,19 @@ IndexSlot::usage = "IndexSlot[n] represents an index slot used in IndexedObject.
 IndexedObject::usage = "IndexedObject[expr, {name -> type, ...}] represents an indexed object with IndexSlot's and indices.";
 ToIndexedObject::usage = "ToIndexedObject[expr, inds] returns an IndexedObject.";
 MapIndexSlots::usage = "MapIndexSlots[fn, expr] replaces all IndexSlot[n] in expr as fn[n], skipping IndexedObject's and ETensor's.";
+NonDIQ::usage = "NonDIQ[i] returns false on DI[a] or -a, otherwise true.";
 
 (* metric related *)
 DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
-MetricOfSlotType::usage = "MetricOfSlotType[type] represents the default metric of the slot type. MetricOfSlotType[type] can be used directly as the metric tensor, it also can be assigned other tensors to it.";
+MetricOfSlotType::usage = "MetricOfSlotType[type] represents the default metric of the slot type. MetricOfSlotType[type] can be used directly as the metric tensor, it also can be assigned other tensors to it. The default MetricOfSlotType[type] assumes indices must be paired.";
 DefSimpleMetric::usage = "DefSimpleMetric[symbol, type, symSign, displayName] defines symbol as a metric tensor with common properties.";
 ContractableMetricQ::usage = "ContractableMetricQ[expr] returns true of expr is a metric that can be used in ContractMetric.";
 ContractionSlotOfMetric::usage = "ContractionSlotOfMetric[metric] returns 1 or 2, specifiying which slot of the metric to be contracted with. Specifically, for 1 we have p[DI@a] = g[DI@b, DI@a]p[b], while for 2 we have p[DI@a] = g[DI@a, DI@b]p[b]. The default rule returns 1. Note that the value is only relevant for non-symmetric metrics.";
 ContractMetric::usage = "ContractMetric[expr, metrics] tries to contract all the specified metrics in expr. ContractMetric[expr] or ContractMetric[expr, All] contracts all metrics that returns true when acting ContractableMetricQ on them.";
 
 (* utility functions *)
+DefSimpleTensor;
+DefSimpleSlotType;
 NoIndicesQ;
 NonTensorTermQ;
 GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
@@ -155,18 +160,26 @@ $TempIndexNumber = 1;
 GetUniqueIndexOfSlotType[type_] := TempIndex[$TempIndexNumber++];
 SyntaxInformation@GetUniqueIndexOfSlotType = {"ArgumentsPattern" -> {_}};
 
-RenamingGroupOfIndex[_Integer] = None;
-RenamingGroupOfIndex[_LabelI] = None;
-RenamingGroupOfIndex[_] = DefaultRenamingGroup;
-SyntaxInformation@RenamingGroupOfIndex = {"ArgumentsPattern" -> {_}};
+RenamingGroupOfIndexName[_Integer] = None;
+RenamingGroupOfIndexName[_LabelI] = None;
+RenamingGroupOfIndexName[_] = DefaultRenamingGroup;
+SyntaxInformation@RenamingGroupOfIndexName = {"ArgumentsPattern" -> {_}};
 
-RenamableIndicesQ[a_, b_] := With[{g1 = RenamingGroupOfIndex@a, g2 = RenamingGroupOfIndex@b}, If[g1 === None || g2 === None, False, g1 === g2]];
+RenamableIndicesQ[a_, b_] := With[{g1 = RenamingGroupOfIndexName@a, g2 = RenamingGroupOfIndexName@b}, If[g1 === None || g2 === None, False, g1 === g2]];
 SyntaxInformation@RenamableIndicesQ = {"ArgumentsPattern" -> {_, _}};
 
 InterchangableIndexPairQ[_, _Integer] = False;
 InterchangableIndexPairQ[_, _LabelI] = False;
 InterchangableIndexPairQ[_, _] = True;
 SyntaxInformation@InterchangableIndexPairQ = {"ArgumentsPattern" -> {_, _}};
+
+AbsIndexNameQ[ind_] := With[{s = SeparateIndexName@ind}, s[[2]] === IndexNameSlot && RenamingGroupOfIndexName@s[[1]] =!= None];
+SyntaxInformation@AbsIndexNameQ = {"ArgumentsPattern" -> {_}};
+
+NonDIQ[DI[_]] = False;
+NonDIQ[-_] = False;
+NonDIQ[_] = True;
+SyntaxInformation@NonDIQ = {"ArgumentsPattern" -> {_}};
 
 MetricPassThroughQ[_, {_}, _, _] = True;
 MetricPassThroughQ[expr_Times, pos_, type_, ind_] := Extract[Hold@expr, {1, pos[[1]]}, Function[{a}, MetricPassThroughQ[a, Drop[pos, 1], type, ind], {HoldAll}]];
@@ -197,9 +210,9 @@ SetAttributes[FindIndicesSlots, HoldFirst];
 SyntaxInformation@FindIndicesSlots = {"ArgumentsPattern" -> {_, _.}};
 
 FindIndicesSlotsAndNames[expr_] := FindIndicesSlotsAndNames[expr, {}];
-FindIndicesSlotsAndNames[expr_, pos_] := Join[#, pos] -> {Extract[Hold@expr, Prepend[#1, 1]], #2} & @@@ FindIndicesSlots@expr;
+FindIndicesSlotsAndNames[expr_, pos_] := Join[pos, #] -> {Extract[Hold@expr, Prepend[#1, 1]], #2} & @@@ FindIndicesSlots@expr;
 SetAttributes[FindIndicesSlotsAndNames, HoldFirst];
-SyntaxInformation@FindIndicesSlotsAndNames = {"ArgumentsPattern" -> {_}};
+SyntaxInformation@FindIndicesSlotsAndNames = {"ArgumentsPattern" -> {_, _.}};
 
 SymmetryOfExpression[_] = {};
 SymmetryOfExpression@ISortedGeneral[expr_] := SymmetryOfExpression@expr;
@@ -249,6 +262,39 @@ NoIndicesQ[expr_List] := AllTrue[expr, NoIndicesQ];
 NoIndicesQ[expr_Plus] := AllTrue[List @@ expr, NoIndicesQ];
 SetAttributes[NoIndicesQ, HoldAll];
 
+Options[DefSimpleTensor] = {
+    AllowSubsuperscriptBox -> Automatic,
+    DisplayName -> Automatic
+};
+DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
+    tensorPat = HoldPattern@sym[##] & @@ ConstantArray[_, Length@slots],
+    slotsAndPos = MapIndexed[#2 -> #1 &, slots],
+    allowSubsuperscriptBox = With[{v = OptionValue@AllowSubsuperscriptBox}, If[v === Automatic, Length@slots === 2 && symmetry === {SCycles@{1, 2}}, v]]
+},
+    sym /: FindIndicesSlots[tensorPat] = slotsAndPos;
+    sym /: SymmetryOfExpression[tensorPat] = symmetry;
+    With[{v = OptionValue@DisplayName}, Which[
+        v === Automatic,
+        DefTensorFormatings[sym, MakeBoxes@sym, AllowSubsuperscriptBox -> allowSubsuperscriptBox],
+
+        v =!= None,
+        DefTensorFormatings[sym, v, AllowSubsuperscriptBox -> allowSubsuperscriptBox]
+    ]];
+];
+SyntaxInformation@DefSimpleTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
+
+Options[DefSimpleSlotType] = {
+    DisplayName -> None
+};
+DefSimpleSlotType[sym_, dim_, inds_, opt : OptionsPattern[]] := (
+    DimensionOfSlotType[sym] ^= dim;
+    IndicesCandidateOfSlotType[sym] ^= inds;
+    With[{v = OptionValue@DisplayName}, If[v =!= None,
+        sym /: MakeBoxes[sym, StandardForm] = InterpretationBox[v, sym];
+    ]];
+);
+SyntaxInformation@DefSimpleSlotType = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
+
 (* metric related *)
 DimensionOfSlotType /: FindIndicesSlots@DimensionOfSlotType[_] = {};
 SyntaxInformation@DimensionOfSlotType = {"ArgumentsPattern" -> {_}};
@@ -267,19 +313,68 @@ MetricOfSlotType /: MakeBoxes[expr : MetricOfSlotType[type_][a_, b_], StandardFo
     expr,
     With[{n = SeparateIndexName /@ {a, b}},
         TensorGridBox[
-            MakeBoxes[#[type], StandardForm] &@If[Sort@n[[All, 2]] == $IndexPairPattern, "\[Delta]", "g"],
-            n
+            MakeBoxes[#[type], StandardForm] &@If[Sort@n[[All, 2]] === $IndexPairPattern, "\[Delta]", "g"],
+            n,
+            AllowSubsuperscriptBox -> True
         ]
     ]
 ];
-MetricOfSlotType[type_][a_, DI@a_] := DimensionOfSlotType[type];
-MetricOfSlotType[type_][DI@a_, a_] := DimensionOfSlotType[type];
-MetricOfSlotType /: MetricOfSlotType[type_][a_, b_]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
-MetricOfSlotType /: MetricOfSlotType[type_][b_, a_]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
-MetricOfSlotType /: MetricOfSlotType[type_][b_, a_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
-MetricOfSlotType /: MetricOfSlotType[type_][a_, b_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType[type_][a_?NonDIQ, DI@b_] := MetricOfSlotType[type][DI@b, a];
+MetricOfSlotType[type_][a_?AbsIndexNameQ, DI@a_] := DimensionOfSlotType[type];
+MetricOfSlotType[type_][DI@a_, a_?AbsIndexNameQ] := DimensionOfSlotType[type];
+MetricOfSlotType /: MetricOfSlotType[type_][a_, b_?AbsIndexNameQ]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotType[type_][DI@b_, c_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
+MetricOfSlotType /: MetricOfSlotType[type_][a_, b_?AbsIndexNameQ]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
+
+TryReplaceIndexNames[expr_, reps_] := With[{
+    reps2 = Select[reps, AbsIndexNameQ@#[[1]] &]
+}, If[Length@reps2 > 0,
+    With[{
+        indPoses = Select[{#2, Lookup[FindAllIndicesNames@expr, #1, None]} & @@@ reps2, #[[2]] =!= None &]
+    }, If[Length@indPoses > 0,
+        With[{
+            repName = indPoses[[1, 1]]
+        }, ReplacePart[expr, #3 -> (#1 /. IndexNameSlot -> repName) & @@@ indPoses[[1, 2]]]]
+    ,
+        $Failed
+    ]]
+,
+    $Failed
+]];
+MetricOfSlotType /: Times[MetricOfSlotType[type_][DI@b_, a_?NonDIQ], rest_] := With[{
+    newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
+}, newExpr /; newExpr =!= $Failed];
+MetricOfSlotType /: Times[MetricOfSlotType[type_][a_?NonDIQ, DI@b_], rest_] := With[{
+    newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
+}, newExpr /; newExpr =!= $Failed];
 
 SyntaxInformation@MetricOfSlotType = {"ArgumentsPattern" -> {_}};
+
+Options[DefSimpleMetric] = Options[DefSimpleTensor];
+DefSimpleMetric::invalidsymsign = "Invalid symmetric sign `1`: may only be 1, -1, or 0. Assuming 1.";
+DefSimpleMetric[sym_, slotType_, symSign_, opt : OptionsPattern[]] := (
+    DefSimpleTensor[
+        sym,
+        {slotType, slotType},
+        Switch[symSign, 1, {SCycles@{1, 2}}, -1, {-SCycles@{1, 2}}, 0, {}, _, Message[DefSimpleMetric::invalidsymsign, symSign]; {}],
+        FilterRules[{opt}, Options@DefSimpleTensor]
+    ];
+    sym[a_?NonDIQ, DI@b_] := sym[DI@b, a];
+    sym[a_?AbsIndexNameQ, DI@a_] := DimensionOfSlotType[type];
+    sym[DI@a_, a_?AbsIndexNameQ] := DimensionOfSlotType[type];
+    sym /: sym[a_, b_?AbsIndexNameQ]sym[DI@b_, c_] := sym[a, c];
+    sym /: sym[b_?AbsIndexNameQ, a_]sym[DI@b_, c_] := sym[a, c];
+    sym /: sym[b_?AbsIndexNameQ, a_]sym[c_, DI@b_] := sym[a, c];
+    sym /: sym[a_, b_?AbsIndexNameQ]sym[c_, DI@b_] := sym[a, c];
+    sym /: Times[sym[DI@b_, a_?NonDIQ], rest_] := With[{
+        newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
+    }, newExpr /; newExpr =!= $Failed];
+    sym /: Times[sym[a_?NonDIQ, DI@b_], rest_] := With[{
+        newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
+    }, newExpr /; newExpr =!= $Failed];
+);
+SyntaxInformation@DefSimpleMetric = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
 
 SignOf2SymGroup[{}] = 0;
 SignOf2SymGroup[{SCycles@{1, 2}}] = 1;
@@ -324,6 +419,7 @@ ISortArgToSortTag[arg_] := With[{
     indPos = FindIndicesSlots@arg
 }, {arg, -GroupOrderFromStrongGenSet@sym, -Length@indPos, ReplacePart[arg, Thread[indPos[[All, 1]] -> IndexSlot[1]]]}];
 
+(* TODO: products like Wedge could produce a negative sign *)
 ISort[fn_?UnorderedProductQ[args___]] := With[{
     sortedArgs = SortBy[ISortArgToSortTag /@ (List @@ (ISort /@ Hold@args)), Delete[1]]
 }, With[{
@@ -352,7 +448,7 @@ TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := Which[
     ]],
 
     OptionValue[AllowSubsuperscriptBox] && Sort[inds[[All, 2]]] === $IndexPairPattern,
-    SubsuperscriptBox[t, ##] & @@ Reverse@SelectUpDownIndices@inds,
+    SubsuperscriptBox[t, ##] & @@ (MakeBoxes[#, StandardForm] & /@ Reverse@SelectUpDownIndices@inds),
 
     True,
     GridBox[{{t, StyleBox[
@@ -374,8 +470,11 @@ SymbolToIndex[-a_] := {-1, a};
 SymbolToIndex[DI[a_]] := {-1, a};
 SymbolToIndex[a_] := {1, a};
 
+Options[DefTensorFormatings] = Options[TensorGridBox];
 DefTensorFormatings[sym_] := DefTensorFormatings[sym, MakeBoxes@sym];
-DefTensorFormatings[sym_, name_] := sym /: MakeBoxes[expr : sym[inds___], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[name, SeparateIndexName /@ {inds}]];
+DefTensorFormatings[sym_, name_, opt : OptionsPattern[]] := (
+    sym /: MakeBoxes[expr : sym[inds___], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[name, SeparateIndexName /@ {inds}, opt]]
+);
 SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, _}};
 
 GroupIndexList[list_] := If[Length@list > 0 && Head@list[[1]] =!= Rule,
@@ -415,7 +514,7 @@ SymmetryOfGroupedIndices[list_GroupedIndexList, pairSym_] := ShiftAndJoinGenSets
 SymmetryOfGroupedIndices[list_] := SymmetryOfGroupedIndices[list, 1 &];
 SyntaxInformation@SymmetryOfGroupedIndices = {"ArgumentsPattern" -> {_, _.}};
 
-SortGroupedIndexList[list_GroupedIndexList] := MapAt[SortBy[{RenamingGroupOfIndex@First@#, First@#} &], 2] /@ SortBy[list, First];
+SortGroupedIndexList[list_GroupedIndexList] := MapAt[SortBy[{RenamingGroupOfIndexName@First@#, First@#} &], 2] /@ SortBy[list, First];
 SyntaxInformation@SortGroupedIndexList = {"ArgumentsPattern" -> {_}};
 
 ToPattern[list_List] := Alternatives @@ (ToPattern /@ list);
@@ -616,7 +715,7 @@ FindAllIndicesNamesSubExpression[head_[args___], pos_] := Merge[
     Apply@Join
 ];
 SetAttributes[{FindAllIndicesNames, FindAllIndicesNamesSubExpression}, HoldFirst];
-SyntaxInformation@FindAllIndicesNames = {"ArgumentsPattern" -> {_}};
+SyntaxInformation@FindAllIndicesNames = {"ArgumentsPattern" -> {_, _.}};
 
 WrapIntoFunction[inner_, Hold@{args__}] := Function[inner[args]];
 ToIndexFunction[expr_, frees_] := With[{
@@ -801,6 +900,8 @@ TensorValueQ[_?ArrayQ] = True;
 TensorValueQ[_ETensor] = True;
 TensorValueQ[_] = False;
 
+GeneralizedPermutationProduct[perm1_, perm2_] := perm1 /. Dispatch@Thread[Range@Length@perm2 -> perm2];
+
 ITensorTranspose[s_?ArrayQ, perm_] := Map[If[TensorValueQ@#, ITensorTranspose[#, perm], #] &, Transpose[s, perm], {ArrayDepth@s}];
 ITensorTranspose::emptyslot = "Permutation `1` does not specify destination for level `2`.";
 ITensorTranspose::incompatslot = "Cannot combine slots `1` and `2`.";
@@ -826,20 +927,21 @@ UncatchedETensorTranspose[ETensor[expr_, frees_], perm_List] := With[{
     ]
 ]]];
 ITensorTranspose[e1_ETensor, perm_] := With[{ret = UncatchedETensorTranspose[e1, perm]}, ret /; ret =!= Err];
-ITensorTranspose[Plus[l___, ITensorTranspose[t2_, perm2_], r___], perm_] := ITensorTranspose[Plus[l, r], perm] + ITensorTranspose[t2, PermutationProduct[perm2, perm]];
+ITensorTranspose[Plus[l___, ITensorTranspose[t2_, perm2_], r___], perm_] := ITensorTranspose[Plus[l, r], perm] + ITensorTranspose[t2, GeneralizedPermutationProduct[perm2, perm]];
+ITensorTranspose[ITensorTranspose[t_, perm1_], perm2_] := ITensorTranspose[t, GeneralizedPermutationProduct[perm1, perm2]];
 ITensorTranspose[expr_, perm_] := expr /; perm === Range[Length@perm];
 SyntaxInformation@ITensorTranspose = {"ArgumentsPattern" -> {_, _}};
 
 SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
 
 ITensorOuter[prod_, s1_, s2_] := ITensorOuter[prod, s1, s2, {}];
-PermutationOfMovingToFirst[points_List] := InversePermutation[Join[points, Delete[Range[Max @@ points], Transpose@{points}]]];
+PermutationOfMovingToFirst[points_List] := If[Length@points === 0, {}, InversePermutation[Join[points, Delete[Range[Max @@ points], Transpose@{points}]]]];
 PermutationOfMovingToLast[points_List] := InversePermutation[Join[Delete[Range[Max @@ points], Transpose@{points}], points]];
 FillNoneSlots[arr_, l_] := FoldPairList[If[#2 === None, {#1, #1 + 1}, {#2, #1}] &, l, arr];
 ITensorOuter::nonzeronontensor = "Multiplication of non-zero non-tensor value `1` and `2` encountered.";
-ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1 && TensorValueQ@s2},
+ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1, TensorValueQ@s2},
     {True, True},
-    ITensorOuter[prod, s1, s2],
+    ITensorOuter[prod, s1, s2, cont],
 
     {False, False},
     prod[s1, s2],
@@ -848,7 +950,7 @@ ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1 && TensorVa
     If[s1 === 0 || s2 === 0, 0, Message[ITensorOuter::nonzeronontensor, s1, s2]; Throw@Err;]
 ];
 ITensorOuter[prod_, s1_?ArrayQ, s2_?ArrayQ, cont_] := With[{
-    ret = With[{
+    ret = Catch@With[{
         perm1 = PermutationOfMovingToFirst[cont[[All, 1]]],
         perm2 = PermutationOfMovingToFirst[cont[[All, 2]]]
     }, With[{
@@ -859,7 +961,7 @@ ITensorOuter[prod_, s1_?ArrayQ, s2_?ArrayQ, cont_] := With[{
                 Outer[
                     ITensorOuterInner[prod, #1, #2, cont] &,
                     #1,
-                    Extract[s22, #2]
+                    Extract[s22, {#2}][[1]]
                 ] &,
                 Transpose[s1, perm1],
                 {Length@cont}
@@ -893,20 +995,31 @@ SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
 OneIndexOfNITensor[ind_ -> _] := ind;
 OneIndexOfNITensor[ind_] := ind;
 NITensor::incompatinds = "Cannot add tensors with incompatible indices `1` and `2`.";
-NITensor[t_, {}] := t;
+OneIndexPosOfNITensor[ind_, pos_] := pos -> None;
+OneIndexPosOfNITensor[ind_ -> type_, pos_] := Append[pos, 1] -> type;
+NITensor /: FindIndicesSlots[NITensor[_, inds_]] := MapIndexed[OneIndexPosOfNITensor[#1, Prepend[#2, 2]] &, inds];
 NITensor /: NITensor[t1_, inds1_] + NITensor[t2_, inds2_] := With[{
     perm = FirstPosition[OneIndexOfNITensor /@ inds1, OneIndexOfNITensor@#, None][[1]] & /@ inds2
 }, NITensor[t1 + ITensorTranspose[t2, perm], inds1]];
-NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds];
+NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds] /; Head@x =!= NITensor;
+NITensor /: Power[NITensor[t_, inds_], x_] := NITensor[t ^ x, inds];
 SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
 
-FreesByArgs[frees_, freeArgs_] := Array[Union@Append[Delete[freeArgs, #], frees] &, Length@freeArgs];
+FreesByArgs[frees_, freeArgs_] := Array[Union @@ Append[Delete[freeArgs, #], frees] &, Length@freeArgs];
+GetINTensorIndexNames[NITensor[_, inds_]] := OneIndexOfNITensor /@ inds;
+GetINTensorIndexNames[_] = {};
+ITensorToNIExpression::incompatinds = "Cannot combine NITensors `1` and `2` with different indices.";
 ITensorToNIExpression[expr_] := ITensorToNIExpression[expr, {}];
 ITensorToNIExpression[prod_?ProductQ[args__], frees_] := With[{
     freesByArg = FreesByArgs[frees, Keys@FindAllIndicesNames@# & /@ {args}]
 },
-    prod @@ MapThread[ITensorToNIExpression, {{args}, freesByArg}] //. prod[e__NITensor] :> ProcessContraction[frees, {e}]
+    ProcessContraction[prod, MapThread[ITensorToNIExpression, {{args}, freesByArg}], frees]
 ];
+ITensorToNIExpression[t_NITensor, frees_] := ContractOneNITensor[t, frees];
+ITensorToNIExpression[expr_Plus, frees_] := With[{
+    ret = Catch@UncatchedCombineSummedNITensor[ITensorToNIExpression[#, frees] & /@ expr]
+}, ret /; ret =!= Err];
+
 PermutationOfMergeIndices[inds_, n_] := With[{
     firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)
 }, Fold[
@@ -953,16 +1066,20 @@ ContractOneNITensor[NITensor[t1_, inds_], frees_] := With[{
         NITensor[ret[[1]], ret[[2]]]
     ]
 ]]]];
-ContractTwoNITensors[prod_, NITensor[t1_, inds1_], NITensor[t2_, inds2_], frees_] := With[{
-    inds1ByName = Association @@ MapIndexed[OneIndexOfNITensor@#1 -> #2[[1]] &, inds1],
-    inds2ByName = Association @@ MapIndexed[OneIndexOfNITensor@#1 -> #2[[1]] &, inds2]
+
+NITensorSlot;
+
+ContractTwoNITensors[prod_, {}, {}, frees_] := NITensor[prod[NITensorSlot[1], NITensorSlot[2]], {}];
+ContractTwoNITensors[prod_, inds1_, inds2_, frees_] := With[{
+    inds1ByName = Association @@ MapIndexed[SeparateIndexName[OneIndexOfNITensor@#1][[1]] -> #2[[1]] &, inds1],
+    inds2ByName = Association @@ MapIndexed[SeparateIndexName[OneIndexOfNITensor@#1][[1]] -> #2[[1]] &, inds2]
 }, With[{
     toContract = Intersection[Keys@inds1ByName, Keys@inds2ByName]
 }, With[{
     pos1 = inds1ByName /@ toContract,
     pos2 = inds2ByName /@ toContract
 }, With[{
-    inner = ITensorOuter[prod, t1, t2, Thread@{pos1, pos2}],
+    inner = ITensorOuter[prod, NITensorSlot[1], NITensorSlot[2], Thread@{pos1, pos2}],
     summed = Complement[toContract, frees]
 },
     If[Length@summed > 0,
@@ -973,11 +1090,45 @@ ContractTwoNITensors[prod_, NITensor[t1_, inds1_], NITensor[t2_, inds2_], frees_
         NITensor[inner, Join[inds1, Delete[inds2, Transpose@{pos2}]]]
     ]
 ]]]];
-ProcessContraction[frees_, factors_] := With[{
-    freesByArg = FreesByArgs[frees, OneIndexOfNITensor /@ factors[[All, 2]]]
+CombinationPairs[n_] := Join @@ Array[a |-> Array[{a, #} &, n - a, a + 1], n];
+(* simple multiplication: use optimized contraction *)
+CountContractions[ITensorOuter[_, _, _, cont_]] := Length@Flatten@cont - Length@cont;
+CountContractions[ITensorSum[t_, sums_]] := Length@sums + CountContractions@t;
+CountContractions[_] = 0;
+ProcessContractionStep[prod : Times, factors_, frees_] := With[{
+    freesByArg = SeparateIndexName[OneIndexOfNITensor@#][[1]] & /@ factors[[All, 2]]
 }, With[{
-    contractionWays = Array[a |-> Sequence @@ Array[{a, #} &, Length@factors - a, a + 1], Length@factors]
-}]];
+    choosenCountraction = MaximalBy[
+        With[{
+            cont = ContractTwoNITensors[
+                prod,
+                factors[[#1, 2]],
+                factors[[#2, 2]],
+                Union@Append[Delete[freesByArg, {{#1}, {#2}}], frees]
+            ]
+        }, {#1, #2, cont, CountContractions@cont[[1]]}] & @@@ CombinationPairs@Length@factors,
+        Extract[4]
+    ][[1]]
+},
+    Prepend[
+        Delete[factors, {{choosenCountraction[[1]]}, {choosenCountraction[[2]]}}],
+        choosenCountraction[[3]] /. {NITensorSlot[1] -> factors[[choosenCountraction[[1]], 1]], NITensorSlot[2] -> factors[[choosenCountraction[[2]], 1]]}
+    ]
+]];
+ProcessContraction[prod_, factors_, frees_] := Nest[ProcessContractionStep[prod, #, frees] &, factors, Length@factors - 1][[1]];
+UncatchedCombineSummedNITensor[head_[first_, rest__]] := With[{
+    inds = OneIndexOfNITensor /@ first[[2]]
+}, head @@ Prepend[
+    With[{
+        inds2 = OneIndexOfNITensor /@ #[[2]]
+    }, With[{
+        perm = FirstPosition[inds, #, None, {1}][[1]] & /@ inds2
+    },
+        If[Length@inds2 =!= Length@inds || Length@Cases[perm, None] > 0, Message[ITensorToNIExpression::incompatinds, first, #]; Throw@Err;];
+        ETensor[ITensorTranspose[#[[1]], perm], inds]
+    ]] & /@ {rest},
+    first
+]];
 
 End[];
 

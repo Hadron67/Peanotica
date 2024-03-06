@@ -74,3 +74,23 @@ VerificationTest[
     ITensorOuter[Times, ETensor[Riemann1[a, b, c, d], {a, b, c, d}], ETensor[g1[a, b, c, d], {a, b, c, d}], {{2, 3}, {1, 4}}],
     ETensor[g1[e, f, b, a]Riemann1[a, b, c, d], {a, b, c, d, e, f}]
 ];
+
+VerificationTest[
+    ITensorToNIExpression[NITensor[Riemann1, {a, b, a, b}], {}],
+    NITensor[ITensorSum[ITensorTranspose[Riemann1, {1, 2, 1, 2}], {1, 2}], {}]
+];
+
+VerificationTest[
+    ITensorToNIExpression[NITensor[Riemann1, {a, b, c, d}] + NITensor[t2, {b, a, a, d}], {a, b}],
+    NITensor[ITensorSum[Riemann1 + ITensorTranspose[t2, {2, 1, 1, 4}], {3, 4}], {a, b}]
+];
+
+VerificationTest[
+    ITensorToNIExpression[NITensor[t1, {a, b, c, d}] NITensor[t1, {e, f, g, h}] NITensor[t2, {a, b, c, d}] NITensor[t2, {e, f, g, h}], {}],
+    NITensor[ITensorSum[ITensorOuter[Times, t1, t2, {{1, 1}, {2, 2}, {3, 3}, {4, 4}}], {1, 2, 3, 4}]^2, {}]
+];
+
+VerificationTest[
+    MetricOfSlotType[TangentMf][a, DI@b] (Riemann1[e, b, c, d] + t1[e, b, d]),
+    t1[e, a, d] + Riemann1[e, a, c, d]
+];
