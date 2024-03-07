@@ -76,17 +76,17 @@ VerificationTest[
 ];
 
 VerificationTest[
-    ITensorToNIExpression[NITensor[Riemann1, {a, b, a, b}], {}],
+    NITensorReduce[NITensor[Riemann1, {a, b, a, b}], {}],
     NITensor[ITensorSum[ITensorTranspose[Riemann1, {1, 2, 1, 2}], {1, 2}], {}]
 ];
 
 VerificationTest[
-    ITensorToNIExpression[NITensor[Riemann1, {a, b, c, d}] + NITensor[t2, {b, a, a, d}], {a, b}],
+    NITensorReduce[NITensor[Riemann1, {a, b, c, d}] + NITensor[t2, {b, a, a, d}], {a, b}],
     NITensor[ITensorSum[Riemann1 + ITensorTranspose[t2, {2, 1, 1, 4}], {3, 4}], {a, b}]
 ];
 
 VerificationTest[
-    ITensorToNIExpression[NITensor[t1, {a, b, c, d}] NITensor[t1, {e, f, g, h}] NITensor[t2, {a, b, c, d}] NITensor[t2, {e, f, g, h}], {}],
+    NITensorReduce[NITensor[t1, {a, b, c, d}] NITensor[t1, {e, f, g, h}] NITensor[t2, {a, b, c, d}] NITensor[t2, {e, f, g, h}], {}],
     NITensor[ITensorSum[ITensorOuter[Times, t1, t2, {{1, 1}, {2, 2}, {3, 3}, {4, 4}}], {1, 2, 3, 4}]^2, {}]
 ];
 

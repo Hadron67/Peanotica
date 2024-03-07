@@ -27,6 +27,7 @@ TempIndex::usage = "TempIndex[n] is a temporary index generated during internal 
 $TempIndexNumber::usage = "$TempIndexNumber is a global variable giving the next global unique id of TempIndex to be used.";
 IndexNameSlot;
 SeparateIndexName::usage = "SeparateIndexName[index] returns {name, pattern} where name is the name of the index, pattern is it's pattern. An index is determined by its name and pattern.";
+IndexName::usage = "";
 GetIndexOfSlotType::usage = "GetIndexOfSlotType[type, inds] returns a new index that is not in inds.";
 GetIndicesOfSlotType::usage = "GetIndicesOfSlotType[types, inds] returns a list of index for each type.";
 IndicesCandidateOfSlotType::usage = "IndicesCandidateOfSlotType[type] returns a list, .";
@@ -109,7 +110,8 @@ INATensorOf;
 ITensorTranspose::usage = "ITensorTranspose[t, permutation] transposes the tensor according to the given permutation. Similar to Transpose, permutation may contain repeated elements, in which case the resulting tensor has lower rank.";
 ITensorOuter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
 ITensorSum::usage = "ITensorSum[sum, t, {a1, a2, ...}]";
-ITensorToNIExpression::usage = "";
+NITensorReduce::usage = "NITensorReduce[expr, frees]";
+ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
 
 Begin["`Private`"];
 
@@ -135,6 +137,9 @@ SeparateIndexName[-a_] := MapAt[DI, SeparateIndexName@a, 2];
 SeparateIndexName[DI@a_] := MapAt[DI, SeparateIndexName@a, 2];
 SeparateIndexName[a_] := {a, IndexNameSlot};
 SyntaxInformation@SeparateIndexName = {"ArgumentsPattern" -> {_}};
+
+IndexName[a_] := SeparateIndexName[a][[1]];
+SyntaxInformation@IndexName = {"ArgumentsPattern" -> {_}};
 
 IndicesCandidateOfSlotType[_] = {{}, DefaultIndex};
 SyntaxInformation@IndicesCandidateOfSlotType = {"ArgumentsPattern" -> {_}};
@@ -267,12 +272,13 @@ Options[DefSimpleTensor] = {
     DisplayName -> Automatic
 };
 DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
-    tensorPat = HoldPattern@sym[##] & @@ ConstantArray[_, Length@slots],
     slotsAndPos = MapIndexed[#2 -> #1 &, slots],
     allowSubsuperscriptBox = With[{v = OptionValue@AllowSubsuperscriptBox}, If[v === Automatic, Length@slots === 2 && symmetry === {SCycles@{1, 2}}, v]]
 },
-    sym /: FindIndicesSlots[tensorPat] = slotsAndPos;
-    sym /: SymmetryOfExpression[tensorPat] = symmetry;
+    (
+        sym /: FindIndicesSlots[sym[##]] = slotsAndPos;
+        sym /: SymmetryOfExpression[sym[##]] = symmetry;
+    ) & @@ ConstantArray[_, Length@slots];
     With[{v = OptionValue@DisplayName}, Which[
         v === Automatic,
         DefTensorFormatings[sym, MakeBoxes@sym, AllowSubsuperscriptBox -> allowSubsuperscriptBox],
@@ -280,6 +286,7 @@ DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
         v =!= None,
         DefTensorFormatings[sym, v, AllowSubsuperscriptBox -> allowSubsuperscriptBox]
     ]];
+    sym /: NITensorReduce[sym[inds__], frees_] := NITensorReduce[NITensor[sym, IndexName /@ {inds}], frees];
 ];
 SyntaxInformation@DefSimpleTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
 
@@ -994,13 +1001,9 @@ SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
 
 OneIndexOfNITensor[ind_ -> _] := ind;
 OneIndexOfNITensor[ind_] := ind;
-NITensor::incompatinds = "Cannot add tensors with incompatible indices `1` and `2`.";
 OneIndexPosOfNITensor[ind_, pos_] := pos -> None;
 OneIndexPosOfNITensor[ind_ -> type_, pos_] := Append[pos, 1] -> type;
 NITensor /: FindIndicesSlots[NITensor[_, inds_]] := MapIndexed[OneIndexPosOfNITensor[#1, Prepend[#2, 2]] &, inds];
-NITensor /: NITensor[t1_, inds1_] + NITensor[t2_, inds2_] := With[{
-    perm = FirstPosition[OneIndexOfNITensor /@ inds1, OneIndexOfNITensor@#, None][[1]] & /@ inds2
-}, NITensor[t1 + ITensorTranspose[t2, perm], inds1]];
 NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds] /; Head@x =!= NITensor;
 NITensor /: Power[NITensor[t_, inds_], x_] := NITensor[t ^ x, inds];
 SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
@@ -1008,17 +1011,22 @@ SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
 FreesByArgs[frees_, freeArgs_] := Array[Union @@ Append[Delete[freeArgs, #], frees] &, Length@freeArgs];
 GetINTensorIndexNames[NITensor[_, inds_]] := OneIndexOfNITensor /@ inds;
 GetINTensorIndexNames[_] = {};
-ITensorToNIExpression::incompatinds = "Cannot combine NITensors `1` and `2` with different indices.";
-ITensorToNIExpression[expr_] := ITensorToNIExpression[expr, {}];
-ITensorToNIExpression[prod_?ProductQ[args__], frees_] := With[{
-    freesByArg = FreesByArgs[frees, Keys@FindAllIndicesNames@# & /@ {args}]
-},
-    ProcessContraction[prod, MapThread[ITensorToNIExpression, {{args}, freesByArg}], frees]
-];
-ITensorToNIExpression[t_NITensor, frees_] := ContractOneNITensor[t, frees];
-ITensorToNIExpression[expr_Plus, frees_] := With[{
-    ret = Catch@UncatchedCombineSummedNITensor[ITensorToNIExpression[#, frees] & /@ expr]
+NITensorReduce::incompatinds = "Cannot combine NITensors `1` and `2` with different indices.";
+NITensorReduce[expr_] := NITensorReduce[expr, {}];
+NITensorReduce[prod_?ProductQ[args__], frees_] := ReduceNITensorContractions[prod, {args}, frees];
+NITensorReduce[t_NITensor, frees_] := ContractOneNITensor[t, frees];
+NITensorReduce[expr_Plus, frees_] := With[{
+    ret = Catch@UncatchedCombineSummedNITensor[NITensorReduce[#, frees] & /@ expr]
 }, ret /; ret =!= Err];
+NITensorReduce::unknown = "No rule to transform indexed expression `1`.";
+NITensorReduce[expr_, _] := With[{
+    inds = FindAllIndicesNames@expr
+}, If[Length@inds === 0,
+    NITensor[expr, {}]
+,
+    Message[NITensorReduce::unknown, HoldForm@expr];
+    NITensor[Hold@expr, Keys@inds]
+]];
 
 PermutationOfMergeIndices[inds_, n_] := With[{
     firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)
@@ -1095,7 +1103,8 @@ CombinationPairs[n_] := Join @@ Array[a |-> Array[{a, #} &, n - a, a + 1], n];
 CountContractions[ITensorOuter[_, _, _, cont_]] := Length@Flatten@cont - Length@cont;
 CountContractions[ITensorSum[t_, sums_]] := Length@sums + CountContractions@t;
 CountContractions[_] = 0;
-ProcessContractionStep[prod : Times, factors_, frees_] := With[{
+(* TODO: phase for products like Wedge *)
+ReduceNITensorContractionsStep[prod_, factors_, frees_] := With[{
     freesByArg = SeparateIndexName[OneIndexOfNITensor@#][[1]] & /@ factors[[All, 2]]
 }, With[{
     choosenCountraction = MaximalBy[
@@ -1115,20 +1124,47 @@ ProcessContractionStep[prod : Times, factors_, frees_] := With[{
         choosenCountraction[[3]] /. {NITensorSlot[1] -> factors[[choosenCountraction[[1]], 1]], NITensorSlot[2] -> factors[[choosenCountraction[[2]], 1]]}
     ]
 ]];
-ProcessContraction[prod_, factors_, frees_] := Nest[ProcessContractionStep[prod, #, frees] &, factors, Length@factors - 1][[1]];
-UncatchedCombineSummedNITensor[head_[first_, rest__]] := With[{
-    inds = OneIndexOfNITensor /@ first[[2]]
-}, head @@ Prepend[
+
+AbsorbNonNITensorStep[prod_][{factors_, cursor_}] := With[{
+    factor1 = factors[[cursor]],
+    factor2 = factors[[cursor + 1]]
+}, Which[
+    Length@factor1[[2]] === 0,
+    {ReplacePart[factors, {cursor -> NITensor[prod[factor1[[1]], factor2[[1]]], factor2[[2]]], cursor + 1 -> Nothing}], cursor},
+
+    Length@factor2[[2]] === 0,
+    {ReplacePart[factors, {cursor -> NITensor[prod[factor1[[1]], factor2[[1]]], factor1[[2]]], cursor + 1 -> Nothing}], cursor},
+
+    True,
+    {factors, cursor + 1}
+]];
+AbsorbNonNITensor[prod_, factors_] := NestWhile[
+    AbsorbNonNITensorStep[prod],
+    {factors, 1},
+    #[[2]] + 1 <= Length@#[[1]] &
+][[1]];
+WrapScalarInNITensor[e_NITensor] := e;
+WrapScalarInNITensor[e_] := NITensor[e, {}];
+ReduceNITensorContractions[prod_, factors_, frees_] := With[{
+    freesByArg = FreesByArgs[frees, Keys@FindAllIndicesNames@# & /@ factors]
+}, With[{
+    factors2 = AbsorbNonNITensor[prod, WrapScalarInNITensor /@ MapThread[NITensorReduce, {factors, freesByArg}]]
+},
+    Nest[ReduceNITensorContractionsStep[prod, #, frees] &, factors2, Length@factors2 - 1][[1]]
+]];
+UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := With[{
+    inds = OneIndexOfNITensor /@ firstInds
+}, NITensor[head @@ Prepend[
     With[{
         inds2 = OneIndexOfNITensor /@ #[[2]]
     }, With[{
         perm = FirstPosition[inds, #, None, {1}][[1]] & /@ inds2
     },
-        If[Length@inds2 =!= Length@inds || Length@Cases[perm, None] > 0, Message[ITensorToNIExpression::incompatinds, first, #]; Throw@Err;];
-        ETensor[ITensorTranspose[#[[1]], perm], inds]
+        If[Length@inds2 =!= Length@inds || Length@Cases[perm, None] > 0, Message[NITensorReduce::incompatinds, firstInds, #]; Throw@Err;];
+        ITensorTranspose[#[[1]], perm]
     ]] & /@ {rest},
     first
-]];
+], firstInds]];
 
 End[];
 
