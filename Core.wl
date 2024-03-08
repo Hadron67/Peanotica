@@ -12,7 +12,7 @@ ProductQ;
 TensorTermQ;
 ISort;
 RenamingGroupOfIndexName::usage = "RenamingGroupOfIndexName[a] gives the renaming group of the index name a. Index names with the same renaming group can be interchanged, while the renaming group None cannot be renamed.";
-MetricPassThroughQ::usage = "MetricPassThroughQ[T[..., i, ...], pos, type, index] gives True if T[..., i, ...]F[-i] = \[Epsilon]T[..., -i, ...]F[i].";
+ExpressionPassThroughQ::usage = "ExpressionPassThroughQ[T[..., i, ...], expr, pos] gives True if T[..., i, ...] expr = T[..., i * expr, ...], where the position of i is given by pos.";
 SignOfSymmetricPair::usage = "SignOfSymmetricPair[type1, type2, ind] returns 1 or -1.";
 InterchangableIndexPairQ::usage = "InterchangableIndexPairQ[type, a] gives true if the index name a and DI[a] can be interchanged.";
 ITensor::usage = "ITensor[expr, indices] represents a general tensor object.";
@@ -186,11 +186,11 @@ NonDIQ[-_] = False;
 NonDIQ[_] = True;
 SyntaxInformation@NonDIQ = {"ArgumentsPattern" -> {_}};
 
-MetricPassThroughQ[_, {_}, _, _] = True;
-MetricPassThroughQ[expr_Times, pos_, type_, ind_] := Extract[Hold@expr, {1, pos[[1]]}, Function[{a}, MetricPassThroughQ[a, Drop[pos, 1], type, ind], {HoldAll}]];
-MetricPassThroughQ[ISortedProduct[_, args_, _], {2, pos_, restPos___}, type_, ind_] := Extract[Hold@args, {1, pos}, Function[{a}, MetricPassThroughQ[a, {restPos}, type, ind], {HoldAll}]];
-MetricPassThroughQ[ISortedGeneral[arg_], {1, pos__}, type_, ind_] := MetricPassThroughQ[arg, {pos}, type, ind];
-SetAttributes[MetricPassThroughQ, HoldFirst];
+ExpressionPassThroughQ[_, _, {_}] = True;
+ExpressionPassThroughQ[expr_Times, tensor_] := Extract[Hold@expr, {1, pos[[1]]}, Function[{a}, ExpressionPassThroughQ[a, tensor, Drop[pos, 1]], {HoldAll}]];
+ExpressionPassThroughQ[ISortedProduct[_, args_, _], tensor_, {2, pos_, restPos___}] := Extract[Hold@args, {1, pos}, Function[{a}, ExpressionPassThroughQ[a, tensor, {restPos}], {HoldAll}]];
+ExpressionPassThroughQ[ISortedGeneral[arg_], tensor_, {1, pos__}] := ExpressionPassThroughQ[arg, tensor, {pos}];
+SetAttributes[ExpressionPassThroughQ, HoldFirst];
 
 SignOfSymmetricPair[None, None, _] = 1;
 SyntaxInformation@SignOfSymmetricPair = {"ArgumentsPattern" -> {_, _, _}};
@@ -399,10 +399,10 @@ ContractOneMetric[expr_, metric_] := With[{
 }, With[{
     pos1 = Lookup[exprIndToPos, DI /@ metricInds, None]
 }, Which[
-    pos1[[1]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 1) && MetricPassThroughQ[expr, pos1[[1, 2]], pos1[[1, 1]], SeparateIndexName[metricInds[[1]]][[1]]],
+    pos1[[1]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 1) && ExpressionPassThroughQ[expr, metric, pos1[[1, 2]]],
     If[contractionSlot =!= 1, metricSym, 1] * ReplacePart[expr, pos1[[1, 2]] -> metricInds[[2]]],
 
-    pos1[[2]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 2) && MetricPassThroughQ[expr, pos1[[2, 2]], pos1[[2, 1]], SeparateIndexName[metricInds[[2]]][[1]]],
+    pos1[[2]] =!= None && (metricSym === 1 || metricSym === -1 || contractionSlot === 2) && ExpressionPassThroughQ[expr, metric, pos1[[2, 2]]],
     If[contractionSlot =!= 2, metricSym, 1] * ReplacePart[expr, pos1[[2, 2]] -> metricInds[[1]]],
 
     True,
@@ -508,11 +508,15 @@ SymmetryOfOneIndsBlock[pairSym_, indPat_ -> indsAndPos_] := With[{
     len = Length@indPat
 }, Join[
     Join @@ MapIndexed[ShiftPermutation[baseGenSet, len * (#2[[1]] - 1)] &, indsAndPos],
-    If[indPat === $IndexPairPattern,
+    If[IndexPairPatternQ@indPat,
         Join @@ MapIndexed[{entry, index} |-> With[{sign = pairSym[entry[[1]], entry[[2, 1]], entry[[2, 2]]], p = index[[1]]}, If[sign =!= None, {SCycles@{2p - 1, 2p}}, {}]], indsAndPos]
     , {}],
     RenamingSymmetryOfInds@indsAndPos
 ]];
+
+IndexPairPatternQ[{a_, DI@a_}] = True;
+IndexPairPatternQ[{DI@a_, a_}] = True;
+IndexPairPatternQ[_] = False;
 
 SymmetryOfGroupedIndices[list_GroupedIndexList, pairSym_] := ShiftAndJoinGenSets[
     Function[{a}, SymmetryOfOneIndsBlock[pairSym, a]] /@ List @@ list,
@@ -595,7 +599,7 @@ ExpressionPairSymProvider[expr_, allIndPos_, symDummyPairSelector_][indName_, po
 }, If[
     FilterExprList[symDummyPairSelector, type1] && FilterExprList[symDummyPairSelector, type2] &&
     InterchangableIndexPairQ[type1, indName] && InterchangableIndexPairQ[type2, indName] &&
-    MetricPassThroughQ[expr, allIndPos[[pos1, 1]], type1, indName] && MetricPassThroughQ[expr, allIndPos[[pos2, 1]], type2, indName]
+    ExpressionPassThroughQ[expr, MetricOfSlotType[type1][DefaultIndex[1], DefaultIndex[2]], allIndPos[[pos1, 1]]] && ExpressionPassThroughQ[expr, MetricOfSlotType[type1][DefaultIndex[1], DefaultIndex[2]], allIndPos[[pos2, 1]]]
 ,
     SignOfSymmetricPair[type1, type2, indName],
     None

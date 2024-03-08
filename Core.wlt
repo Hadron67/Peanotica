@@ -21,7 +21,7 @@ VerificationTest[
 ];
 
 VerificationTest[
-    ITensorReduceOneTerm[Riemann1[a, b, c, d] Riemann1[-b, -d, -c, -a], RenameDummies -> False],
+    ITensorReduceOneTerm[Riemann1[a, b, c, -d] Riemann1[-b, d, -c, -a], RenameDummies -> False],
     -Riemann1[a, b, c, d] Riemann1[DI[a], DI[c], DI[b], DI[d]]
 ];
 
@@ -82,7 +82,7 @@ VerificationTest[
 
 VerificationTest[
     NITensorReduce[NITensor[Riemann1, {a, b, c, d}] + NITensor[t2, {b, a, a, d}], {a, b}],
-    NITensor[ITensorSum[Riemann1 + ITensorTranspose[t2, {2, 1, 1, 4}], {3, 4}], {a, b}]
+    NITensor[ITensorSum[Riemann1, {3, 4}] + ITensorTranspose[ITensorSum[ITensorTranspose[t2, {1, 2, 2, 3}], {3}], {2, 1}], {a, b}]
 ];
 
 VerificationTest[

@@ -13,8 +13,11 @@ DefGeneralDerivativeOperator;
 
 SymmetriedDer;
 MetricPassThroughDer;
+DefParametreDerivativeOperator::usage = "";
 DefScalarDerivativeOperator::usage = "DefScalarDerivativeOperator[op]";
 DefVectorDerivativeOperator::usage = "DefVectorDerivativeOperator[op, slotType].";
+
+CovDValue::usage = "CovDValue[pdvalue, christoffel]";
 
 Begin["`Private`"];
 
@@ -88,10 +91,10 @@ DefVectorDerivativeOperator[sym_, slot_, opt : OptionsPattern[]] := (
         sym /: SymmetryOfExpression[sym[expr_, _]] := SymmetryOfExpression@expr
     ];
     If[!OptionValue@MetricPassThroughDer,
-        sym /: MetricPassThroughQ[_sym, pos_, type_, indName_] := pos[[1]] === 2
+        sym /: ExpressionPassThroughQ[_sym, _, pos_] := pos[[1]] === 2
     ,
-        sym /: MetricPassThroughQ[sym[expr_, _], pos_, type_, indName_] := Switch[pos[[1]],
-            1, MetricPassThroughQ[expr, Delete[pos, 1], type, indName],
+        sym /: ExpressionPassThroughQ[sym[expr_, _], tensor_, pos_] := Switch[pos[[1]],
+            1, ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
             2, True,
             _, False
         ]
