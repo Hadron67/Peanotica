@@ -33,11 +33,14 @@ GetIndicesOfSlotType::usage = "GetIndicesOfSlotType[types, inds] returns a list 
 IndicesCandidateOfSlotType::usage = "IndicesCandidateOfSlotType[type] returns a list, .";
 GetUniqueIndexOfSlotType::usage = "GetUniqueIndexOfSlotType[type] returns a globally unique index using the given slot type as a hint. the default definition returns TempIndex[++$TempIndexNumber].";
 IndexList::usage = "IndexList[i1, i2, ...] represents a list of indices, similar to List. The purpose of this head is that it may have an overall negative sign.";
-DefautRenamingGroup::usage = "DefaultRenamingGroup is the default renaming group of index name.";
+DefaultRenamingGroup::usage = "DefaultRenamingGroup is the default renaming group of index name.";
 RenamableIndicesQ::usage = "RenamableIndicesQ[a, b] returns true if index names a and b can be interchanged.";
 GroupedIndexList::usage = "GroupedIndexList[type1 -> {i1 -> {v1, v2, ...}, ...}] represents a grouped list of indices.";
+SymmetricIndexGroup::usage = "SymmetricIndexGroup[pattern, symmetrySpec, namingGroups]";
+IndexNameGroup::usage = "IndexNameGroup[namingGroup, indices]";
 GroupIndexList::usage = "GroupIndexList[{i1 -> v1, i2 -> v2, ...}] groups the indices list into blocks according to their types.";
-SymmetryOfGroupedIndices::usage = "SymmetryOfGroupedIndices[GroupedIndices[...], pairSymmetryProvider] gives the generators of the symmetry group of the sorted indices.";
+AddSymmetryToGroupedIndexList;
+SymmetryGroupOfSymmetricIndexList;
 SortGroupedIndexList::usage = "SortGroupedIndexList[GroupedIndexList[...]] returns a sorted version of GroupedIndexList[...].";
 FindAndDropFrees::usage = "FindAndDropFrees[GroupedIndexList[...], frees] returns a list containing two GroupedIndexList with the first containing only free indices as specified by frees, the other contains no free indices. FindAndDropFrees[GroupedIndexList[...], Automatic] select frees as those only has one occurance.";
 GroupedIndexListMapFold::usage = "GroupedIndexListMapFold[f, x, GroupedIndexList[...]] returns a new GroupedIndexList with the entries being replaced by f[x, type1, name1, poses1], where each time f returns {name -> val, x}.";
@@ -192,7 +195,7 @@ ExpressionPassThroughQ[ISortedProduct[_, args_, _], tensor_, {2, pos_, restPos__
 ExpressionPassThroughQ[ISortedGeneral[arg_], tensor_, {1, pos__}] := ExpressionPassThroughQ[arg, tensor, {pos}];
 SetAttributes[ExpressionPassThroughQ, HoldFirst];
 
-SignOfSymmetricPair[None, None, _] = 1;
+SignOfSymmetricPair[_, _, _] = 1;
 SyntaxInformation@SignOfSymmetricPair = {"ArgumentsPattern" -> {_, _, _}};
 
 PrependPosToSlotSpec[{vb_, pos__}, {l___}] := {vb, l, pos};
@@ -368,8 +371,8 @@ DefSimpleMetric[sym_, slotType_, symSign_, opt : OptionsPattern[]] := (
         FilterRules[{opt}, Options@DefSimpleTensor]
     ];
     sym[a_?NonDIQ, DI@b_] := sym[DI@b, a];
-    sym[a_?AbsIndexNameQ, DI@a_] := DimensionOfSlotType[type];
-    sym[DI@a_, a_?AbsIndexNameQ] := DimensionOfSlotType[type];
+    sym[a_?AbsIndexNameQ, DI@a_] := DimensionOfSlotType[slotType];
+    sym[DI@a_, a_?AbsIndexNameQ] := DimensionOfSlotType[slotType];
     sym /: sym[a_, b_?AbsIndexNameQ]sym[DI@b_, c_] := sym[a, c];
     sym /: sym[b_?AbsIndexNameQ, a_]sym[DI@b_, c_] := sym[a, c];
     sym /: sym[b_?AbsIndexNameQ, a_]sym[c_, DI@b_] := sym[a, c];
@@ -489,71 +492,96 @@ GroupIndexList[list_] := If[Length@list > 0 && Head@list[[1]] =!= Rule,
     Join[SeparateIndexName@#2, {#1}] & @@@ list
 ] (* {name, type, pos} *) //
     GroupBy[First -> Delete[1]] //
-    Map[Transpose@Sort@# &] //
+    (* name -> {{type, pos}, ...} *)
+    Map[Transpose@SortBy[#, First, IndexOrder] &] //
+    (* name -> {{type1, type2, ...}, {pos1, pos2, ...}} *)
     KeyValueMap[{#2[[1]], #1 -> #2[[2]]} &] //
+    (* {{type1, type2, ...}, name -> {pos1, pos2, ...}} *)
     GroupBy[First -> Extract[2]] //
-    KeyValueMap[Rule] //
-    Apply[GroupedIndexList] //
-    SortGroupedIndexList;
+    (* <|{type1, type2, ...} -> {name1 -> {pos1, pos2, ...}, ...}|> *)
+    KeyValueMap[Rule];
 SyntaxInformation@GroupIndexList = {"ArgumentsPattern" -> {_}};
 
+IndexOrder[DI@a_, DI@b_] := Order[a, b];
+IndexOrder[a_?NonDIQ, DI@b_] := 1;
+IndexOrder[DI@a_, b_?NonDIQ] := -1;
+IndexOrder[a_?NonDIQ, b_?NonDIQ] := Order[a, b];
+SyntaxInformation@IndexOrder = {"ArgumentsPattern" -> {_, _}};
+
+AddSymmetryToOneIndex[pat : {a_, DI@a_}, indToPos : (indName_ -> {pos1_, pos2_}), pairSym_] := {
+    pat,
+    With[{s = pairSym[indName, pos1, pos2]}, If[s === 0, {}, {s}]],
+    RenamingGroupOfIndexName@indName
+} -> indToPos;
+AddSymmetryToOneIndex[pat : {DI@a_, a_}, indToPos : (indName_ -> {pos1_, pos2_}), pairSym_] := {
+    pat,
+    With[{s = pairSym[indName, pos2, pos1]}, If[s === 0, {}, {s}]],
+    RenamingGroupOfIndexName@indName
+} -> indToPos;
+AddSymmetryToOneIndex[pat_, indToPos_, _] := {
+    pat,
+    MapShiftedIndexed[If[#1 === #2, #3, Nothing] &, pat],
+    RenamingGroupOfIndexName@indName
+} -> indToPos;
+
+AddSymmetryToOneIndexGroup[pairSym_][pat_ -> indsToPos_] := AddSymmetryToOneIndex[pat, #, pairSym] & /@ indsToPos;
+AddSymmetryToGroupedIndexList[list_List, pairSym_] := Join @@ (AddSymmetryToOneIndexGroup[pairSym] /@ list) //
+    GroupBy[First -> Extract[2]] //
+    Map[SortBy[First]] //
+    KeySort //
+    KeyValueMap[Rule];
+SyntaxInformation@AddSymmetryToGroupedIndexList = {"ArgumentsPattern" -> {_, _}};
+
+SymmetryGroupOfSymmetricIndexGroup[i_, {pat_, symList_, renamingGroup_} -> inds_] := With[{
+    blockLen = Length@pat,
+    baseGenSet = If[# > 0, SCycles@{#, # + 1}, -SCycles@{-#, -# + 1}] & /@ symList
+}, {Join[
+    Join @@ Array[ShiftPermutation[baseGenSet, blockLen * (# - 1) + i] &, Length@inds],
+    If[renamingGroup =!= None,
+        Join @@ With[{
+            block = Range@blockLen + i
+        }, Array[BlockSymmetricGenSet[blockLen * (# - 1) + block, blockLen * # + block] &, Length@inds - 1]],
+        {}
+    ]
+], i + blockLen * Length@inds}];
+SymmetryGroupOfSymmetricIndexList[list_List] := Join @@ FoldPairList[SymmetryGroupOfSymmetricIndexGroup, 0, list];
+SyntaxInformation@SymmetryGroupOfSymmetricIndexList = {"ArgumentsPattern" -> {_}};
+
 MapSkewedIndexed[fn_, list_] := MapThread[fn, {Delete[list, -1], Delete[list, 1], Range[Length@list - 1]}];
-
-RenamingSymmetryOfInds[inds_] := Join @@ MapShiftedIndexed[
-    If[RenamableIndicesQ[#1[[1]], #2[[1]]], With[{len = Length@#1[[2]]}, BlockSymmetricGenSet[len * (#3 - 1) + Range@len, len * #3 + Range@len]], Nothing] &
-, inds];
-
-SymmetryOfOneIndsBlock[pairSym_, indPat_ -> indsAndPos_] := With[{
-    baseGenSet = Join @@ MapSkewedIndexed[If[#1 === #2, {SCycles@{#3, #3 + 1}}, {}] &, indPat],
-    len = Length@indPat
-}, Join[
-    Join @@ MapIndexed[ShiftPermutation[baseGenSet, len * (#2[[1]] - 1)] &, indsAndPos],
-    If[IndexPairPatternQ@indPat,
-        Join @@ MapIndexed[{entry, index} |-> With[{sign = pairSym[entry[[1]], entry[[2, 1]], entry[[2, 2]]], p = index[[1]]}, If[sign =!= None, {SCycles@{2p - 1, 2p}}, {}]], indsAndPos]
-    , {}],
-    RenamingSymmetryOfInds@indsAndPos
-]];
 
 IndexPairPatternQ[{a_, DI@a_}] = True;
 IndexPairPatternQ[{DI@a_, a_}] = True;
 IndexPairPatternQ[_] = False;
 
-SymmetryOfGroupedIndices[list_GroupedIndexList, pairSym_] := ShiftAndJoinGenSets[
-    Function[{a}, SymmetryOfOneIndsBlock[pairSym, a]] /@ List @@ list,
-    Function[{a}, Length@a[[2]] * Length@a[[2, 1, 2]]] /@ List @@ list
-];
-SymmetryOfGroupedIndices[list_] := SymmetryOfGroupedIndices[list, 1 &];
-SyntaxInformation@SymmetryOfGroupedIndices = {"ArgumentsPattern" -> {_, _.}};
-
-SortGroupedIndexList[list_GroupedIndexList] := MapAt[SortBy[{RenamingGroupOfIndexName@First@#, First@#} &], 2] /@ SortBy[list, First];
+SortGroupedIndexList[list_List] := MapAt[Sort, 2] /@ SortBy[list, First];
 SyntaxInformation@SortGroupedIndexList = {"ArgumentsPattern" -> {_}};
 
 ToPattern[list_List] := Alternatives @@ (ToPattern /@ list);
 ToPattern[patt_] := patt;
-FindAndDropFrees[list_GroupedIndexList, Automatic] := With[{
+FindAndDropFrees[list_List, Automatic] := With[{
     l = GroupBy[List @@ list, Length@#[[1]] === 1 &]
-}, Function[{b}, SortGroupedIndexList[GroupedIndexList @@ Lookup[l, b, {}]]] /@ {True, False}];
-FindAndDropFrees[list_GroupedIndexList, freeNames_] := With[{
+}, Function[{b}, SortGroupedIndexList[Lookup[l, b, {}]]] /@ {True, False}];
+FindAndDropFrees[list_List, freeNames_] := With[{
     l = List @@ list,
     pat = ToPattern@freeNames
 },
-    SortGroupedIndexList /@ GroupedIndexList @@@ Select[Length@#[[2]] > 0 &] /@ Transpose[
+    SortGroupedIndexList /@ Select[Length@#[[2]] > 0 &] /@ Transpose[
         Function[{indPat, inds}, Function[{a}, indPat -> a] /@ Lookup[GroupBy[inds, a |-> MatchQ[a[[1]], pat]], {True, False}, {}]] @@@ l
     ]
 ];
 SyntaxInformation@FindAndDropFrees = {"ArgumentsPattern" -> {_, _}};
 
-CollectGroupedIndices[list_GroupedIndexList] := Join @@ (Function[{pat, inds},
+CollectGroupedIndices[list_List] := Join @@ (Function[{pat, inds},
     Join @@ (Function[{name, val},
         MapThread[Function[{p, v}, v -> (p /. IndexNameSlot -> name)], {pat, val}]
     ] @@@ inds)
 ] @@@ List @@ list);
 SyntaxInformation@CollectGroupedIndices = {"ArgumentsPattern" -> {_}};
 
-CollectGroupedIndicesNames[list_GroupedIndexList] := Join @@ (List @@ list)[[All, 2, All, 1]];
+CollectGroupedIndicesNames[list_List] := Join @@ list[[All, 2, All, 1]];
 SyntaxInformation@CollectGroupedIndicesNames = {"ArgumentsPattern" -> {_}};
 
-GroupedIndexListMapFold[fn_, x_, list_GroupedIndexList] := GroupedIndexList @@ Delete[FoldList[
+GroupedIndexListMapFold[fn_, x_, list_List] := Delete[FoldList[
     {inds, entry} |-> With[{
         patt = entry[[1]]
     }, With[{
@@ -577,21 +605,12 @@ MapGroupedIndexList[fn_, list_GroupedIndexList] := Join @@ Map[
 ];
 SyntaxInformation@MapGroupedIndexList = {"ArgumentsPattern" -> {_, _}};
 
-RenameGroupedIndexList[list_GroupedIndexList, inds_, idToType_] := GroupedIndexListMapFold[
+RenameGroupedIndexList[list_List, inds_, idToType_] := GroupedIndexListMapFold[
     {inds2, type, name, values} |-> With[{
         ind = GetIndexOfSlotType[idToType[values[[1]]], inds2]
     }, {ind -> values, Append[inds2, ind]}]
 , inds, list];
 SyntaxInformation@RenameGroupedIndexList = {"ArgumentsPattern" -> {_, _, _}};
-
-SymmetryOfIndsBlock[expr_, allIndPos_, dummySpecs_, symDummyPairSelector_] := With[{
-    groupedDummySpecs = GroupIndexList@dummySpecs
-},
-    {
-        Join @@ Join @@ groupedDummySpecs[[All, 2, All, 2]],
-        ShiftAndJoinGenSets[SymmetryOfOneIndsBlock[expr, allIndPos, symDummyPairSelector] /@ groupedDummySpecs, Length@#[[2]] * Length@#[[2, 1, 2]] & /@ groupedDummySpecs]
-    }
-];
 
 ExpressionPairSymProvider[expr_, allIndPos_, symDummyPairSelector_][indName_, pos1_, pos2_] := With[{
     type1 = allIndPos[[pos1, 2]],
@@ -602,7 +621,7 @@ ExpressionPairSymProvider[expr_, allIndPos_, symDummyPairSelector_][indName_, po
     ExpressionPassThroughQ[expr, MetricOfSlotType[type1][DefaultIndex[1], DefaultIndex[2]], allIndPos[[pos1, 1]]] && ExpressionPassThroughQ[expr, MetricOfSlotType[type1][DefaultIndex[1], DefaultIndex[2]], allIndPos[[pos2, 1]]]
 ,
     SignOfSymmetricPair[type1, type2, indName],
-    None
+    0
 ]];
 
 ApplyIndices[_, _, 0] = 0;
@@ -612,9 +631,6 @@ PermuteIndexList[list_, a_ * perm_] := a * PermuteIndexList[list, perm];
 PermuteIndexList[list_, perm_Images] := IndexList @@ Permute[list, List @@ perm];
 PermuteIndexList[_, 0] = 0;
 
-MapIf[b_, fn_, expr_] := If[b, fn@expr, expr];
-MapIf[b_, fn_][expr_] := MapIf[b, fn, expr];
-
 CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSelector_] := With[{
     indPos = FindIndicesSlots@expr,
     slotsSym = SymmetryOfExpression@expr
@@ -623,15 +639,17 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
 }, With[{
     groupedInds = FindAndDropFrees[GroupIndexList[actualInds], frees]
 }, With[{
+    dummySymList = AddSymmetryToGroupedIndexList[groupedInds[[2]], ExpressionPairSymProvider[expr, indPos, symDummyPairSelector]]
+}, With[{
     indsSym = Join[
         ShiftPermutation[
-            SymmetryOfGroupedIndices[groupedInds[[2]], ExpressionPairSymProvider[expr, indPos, symDummyPairSelector]],
+            SymmetryGroupOfSymmetricIndexList@dummySymList,
             Length@CollectGroupedIndices@groupedInds[[1]]
         ],
         freesSym
     ]
 }, With[{
-    canonIndsAndPos = CollectGroupedIndices /@ groupedInds
+    canonIndsAndPos = {CollectGroupedIndices@groupedInds[[1]], CollectGroupedIndices[MapAt[First, 1] /@ dummySymList]}
 }, With[{
     perm = InversePermutation@(Join @@ canonIndsAndPos)[[All, 1]],
     canonInds = (Join @@ canonIndsAndPos)[[All, 2]]
@@ -663,7 +681,7 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
         xToolsDebugPrint[CanonicalizeOneSorted, "result: ", HoldForm@expr];
         expr
     ]
-]]]]]]];
+]]]]]]]];
 
 Options@ITensorReduceOneTerm = {
     UseMetricOnSlots -> All,

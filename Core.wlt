@@ -10,6 +10,8 @@ SymmetryOfExpression@g1[inds__] ^:= SymmetricGenSet @@ Range[Length@Hold@inds];
 
 FindIndicesSlots[t1[inds__]] ^:= Array[{#} -> TangentMf &, Length@Hold@inds];
 
+DefSimpleTensor[chris, {TangentMf, TangentMf, TangentMf}, {SCycles@{2, 3}}];
+
 VerificationTest[
     ITensorReduceOneTerm[g1[b, a]],
     g1[a, b]
@@ -31,8 +33,13 @@ VerificationTest[
 ];
 
 VerificationTest[
-    ITensorReduceOneTerm[Riemann1[#1, #2, #3, #4] Riemann1[-#2, -#4, -#3, -#1]],
+    ITensorReduceOneTerm[Riemann1[TempIndex[1], TempIndex[2], TempIndex[3], TempIndex[4]] Riemann1[-TempIndex[2], -TempIndex[4], -TempIndex[3], -TempIndex[1]]],
     -Riemann1[a, b, c, d] Riemann1[DI[a], DI[c], DI[b], DI[d]]
+];
+
+VerificationTest[
+    ITensorReduce[chris[d, DI[b], DI[TempIndex[1]]] chris[TempIndex[1], DI[a], DI[c]], UseMetricOnSlots -> {}],
+    chris[d, DI[b], DI[e]]chris[e, DI[a], DI[c]]
 ];
 
 VerificationTest[
