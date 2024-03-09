@@ -89,14 +89,14 @@ DefVectorDerivativeOperator[sym_, slot_, opt : OptionsPattern[]] := (
     ,
         sym /: SymmetryOfExpression[sym[expr_, _]] := SymmetryOfExpression@expr
     ];
-    If[!OptionValue@AllowPassThrough,
-        sym /: ExpressionPassThroughQ[_sym, _, pos_] := pos[[1]] === 2
-    ,
+    If[OptionValue@AllowPassThrough,
         sym /: ExpressionPassThroughQ[sym[expr_, ind_], tensor_, pos_] := Switch[pos[[1]],
             1, sym[tensor, ind] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
             2, True,
             _, False
         ]
+    ,
+        sym /: ExpressionPassThroughQ[_sym, _, pos_] := pos[[1]] === 2
     ];
     With[{
         name = OptionValue@DisplayName
@@ -121,10 +121,10 @@ DefScalarDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     sym[sym[expr_, v1_], v2_] := sym[sym[expr, v2], v1] /; !OrderedQ[v1, v2];
     sym[ETensor[expr_, inds_], v_] := ETensor[sym[expr, v], inds];
     sym[NITensor[expr_, inds_], v_] := NITensor[sym[expr, v], inds];
-    sym /: FindIndicesSlots[sym[expr_, _]] := FindIndicesSlots@expr;
+    sym /: FindIndicesSlots[sym[expr_, _]] := FindIndicesSlots[expr, {1}];
     sym /: FindIndicesSlots[sym[_]] = {};
     sym /: SymmetryOfExpression[sym[expr_, _]] := SymmetryOfExpression@expr;
-    If[!OptionValue@AllowPassThrough,
+    If[OptionValue@AllowPassThrough,
         sym /: ExpressionPassThroughQ[sym[expr_, v_], tensor_, pos_] := Switch[pos[[1]],
             1, sym[tensor, v] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
             2, True,

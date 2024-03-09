@@ -101,3 +101,13 @@ VerificationTest[
     MetricOfSlotType[TangentMf][a, DI@b] (Riemann1[e, b, c, d] + t1[e, b, d]),
     t1[e, a, d] + Riemann1[e, a, c, d]
 ];
+
+VerificationTest[
+    ReplaceFrees[t1[a, b, c, c], {a, b}, {b, c}],
+    {t1[b, c, a, a], {b, c}}
+];
+
+VerificationTest[
+    ReplaceFrees[t1[g, a, h, a], {h, d, b, g}, Automatic],
+    {t1[a, c, b, c], {a, None, None, b}}
+];

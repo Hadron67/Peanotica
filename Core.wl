@@ -61,6 +61,7 @@ IndexedObject::usage = "IndexedObject[expr, {name -> type, ...}] represents an i
 ToIndexedObject::usage = "ToIndexedObject[expr, inds] returns an IndexedObject.";
 MapIndexSlots::usage = "MapIndexSlots[fn, expr] replaces all IndexSlot[n] in expr as fn[n], skipping IndexedObject's and ETensor's.";
 NonDIQ::usage = "NonDIQ[i] returns false on DI[a] or -a, otherwise true.";
+ReplaceFrees::usage = "ReplaceFrees[expr, oldFrees, newFrees]";
 
 (* metric related *)
 DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
@@ -115,6 +116,7 @@ ITensorOuter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
 ITensorSum::usage = "ITensorSum[sum, t, {a1, a2, ...}]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
 ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
+ExtractNITensor::usage = "";
 
 Begin["`Private`"];
 
@@ -373,14 +375,15 @@ DefSimpleMetric[sym_, slotType_, symSign_, opt : OptionsPattern[]] := (
     sym[a_?NonDIQ, DI@b_] := sym[DI@b, a];
     sym[a_?AbsIndexNameQ, DI@a_] := DimensionOfSlotType[slotType];
     sym[DI@a_, a_?AbsIndexNameQ] := DimensionOfSlotType[slotType];
-    sym /: sym[a_, b_?AbsIndexNameQ]sym[DI@b_, c_] := sym[a, c];
-    sym /: sym[b_?AbsIndexNameQ, a_]sym[DI@b_, c_] := sym[a, c];
-    sym /: sym[b_?AbsIndexNameQ, a_]sym[c_, DI@b_] := sym[a, c];
-    sym /: sym[a_, b_?AbsIndexNameQ]sym[c_, DI@b_] := sym[a, c];
-    sym /: Times[sym[DI@b_, a_?NonDIQ], rest_] := With[{
+    sym /: ContractableMetricQ[sym[_, _]] = True;
+    sym /: HoldPattern[sym[a_, b_?AbsIndexNameQ]sym[DI@b_, c_]] := sym[a, c];
+    sym /: HoldPattern[sym[a_, b_?AbsIndexNameQ]sym[c_, DI@b_]] := sym[a, c];
+    sym /: HoldPattern[sym[b_?AbsIndexNameQ, a_]sym[DI@b_, c_]] := sym[a, c];
+    sym /: HoldPattern[sym[b_?AbsIndexNameQ, a_]sym[c_, DI@b_]] := sym[a, c];
+    sym /: HoldPattern@Times[sym[DI@b_, a_?NonDIQ], rest_] := With[{
         newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
     }, newExpr /; newExpr =!= $Failed];
-    sym /: Times[sym[a_?NonDIQ, DI@b_], rest_] := With[{
+    sym /: HoldPattern@Times[sym[a_?NonDIQ, DI@b_], rest_] := With[{
         newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
     }, newExpr /; newExpr =!= $Failed];
 );
@@ -559,14 +562,17 @@ SyntaxInformation@SortGroupedIndexList = {"ArgumentsPattern" -> {_}};
 ToPattern[list_List] := Alternatives @@ (ToPattern /@ list);
 ToPattern[patt_] := patt;
 FindAndDropFrees[list_List, Automatic] := With[{
-    l = GroupBy[List @@ list, Length@#[[1]] === 1 &]
+    l = GroupBy[list, Length@#[[1]] === 1 &]
 }, Function[{b}, SortGroupedIndexList[Lookup[l, b, {}]]] /@ {True, False}];
 FindAndDropFrees[list_List, freeNames_] := With[{
-    l = List @@ list,
     pat = ToPattern@freeNames
 },
-    SortGroupedIndexList /@ Select[Length@#[[2]] > 0 &] /@ Transpose[
-        Function[{indPat, inds}, Function[{a}, indPat -> a] /@ Lookup[GroupBy[inds, a |-> MatchQ[a[[1]], pat]], {True, False}, {}]] @@@ l
+    If[Length@list =!= 0,
+        SortGroupedIndexList /@ Select[Length@#[[2]] > 0 &] /@ Transpose[
+            Function[{indPat, inds}, Function[{a}, indPat -> a] /@ Lookup[GroupBy[inds, a |-> MatchQ[a[[1]], pat]], {True, False}, {}]] @@@ list
+        ]
+    ,
+        {{}, {}}
     ]
 ];
 SyntaxInformation@FindAndDropFrees = {"ArgumentsPattern" -> {_, _}};
@@ -691,6 +697,7 @@ Options@ITensorReduceOneTerm = {
 };
 ITensorReduceOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
 ITensorReduceOneTerm[expr_Plus, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
+ITensorReduceOneTerm[expr_?ArrayQ, opt : OptionsPattern[]] := Map[ITensorReduceOneTerm[#, opt] &, expr, {ArrayDepth@expr}];
 ITensorReduceOneTerm[expr_List, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
 ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := If[TensorTermQ@expr,
     ReleaseISort@CanonicalizeOneSorted[
@@ -706,6 +713,7 @@ ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := If[TensorTermQ@expr,
 ];
 SyntaxInformation@ITensorReduceOneTerm = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
+PreITensorReduce[arr_?ArrayQ] := Map[PreITensorReduce, arr, {ArrayDepth@arr}];
 PreITensorReduce[head_[args___]] := PreITensorReduce[head] @@ Map[PreITensorReduce, {args}];
 PreITensorReduce[expr_] := expr;
 SyntaxInformation@PreITensorReduce = {"ArgumentsPattern" -> {_}};
@@ -745,6 +753,27 @@ FindAllIndicesNamesSubExpression[head_[args___], pos_] := Merge[
 ];
 SetAttributes[{FindAllIndicesNames, FindAllIndicesNamesSubExpression}, HoldFirst];
 SyntaxInformation@FindAllIndicesNames = {"ArgumentsPattern" -> {_, _.}};
+
+ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
+    allIndsPos = FindAllIndicesNames@expr
+}, With[{
+    frees = Intersection[Keys@allIndsPos, frees0]
+}, With[{
+    dummies = Complement[Keys@allIndsPos, frees],
+    newFrees = If[newFrees0 === Automatic, GetIndicesOfSlotType[allIndsPos[#][[1, 2]] & /@ frees, {}], newFrees0]
+}, With[{
+    dummiesToKeep = Complement[dummies, newFrees],
+    dummiesNeedsReplacing = Intersection[dummies, Complement[newFrees, frees]]
+}, With[{
+    replacementDummies = GetIndicesOfSlotType[allIndsPos[#][[1, 2]] & /@ dummiesNeedsReplacing, Union[dummiesToKeep, newFrees]]
+}, {
+    ReplacePart[expr, Join[
+        ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[frees -> newFrees]],
+        ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[dummiesNeedsReplacing -> replacementDummies]]
+    ]],
+    FoldPairList[If[MemberQ[frees, #2], {newFrees[[#1]], #1 + 1}, {None, #1}] &, 1, frees0]
+}]]]]];
+SyntaxInformation@ReplaceFrees = {"ArgumentsPattern" -> {_, _, _}};
 
 WrapIntoFunction[inner_, Hold@{args__}] := Function[inner[args]];
 ToIndexFunction[expr_, frees_] := With[{
@@ -847,14 +876,10 @@ ETensor /: FindIndicesSlots[_ETensor] = {};
 ETensor /: PreITensorReduce[ETensor[expr_, frees_]] := With[{
     freesObj = StructureOfETensorIndices@frees
 }, With[{
-    sortedFrees = Sort@freesObj[[1]]
+    newExprAndFrees = ReplaceFrees[expr, freesObj[[1]], Automatic]
 }, ETensor[
-    If[sortedFrees =!= freesObj[[1]], ReplacePart[
-        expr,
-        ReplaceIndicesRules[Map[Delete[2]] /@ FindAllIndicesNames@expr, Thread[freesObj[[1]] -> sortedFrees]]
-    ], expr] //
-    ITensorReduce[#, FreeIndexNames -> sortedFrees] &,
-    ReconstructETensorIndices[ReplacePart[freesObj, 1 -> sortedFrees]]
+    ITensorReduce[newExprAndFrees[[1]], FreeIndexNames -> newExprAndFrees[[2]]],
+    ReconstructETensorIndices[ReplacePart[freesObj, 1 -> newExprAndFrees[[2]]]]
 ]]];
 ETensor::plusincompat = "Cannot combine ETensor's with incompatible free indices `1` and `2`.";
 UncatchedETensorPlus[head_, exprs_] := With[{
@@ -931,7 +956,9 @@ TensorValueQ[_] = False;
 
 GeneralizedPermutationProduct[perm1_, perm2_] := perm1 /. Dispatch@Thread[Range@Length@perm2 -> perm2];
 
-ITensorTranspose[s_?ArrayQ, perm_] := Map[If[TensorValueQ@#, ITensorTranspose[#, perm], #] &, Transpose[s, perm], {ArrayDepth@s}];
+ITensorTranspose[s_?ArrayQ, perm_] := With[{
+    newArr = Transpose[s, perm]
+}, Map[If[TensorValueQ@#, ITensorTranspose[#, perm], #] &, newArr, {ArrayDepth@newArr}]];
 ITensorTranspose::emptyslot = "Permutation `1` does not specify destination for level `2`.";
 ITensorTranspose::incompatslot = "Cannot combine slots `1` and `2`.";
 ConvertTransposeIndsGroup[list_] := If[Head@list[[1]] === List, Sequence @@ Transpose@list, list];
@@ -1187,6 +1214,16 @@ UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := W
     ]] & /@ {rest},
     first
 ], firstInds]];
+
+ExtractNITensor::incompat = "Incompatible indices `1` and `2`.";
+ExtractNITensor[NITensor[expr_, inds1_], inds2_] := With[{ret = Catch@With[{
+    perm = FirstPosition[inds2, #, None, {1}][[1]] & /@ inds1
+},
+    If[Length@inds1 =!= Length@inds2 || AnyTrue[perm, # === None &], Message[ExtractNITensor::incompat, inds1, inds2]; Throw@Err;];
+    ITensorTranspose[expr, perm]
+]}, ret /; ret =!= Err];
+ExtractNITensor[inds_][expr_] := ExtractNITensor[expr, inds];
+SyntaxInformation@ExtractNITensor = {"ArgumentsPattern" -> {_, _.}};
 
 End[];
 
