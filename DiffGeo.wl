@@ -2,8 +2,9 @@ BeginPackage["Peanotica`DiffGeo`", {"Peanotica`Perm`", "Peanotica`Core`"}];
 
 Scan[Unprotect@#; ClearAll@#; &, Names@{$Context <> "*"}];
 
-LeviCivitaChristoffel;
-RiemannDifference;
+LeviCivitaChristoffel::usage = "LeviCivitaChristoffel[cd, metric] represents the Christoffel tensor relating the possibly non-metric compatible covariant derivative cd and the Levi-Civita connection. LeviCivitaChristoffel[...][a, DI@b, DI@c] gives the expression.";
+RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the difference of the Riemann tensors of cd and cd1, where christoffel is the Christoffel tensor relation cd and cd1.";
+CovDDifference::usage = "CovDDifference[christoffel] represents the difference ";
 
 DerConstantQ::usage = "DerConstantQ[expr] gives true if expr the derivative operator acting on expr should give 0.";
 DerFunctionQ::usage = "DerFunctionQ[fn] gives true if fn should be treated as a scalar function by the derivative operators. Derivative[...][fn] is always treated so.";
@@ -13,20 +14,21 @@ DefGeneralDerivativeOperator;
 
 SymmetriedDer;
 AllowPassThrough;
-DefScalarDerivativeOperator::usage = "";
-DefVectorDerivativeOperator::usage = "DefVectorDerivativeOperator[op, slotType].";
+DefParametreDerivativeOperator::usage = "";
+DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType].";
 
-CovDValue::usage = "CovDValue[pdvalue, christoffel]";
+CovDValue::usage = "CovDValue[expr, a, {pdvalue, christoffel, torsion}]";
 
 Begin["`Private`"];
 
-LeviCivitaChristoffel[cd_, metric_][a_, DI@b_, DI@c_] := With[{
+LeviCivitaChristoffel[cd_, metric_] := LeviCivitaChristoffel[cd, metric, metric];
+LeviCivitaChristoffel[cd_, metric_, metricInv_][a_, DI@b_, DI@c_] := With[{
     d = GetUniqueIndexOfSlotType[None]
-}, 1/2 metric[a, d](cd[DI@b]@metric[DI@d, DI@c] + cd[DI@c]@metric[DI@b, DI@d] - cd[DI@d]@metric[DI@b, DI@c])];
-SyntaxInformation@LeviCivitaChristoffel = {"ArgumentsPattern" -> {_, _}};
+}, 1/2 metricInv[a, d](cd[metric[DI@d, DI@c], DI@b] + cd[metric[DI@b, DI@d], DI@c] - cd[metric[DI@b, DI@c], DI@d])];
+SyntaxInformation@LeviCivitaChristoffel = {"ArgumentsPattern" -> {_, _, _.}};
 
 RiemannDifference[cd_, chris_][DI@a_, DI@b_, DI@c_, d_] := Function[{e},
-    -cd[DI@a]@chris[d, DI@b, DI@c] + cd[DI@b]@chris[d, DI@a, DI@c] + chris[e, DI@a, DI@c]chris[d, DI@b, DI@e] - chris[e, DI@b, DI@c]chris[d, DI@a, DI@e]
+    -cd[chris[d, DI@b, DI@c], DI@a] + cd[chris[d, DI@a, DI@c], DI@b] + chris[e, DI@a, DI@c]chris[d, DI@b, DI@e] - chris[e, DI@b, DI@c]chris[d, DI@a, DI@e]
 ]@GetUniqueIndexOfSlotType[None];
 
 DerConstantQ[_?NumberQ] = True;
@@ -59,39 +61,44 @@ DefGeneralDerivativeOperator[sym_, opt : OptionsPattern[]] := (
 );
 SyntaxInformation@DefGeneralDerivativeOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
-Options[DefVectorDerivativeOperator] = Join[Options[DefGeneralDerivativeOperator], {
+Options[DefTensorDerivativeOperator] = Join[Options[DefGeneralDerivativeOperator], {
     DisplayName -> "\[PartialD]",
     SymmetriedDer -> False,
     AllowPassThrough -> True (* any usecase for setting this to False ? *)
 }];
-SymmetryOfSymmetrizedDer[sym_[expr_, ind_]] := With[{
+SymmetryOfSymmetrizedDer[sym_[expr_, inds__], singleSym_] := With[{
     subExprAndInd = NestWhile[{
-        Extract[#[[1]], {1, 1}, Hold], Append[#[[2]],
-        Extract[#[[1]], {1, 2}]]
-    } &, {Hold@expr, {ind}}, MatchQ[#[[1]], Hold@sym[_, _]] &]
+        Extract[#[[1]], {1, 1}, Hold],
+        #[[2]] + 1
+    } &, {Hold@expr, 1}, MatchQ[#[[1]], Hold@sym[_, __]] &],
+    exprSlotCount = Length@FindIndicesSlots@expr
 },
     Join[
         Extract[subExprAndInd[[1]], 1, SymmetryOfExpression],
-        With[{inds = subExprAndInd[[2]]}, If[Length@inds >= 2,
-            ShiftPermutation[SymmetricGenSet @@ Range@Length@inds, Length@Extract[subExprAndInd[[1]], 1, FindIndicesSlots]],
-            {}
-        ]]
+        Join @@ Array[ShiftPermutation[singleSym, (# - 1) * Length@{inds}] &, subExprAndInd[[2]]],
+        ShiftPermutation[BlockSymmetricGenSet @@ Partition[Range[Length@{inds} * subExprAndInd[[2]]], Length@{inds}], exprSlotCount]
     ]
 ];
 SetAttributes[SymmetryOfSymmetrizedDer, HoldAll];
-DefVectorDerivativeOperator[sym_, slot_, opt : OptionsPattern[]] := (
+DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : OptionsPattern[]] := (
     DefGeneralDerivativeOperator[sym, FilterRules[{opt}, Options@DefGeneralDerivativeOperator]];
-    sym[a_][expr_] := sym[expr, a];
-    sym /: FindIndicesSlots[sym[expr_, _]] := Append[FindIndicesSlots[expr, {1}], {2} -> slot];
-    sym /: FindIndicesSlots[sym[_]] := {{1} -> slot};
+    With[{
+        len = Length@slots
+    }, sym[Null, a__][expr_] := sym[expr, a] /; Length@{a} === len];
+    (
+        sym /: FindIndicesSlots[sym[expr_, ##]] := Append[FindIndicesSlots[expr, {1}], {2} -> slot];
+        sym /: FindIndicesSlots[sym[##]] := {{1} -> slot};
+    ) & @@@ ConstantArray[_, Length@slots];
     If[OptionValue@SymmetriedDer,
-        sym /: SymmetryOfExpression[s_sym] := SymmetryOfSymmetrizedDer[s]
+        sym /: SymmetryOfExpression[s_sym] := SymmetryOfSymmetrizedDer[s, symmetry]
+    , If[Length@symmetry > 0,
+        sym /: SymmetryOfExpression[sym[expr_, __]] := Join[SymmetryOfExpression@expr, ShiftPermutation[symmetry, Length@FindIndicesSlots@expr]]
     ,
-        sym /: SymmetryOfExpression[sym[expr_, _]] := SymmetryOfExpression@expr
-    ];
+        sym /: SymmetryOfExpression[sym[expr_, __]] := SymmetryOfExpression@expr
+    ]];
     If[OptionValue@AllowPassThrough,
-        sym /: ExpressionPassThroughQ[sym[expr_, ind_], tensor_, pos_] := Switch[pos[[1]],
-            1, sym[tensor, ind] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
+        sym /: ExpressionPassThroughQ[sym[expr_, inds__], tensor_, pos_] := Switch[pos[[1]],
+            1, sym[tensor, inds] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
             2, True,
             _, False
         ]
@@ -101,31 +108,31 @@ DefVectorDerivativeOperator[sym_, slot_, opt : OptionsPattern[]] := (
     With[{
         name = OptionValue@DisplayName
     },
-        sym /: MakeBoxes[expr : sym[expr2_, ind_], StandardForm] := InterpretationBox[RowBox@#, expr, Editable -> False] &@{
-            TensorGridBox[name, {SeparateIndexName@ind}],
-            MakeBoxes@expr2
+        sym /: MakeBoxes[expr : sym[expr2_, inds__], StandardForm] := InterpretationBox[RowBox@#, expr, Editable -> False] &@{
+            TensorGridBox[name, SeparateIndexName /@ {inds}],
+            If[expr2 =!= Null, MakeBoxes@expr2, Nothing]
         }
     ];
-    sym /: NITensorReduce[sym[expr_, ind_], frees_] := ReduceNITensorContractions[ReverseApplied@Construct, {expr, NITensor[sym, {IndexName@ind}]}, frees];
+    sym /: NITensorReduce[sym[expr_, inds__], frees_] := ReduceNITensorContractions[ReverseApplied@Construct, {expr, NITensor[sym, IndexName /@ {inds}]}, frees];
 );
-SyntaxInformation@DefVectorDerivativeOperator = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
+SyntaxInformation@DefTensorDerivativeOperator = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
-Options[DefScalarDerivativeOperator] = Join[Options@DefGeneralDerivativeOperator, {
+Options[DefParametreDerivativeOperator] = Join[Options@DefGeneralDerivativeOperator, {
     DisplayName -> "\[PartialD]",
     AllowPassThrough -> True
 }];
-DefScalarDerivativeOperator[sym_, opt : OptionsPattern[]] := (
+DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     DefGeneralDerivativeOperator[sym, FilterRules[{opt}, Options@DefGeneralDerivativeOperator]];
-    sym[t_, t_] = 1;
-    sym[v_]@expr_ := sym[expr, v];
-    sym[sym[expr_, v1_], v2_] := sym[sym[expr, v2], v1] /; !OrderedQ[v1, v2];
-    sym[ETensor[expr_, inds_], v_] := ETensor[sym[expr, v], inds];
-    sym[NITensor[expr_, inds_], v_] := NITensor[sym[expr, v], inds];
-    sym /: FindIndicesSlots[sym[expr_, _]] := FindIndicesSlots[expr, {1}];
-    sym /: FindIndicesSlots[sym[_]] = {};
-    sym /: SymmetryOfExpression[sym[expr_, _]] := SymmetryOfExpression@expr;
+    sym[Null, vs__]@expr_ := sym[expr, vs];
+    sym[expr_] := expr;
+    sym[r_, r_] := 1;
+    sym[sym[expr_, v1__], v2__] := sym[expr, v1, v2];
+    sym[ETensor[expr_, inds_], v__] := ETensor[sym[expr, v], inds];
+    sym[NITensor[expr_, inds_], v__] := NITensor[sym[expr, v], inds];
+    sym /: FindIndicesSlots[sym[expr_, __]] := FindIndicesSlots[expr, {1}];
+    sym /: SymmetryOfExpression[sym[expr_, __]] := SymmetryOfExpression@expr;
     If[OptionValue@AllowPassThrough,
-        sym /: ExpressionPassThroughQ[sym[expr_, v_], tensor_, pos_] := Switch[pos[[1]],
+        sym /: ExpressionPassThroughQ[sym[expr_, v__], tensor_, pos_] := Switch[pos[[1]],
             1, sym[tensor, v] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
             2, True,
             _, False
@@ -136,12 +143,12 @@ DefScalarDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     With[{
         name = OptionValue@DisplayName
     },
-        sym /: MakeBoxes[expr : sym[expr2_, v_], StandardForm] := InterpretationBox[RowBox@#, expr, Editable -> False] &@{
-            SubscriptBox[name, MakeBoxes@v],
-            MakeBoxes@expr2
-        }
+        sym /: MakeBoxes[expr : sym[expr2_, vs__], StandardForm] := InterpretationBox[RowBox@#, expr, Editable -> False] &@Join[
+            SubscriptBox[name, MakeBoxes@#] & /@ {vs},
+            If[expr2 =!= Null, {MakeBoxes@expr2}, {}]
+        ]
     ];
-    sym /: NITensorReduce[sym[expr_, v_], frees_] := sym[NITensorReduce[expr, frees], v];
+    sym /: NITensorReduce[sym[expr_, vs__], frees_] := sym[NITensorReduce[expr, frees], vs];
 );
 
 End[];

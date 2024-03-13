@@ -109,5 +109,5 @@ VerificationTest[
 
 VerificationTest[
     ReplaceFrees[t1[g, a, h, a], {h, d, b, g}, Automatic],
-    {t1[a, c, b, c], {a, None, None, b}}
+    {t1[b, c, a, c], {a, None, None, b}}
 ];
