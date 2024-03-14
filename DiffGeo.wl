@@ -17,7 +17,8 @@ AllowPassThrough;
 DefParametreDerivativeOperator::usage = "";
 DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType].";
 
-CovDValue::usage = "CovDValue[expr, a, {pdvalue, christoffel, torsion}]";
+NICovD::usage = "NICovD[expr, a, value]";
+ITensorCovD::usage = "";
 
 Begin["`Private`"];
 
@@ -55,6 +56,7 @@ DefGeneralDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     },
         Total@MapIndexed[(Derivative @@ (mat[[#2[[1]]]] + {ders}))[fn][args] sym[#1, rest] &, {args}]
     ];
+    sym[IndexScope[expr_], rest___] := sym[ReplaceDummiesToUnique@expr, rest];
     Scan[sym[#, ___] = 0; &, OptionValue@DerConstants];
     Scan[sym[fn : #[args__], rest___] := MapDerivativeOnFunction[sym[#, rest] &, fn]; &, OptionValue@DerFunctions];
     sym[_?NumberQ] = 0;
@@ -85,10 +87,9 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
     With[{
         len = Length@slots
     }, sym[Null, a__][expr_] := sym[expr, a] /; Length@{a} === len];
-    (
-        sym /: FindIndicesSlots[sym[expr_, ##]] := Append[FindIndicesSlots[expr, {1}], {2} -> slot];
-        sym /: FindIndicesSlots[sym[##]] := {{1} -> slot};
-    ) & @@@ ConstantArray[_, Length@slots];
+    With[{
+        slotsAndPos = MapIndexed[#2 + 1 -> #1 &, slots]
+    }, sym /: FindIndicesSlots[sym[expr_, ##]] := Join[FindIndicesSlots[expr, {1}], slotsAndPos]] & @@ ConstantArray[_, Length@slots];
     If[OptionValue@SymmetriedDer,
         sym /: SymmetryOfExpression[s_sym] := SymmetryOfSymmetrizedDer[s, symmetry]
     , If[Length@symmetry > 0,
@@ -150,6 +151,10 @@ DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     ];
     sym /: NITensorReduce[sym[expr_, vs__], frees_] := sym[NITensorReduce[expr, frees], vs];
 );
+
+NICovD /: FindIndicesSlots@NICovD[expr_, a_, _] := Join[FindIndicesSlots[expr, {1}], {{2} -> None}];
+NICovD /: FindIndicesSlots@NICovD[expr_, a_ -> type_, _] := Join[FindIndicesSlots[expr, {1}], {{2} -> type}];
+NICovD /: SymmetryOfExpression@NICovD[expr_, _, _] := SymmetryOfExpression@expr;
 
 End[];
 

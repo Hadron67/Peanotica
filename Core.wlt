@@ -43,6 +43,16 @@ VerificationTest[
 ];
 
 VerificationTest[
+    ITensorReduce[t1[c, DI@c, 1, 2]],
+    t1[a, DI@a, 1, 2]
+];
+
+VerificationTest[
+    ITensorReduce[t1[c, DI@c, LabelI[a], LabelI[c]]],
+    t1[a, DI@a, LabelI[a], LabelI[c]]
+];
+
+VerificationTest[
     ContractMetric[Riemann1[a, b, c, d] MetricOfSlotType[TangentMf][DI@b, DI@d]],
     Riemann1[a, DI@d, c, d]
 ];
