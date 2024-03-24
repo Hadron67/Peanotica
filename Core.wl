@@ -180,12 +180,12 @@ $TempIndexNumber = 1;
 GetUniqueIndexOfSlotType[type_] := TempIndex[$TempIndexNumber++];
 SyntaxInformation@GetUniqueIndexOfSlotType = {"ArgumentsPattern" -> {_}};
 
-RenamingGroupOfIndexName[_Integer] = None;
-RenamingGroupOfIndexName[_LabelI] = None;
+RenamingGroupOfIndexName[_Integer] = Null;
+RenamingGroupOfIndexName[_LabelI] = Null;
 RenamingGroupOfIndexName[_] = DefaultRenamingGroup;
 SyntaxInformation@RenamingGroupOfIndexName = {"ArgumentsPattern" -> {_}};
 
-RenamableIndicesQ[a_, b_] := With[{g1 = RenamingGroupOfIndexName@a, g2 = RenamingGroupOfIndexName@b}, If[g1 === None || g2 === None, False, g1 === g2]];
+RenamableIndicesQ[a_, b_] := With[{g1 = RenamingGroupOfIndexName@a, g2 = RenamingGroupOfIndexName@b}, If[g1 === Null || g2 === Null, False, g1 === g2]];
 SyntaxInformation@RenamableIndicesQ = {"ArgumentsPattern" -> {_, _}};
 
 InterchangableIndexPairQ[_, _Integer] = False;
@@ -193,7 +193,7 @@ InterchangableIndexPairQ[_, _LabelI] = False;
 InterchangableIndexPairQ[_, _] = True;
 SyntaxInformation@InterchangableIndexPairQ = {"ArgumentsPattern" -> {_, _}};
 
-AbsIndexNameQ[ind_] := With[{s = SeparateIndexName@ind}, s[[2]] === IndexNameSlot && RenamingGroupOfIndexName@s[[1]] =!= None];
+AbsIndexNameQ[ind_] := With[{s = SeparateIndexName@ind}, s[[2]] === IndexNameSlot && RenamingGroupOfIndexName@s[[1]] =!= Null];
 SyntaxInformation@AbsIndexNameQ = {"ArgumentsPattern" -> {_}};
 
 NonDIQ[DI[_]] = False;
@@ -248,7 +248,7 @@ FindIndicesSlots[fn_[args___]] := Join[
         FindIndicesSlots[elem, pos]
     , {HoldAll}], Hold@args]
 ];
-FindIndicesSlots[Subscript[_, inds__]] := {#} -> None & /@ Range@Length@Hold@inds;
+FindIndicesSlots[Subscript[_, inds__]] := {#} -> Null & /@ Range@Length@Hold@inds;
 FindIndicesSlots[_] = {};
 SetAttributes[FindIndicesSlots, HoldFirst];
 SyntaxInformation@FindIndicesSlots = {"ArgumentsPattern" -> {_, _.}};
@@ -565,7 +565,7 @@ ISortArgToSortTag[arg_] := With[{
 ISort[fn_?UnorderedProductQ[args___]] := With[{
     sortedArgs = SortBy[ISortArgToSortTag /@ (List @@ (ISort /@ Hold@args)), Delete[1]]
 }, With[{
-    symList = DeleteCases[MapShiftedIndexed[If[#1 === #2, #3, None] &, sortedArgs[[All, 4]]], None]
+    symList = MapShiftedIndexed[If[#1 === #2, #3, Nothing] &, sortedArgs[[All, 4]]]
 },
     Function[{arg}, ISortedProduct[fn, arg, symList]]@sortedArgs[[All, 1]]
 ]];
@@ -631,7 +631,7 @@ SymmetryGroupOfSymmetricIndexGroup[i_, {pat_, symList_, renamingGroup_} -> inds_
     baseGenSet = If[# > 0, SCycles@{#, # + 1}, -SCycles@{-#, -# + 1}] & /@ symList
 }, {Join[
     Join @@ Array[ShiftPermutation[baseGenSet, blockLen * (# - 1) + i] &, Length@inds],
-    If[renamingGroup =!= None,
+    If[renamingGroup =!= Null,
         Join @@ With[{
             block = Range@blockLen + i
         }, Array[BlockSymmetricGenSet[blockLen * (# - 1) + block, blockLen * # + block] &, Length@inds - 1]],
@@ -682,11 +682,11 @@ GroupedIndexListMapFold[fn_, x_, list_List] := Delete[FoldList[
     {inds, entry} |-> With[{
         patt = entry[[1]]
     }, With[{
-        res = Delete[FoldList[{inds2, indNameAndPos} |-> fn[inds2[[2]], patt, indNameAndPos[[1]], indNameAndPos[[2]]], {None, inds[[2]]}, entry[[2]]], 1] (* {{name1, inds1}, {name2, inds2}, ...} *)
+        res = Delete[FoldList[{inds2, indNameAndPos} |-> fn[inds2[[2]], patt, indNameAndPos[[1]], indNameAndPos[[2]]], {Null, inds[[2]]}, entry[[2]]], 1] (* {{name1, inds1}, {name2, inds2}, ...} *)
     },
         {patt -> res[[All, 1]], res[[-1, 2]]}
     ]],
-    {None, x},
+    {Null, x},
     List @@ list
 ], 1][[All, 1]];
 SyntaxInformation@GroupedIndexListMapFold = {"ArgumentsPattern" -> {_, _, _}};
@@ -703,7 +703,7 @@ MapGroupedIndexList[fn_, list_GroupedIndexList] := Join @@ Map[
 SyntaxInformation@MapGroupedIndexList = {"ArgumentsPattern" -> {_, _}};
 
 RenameGroupedIndexList[list_List, inds_, idToType_] := GroupedIndexListMapFold[
-    {inds2, type, name, values} |-> If[RenamingGroupOfIndexName@name =!= None,
+    {inds2, type, name, values} |-> If[RenamingGroupOfIndexName@name =!= Null,
         With[{
             ind = GetIndexOfSlotType[idToType[values[[1]]], inds2]
         }, {ind -> values, Append[inds2, ind]}]
@@ -863,7 +863,7 @@ ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
 }, With[{
     frees = Cases[frees0, Alternatives @@ Keys@allIndsPos]
 }, With[{
-    dummies = Select[Complement[Keys@allIndsPos, frees], RenamingGroupOfIndexName@# =!= None &],
+    dummies = Select[Complement[Keys@allIndsPos, frees], RenamingGroupOfIndexName@# =!= Null &],
     newFrees = If[newFrees0 === Automatic, GetIndicesOfSlotType[allIndsPos[#][[1, 2]] & /@ frees, {}], newFrees0]
 }, With[{
     dummiesToKeep = Complement[dummies, newFrees],
@@ -875,7 +875,7 @@ ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
         ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[frees -> newFrees]],
         ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[dummiesNeedsReplacing -> replacementDummies]]
     ]],
-    FoldPairList[If[MemberQ[frees, #2], {newFrees[[#1]], #1 + 1}, {None, #1}] &, 1, frees0]
+    FoldPairList[If[MemberQ[frees, #2], {newFrees[[#1]], #1 + 1}, {Null, #1}] &, 1, frees0]
 }]]]]];
 SyntaxInformation@ReplaceFrees = {"ArgumentsPattern" -> {_, _, _}};
 
@@ -893,7 +893,7 @@ SyntaxInformation@PopulateDummyIndexHint = {"ArgumentsPattern" -> {_, _}};
 IndexScope[expr_, {}, {}] := IndexScope[expr];
 IndexScope /: PreITensorReduce[IndexScope[expr_], opt___] := IndexScope@ITensorReduce[expr, FreeIndexNames -> {}, FilterRules[{opt}, DeleteCases[Options[ITensorReduce], FreeIndexNames -> _]]];
 IndexScope /: FindIndicesSlots@IndexScope[expr_] = {};
-IndexScope /: FindIndicesSlots@IndexScope[_, _, inds_List] := MapIndexed[Prepend[#2, 3] -> None &, inds];
+IndexScope /: FindIndicesSlots@IndexScope[_, _, inds_List] := MapIndexed[Prepend[#2, 3] -> Null &, inds];
 SyntaxInformation@IndexScope = {"ArgumentsPattern" -> {_, _., _.}};
 
 SignOfUpSlot[_DI] = -1;
@@ -975,8 +975,8 @@ ETensor[expr_, frees_][inds__] := With[{
 
 ReplaceIndicesRules[indPos_, reps_] := Join @@ (With[{
     newInd = #2,
-    entry = Lookup[indPos, #1, None]
-}, If[entry =!= None, #2 -> (#1 /. IndexNameSlot -> newInd) & @@@ entry, {}]] & @@@ reps);
+    entry = Lookup[indPos, #1, Null]
+}, If[entry =!= Null, #2 -> (#1 /. IndexNameSlot -> newInd) & @@@ entry, {}]] & @@@ reps);
 SameDummies[exprs_] := With[{
     mostDummies = MaximalBy[exprs, Length@#[[2]] &][[1, 2]]
 }, With[{
@@ -993,8 +993,8 @@ StructureOfETensorIndices[inds_] := With[{
     lens = MultiILength /@ inds,
     flat = Flatten@inds
 }, ETensorIndices[
-    DeleteCases[flat, None],
-    Position[flat, None, {1}][[All, 1]],
+    DeleteCases[flat, Null],
+    Position[flat, Null, {1}][[All, 1]],
     lens
 ]];
 DeflattenFrees[list_, lens_] := FoldPairList[
@@ -1002,7 +1002,7 @@ DeflattenFrees[list_, lens_] := FoldPairList[
     list,
     lens
 ];
-ReconstructETensorIndices[ETensorIndices[inds_, nonePos_, lens_]] := DeflattenFrees[Fold[Insert[#1, None, #2] &, inds, nonePos], lens];
+ReconstructETensorIndices[ETensorIndices[inds_, nonePos_, lens_]] := DeflattenFrees[Fold[Insert[#1, Null, #2] &, inds, nonePos], lens];
 CompatibleETensorIndicesQ[ETensorIndices[inds1_, nonePos1_, lens1_], ETensorIndices[inds2_, nonePos2_, lens2_]] := Length@inds1 === Length@inds2 && nonePos1 === nonePos2 && lens1 === lens2;
 
 ETensorPlusHelper1DeleteTypeAndPrepend1ToPos[{pat_, type_, pos_}] := {pat, Prepend[pos, 1]};
@@ -1029,8 +1029,8 @@ UncatchedETensorPlus[head_, exprs_] := With[{
 ]]; With[{
     indPosesNoType = Map@Map@ETensorPlusHelper1DeleteTypeAndPrepend1ToPos /@ indPoses
 }, With[{
-    dummies = MapThread[Delete[#1, {Key@#} & /@ DeleteCases[#2, None]] &, {indPosesNoType, freesFlatten}],
-    freesFlattenWithTypes = MapThread[With[{indToType = #1}, If[# === None, {None, None}, {#, indToType[#]}] & /@ #2] &, {GetIndicesNamesToType /@ indPoses, freesFlatten}]
+    dummies = MapThread[Delete[#1, {Key@#} & /@ DeleteCases[#2, Null]] &, {indPosesNoType, freesFlatten}],
+    freesFlattenWithTypes = MapThread[With[{indToType = #1}, If[# === Null, {Null, Null}, {#, indToType[#]}] & /@ #2] &, {GetIndicesNamesToType /@ indPoses, freesFlatten}]
 }, With[{
     selectedInd = MaximalBy[MapIndexed[List, dummies], Length@#[[1]] &][[1, 2, 1]]
 }, With[{
@@ -1041,7 +1041,7 @@ UncatchedETensorPlus[head_, exprs_] := With[{
     }, Thread[dummiesToRep -> Take[Keys@selectedDummies, Length@dummiesToRep]]]]] &, {exprs[[All, 1]], dummies}]],
     newFrees = With[{
         freeSlotsNeedInds = MapThread[
-            With[{noNoneInd = Select[#2, #[[1]] =!= None &]}, If[#1 === None && Length@noNoneInd > 0, {#3, noNoneInd[[1, 2]]}, Nothing]] &, {
+            With[{noNoneInd = Select[#2, #[[1]] =!= Null &]}, If[#1 === Null && Length@noNoneInd > 0, {#3, noNoneInd[[1, 2]]}, Nothing]] &, {
                 freesFlatten[[selectedInd]],
                 Transpose@Delete[freesFlattenWithTypes, selectedInd],
                 Range@Length@freesFlatten[[1]]
@@ -1054,7 +1054,7 @@ UncatchedETensorPlus[head_, exprs_] := With[{
 },
     ETensor[
         head @@ MapThread[
-            ReleaseHold@ReplacePart[#1, ReplaceIndicesRules[#3, MapThread[If[#1 === None || #1 === #2, Nothing, #1 -> #2] &, {#2, newFrees}]]] &,
+            ReleaseHold@ReplacePart[#1, ReplaceIndicesRules[#3, MapThread[If[#1 === Null || #1 === #2, Nothing, #1 -> #2] &, {#2, newFrees}]]] &,
             {exprsWithDummiesReplaced, freesFlatten, indPosesNoType}
         ],
         DeflattenFrees[newFrees, structs[[selectedInd]]]
@@ -1128,7 +1128,7 @@ SyntaxInformation@ITensorTranspose = {"ArgumentsPattern" -> {_, _}};
 ITensorOuter[prod_, s1_, s2_] := ITensorOuter[prod, s1, s2, {}];
 PermutationOfMovingToFirst[points_List] := If[Length@points === 0, {}, InversePermutation[Join[points, Delete[Range[Max @@ points], Transpose@{points}]]]];
 PermutationOfMovingToLast[points_List] := InversePermutation[Join[Delete[Range[Max @@ points], Transpose@{points}], points]];
-FillNoneSlots[arr_, l_] := FoldPairList[If[#2 === None, {#1, #1 + 1}, {#2, #1}] &, l, arr];
+FillNoneSlots[arr_, l_] := FoldPairList[If[#2 === Null, {#1, #1 + 1}, {#2, #1}] &, l, arr];
 ITensorOuter::nonzeronontensor = "Multiplication of non-zero non-tensor value `1` and `2` encountered.";
 ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1, TensorValueQ@s2},
     {True, True},
@@ -1172,7 +1172,7 @@ ITensorOuter[prod_, e1_ETensor, e2_ETensor, cont_] := ITensorTranspose[
         l2 = Length@e2[[2]]
     }, Join[
         Range@l1,
-        FillNoneSlots[ReplacePart[ConstantArray[None, l2], #2 -> #1 & @@@ cont], l1 + 1]
+        FillNoneSlots[ReplacePart[ConstantArray[Null, l2], #2 -> #1 & @@@ cont], l1 + 1]
     ]]
 ];
 ITensorOuter[_, 0, _, _] = 0;
@@ -1201,7 +1201,7 @@ SyntaxInformation@ITensorFixedContract = {"ArgumentsPattern" -> {_, _, _, _, _}}
 
 OneIndexOfNITensor[ind_ -> _] := ind;
 OneIndexOfNITensor[ind_] := ind;
-OneIndexPosOfNITensor[ind_, pos_] := pos -> None;
+OneIndexPosOfNITensor[ind_, pos_] := pos -> Null;
 OneIndexPosOfNITensor[ind_ -> type_, pos_] := Append[pos, 1] -> type;
 NITensor /: FindIndicesSlots[NITensor[_, inds_]] := MapIndexed[OneIndexPosOfNITensor[#1, Prepend[#2, 2]] &, inds];
 NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds] /; Head@x =!= NITensor;
@@ -1234,11 +1234,11 @@ PermutationOfMergeIndices[inds_, n_] := With[{
     With[{
         arr = #1[[1]],
         c = #1[[2]]
-    }, If[arr[[#2]] === None,
+    }, If[arr[[#2]] === Null,
         With[{
-            g = Lookup[firstIndToIndGroup, #2, None]
+            g = Lookup[firstIndToIndGroup, #2, Null]
         }, {
-            If[g =!= None,
+            If[g =!= Null,
                 ReplacePart[arr, Thread[g -> c]],
                 ReplacePart[arr, #2 -> c]
             ],
@@ -1247,7 +1247,7 @@ PermutationOfMergeIndices[inds_, n_] := With[{
     ,
         {arr, c}
     ]] &,
-    {ConstantArray[None, n], 1},
+    {ConstantArray[Null, n], 1},
     Range@n
 ]][[1]];
 ContractOneNITensor[NITensor[t1_, inds_], frees_] := With[{
@@ -1358,9 +1358,9 @@ UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := W
     With[{
         inds2 = OneIndexOfNITensor /@ #[[2]]
     }, With[{
-        perm = FirstPosition[inds, #, None, {1}][[1]] & /@ inds2
+        perm = FirstPosition[inds, #, Null, {1}][[1]] & /@ inds2
     },
-        If[Length@inds2 =!= Length@inds || Length@Cases[perm, None] > 0, Message[NITensorReduce::incompatinds, firstInds, #]; Throw@Err;];
+        If[Length@inds2 =!= Length@inds || Length@Cases[perm, Null] > 0, Message[NITensorReduce::incompatinds, firstInds, #]; Throw@Err;];
         ITensorTranspose[#[[1]], perm]
     ]] & /@ {rest},
     first
@@ -1368,9 +1368,9 @@ UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := W
 
 ExtractNITensor::incompat = "Incompatible indices `1` and `2`.";
 ExtractNITensor[NITensor[expr_, inds1_], inds2_] := With[{ret = Catch@With[{
-    perm = FirstPosition[inds2, OneIndexOfNITensor@#, None, {1}][[1]] & /@ inds1
+    perm = FirstPosition[inds2, OneIndexOfNITensor@#, Null, {1}][[1]] & /@ inds1
 },
-    If[Length@inds1 =!= Length@inds2 || AnyTrue[perm, # === None &], Message[ExtractNITensor::incompat, inds1, inds2]; Throw@Err;];
+    If[Length@inds1 =!= Length@inds2 || AnyTrue[perm, # === Null &], Message[ExtractNITensor::incompat, inds1, inds2]; Throw@Err;];
     ITensorTranspose[expr, perm]
 ]}, ret /; ret =!= Err];
 ExtractNITensor[inds_][expr_] := ExtractNITensor[expr, inds];

@@ -68,7 +68,7 @@ VerificationTest[
 ];
 
 VerificationTest[
-    ETensor[g1[a], {a, None}] + ETensor[t1[a], {None, a}],
+    ETensor[g1[a], {a, Null}] + ETensor[t1[a], {Null, a}],
     ETensor[g1[a] + t1[b], {a, b}]
 ];
 
@@ -119,5 +119,5 @@ VerificationTest[
 
 VerificationTest[
     ReplaceFrees[t1[g, a, h, a], {h, d, b, g}, Automatic],
-    {t1[b, c, a, c], {a, None, None, b}}
+    {t1[b, c, a, c], {a, Null, Null, b}}
 ];
