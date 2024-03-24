@@ -544,8 +544,8 @@ ContractMetric[expr_] := ContractMetric[expr, All];
 SyntaxInformation@ContractMetric = {"ArgumentsPattern" -> {_, _.}};
 
 MoveMetricContractSlotTo1[metric_[a_, b_]] := If[ContractionSlotOfMetric@metric[a, b] === 2, metric[b, a], metric[a, b]];
-SeparateMetricOneIndex[pos_ -> type_, {indName_, IndexNameSlot}, DI@IndexNameSlot] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> DI@dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][dummy, indName]}];
-SeparateMetricOneIndex[pos_ -> type_, {indName_, DI@IndexNameSlot}, IndexNameSlot] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][dummy, indName]}];
+SeparateMetricOneIndex[pos_ -> type_, {indName_, IndexNameSlot}, -1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> DI@dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][dummy, indName]}];
+SeparateMetricOneIndex[pos_ -> type_, {indName_, DI@IndexNameSlot}, 1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][DI@dummy, DI@indName]}];
 SeparateMetricOneIndex[_, _, _] = Nothing;
 SeparateMetricOne[expr_, indsPat_] := With[{
     indPos = FindIndicesSlots@expr
@@ -855,17 +855,6 @@ FindAllIndicesNames[expr_, pos_] := With[{
 },
     GroupBy[MapThread[FindAllIndicesNamesHelper1, {inds, slots}], First -> Delete[1]]
 ]];
-(* FindAllIndicesNames[expr_, pos_] := Which[
-    TensorTermQ@expr,
-    GroupBy[Join[SeparateIndexName@#2[[1]], {#2[[2]], #1}] & @@@ FindIndicesSlotsAndNames[expr, pos], First -> Delete[1]],
-
-    True,
-    FindAllIndicesNamesSubExpression[expr, pos]
-];
-FindAllIndicesNamesSubExpression[head_[args___], pos_] := Merge[
-    ReleaseHold@MapIndexed[Function[{val, i}, FindAllIndicesNames[val, Join[pos, Delete[i, 1]]], {HoldFirst}], Hold@{args}, {2}],
-    Apply@Join
-]; *)
 SetAttributes[{FindAllIndicesNames, FindAllIndicesNamesSubExpression}, HoldFirst];
 SyntaxInformation@FindAllIndicesNames = {"ArgumentsPattern" -> {_, _.}};
 

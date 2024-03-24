@@ -7,7 +7,7 @@ LeviCivitaChristoffel::usage = "LeviCivitaChristoffel[cd, metric] represents the
 RiemannDifferencePart1;
 RiemannDifferencePart2;
 RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the difference of the Riemann tensors of cd and cd1, where christoffel is the Christoffel tensor relation cd and cd1.";
-CovDDifference::usage = "CovDDifference[christoffelProvider] represents the difference ";
+CovDDifference::usage = "CovDDifference[expr, chris, a] represents the difference ";
 
 Cocurvature::usage = "";
 Cotorsion::usage = "";
@@ -28,14 +28,18 @@ ICovD::usage = "ICovD[expr, a, value]";
 NITensorCovD::usage = "NITensorCovD[expr, value, inds, ind]";
 NITensorRaiseLowerIndices::usage = "NITensorChangeSlot[tensor, slots]";
 
-DefCurvatureTensors;
 DefRiemannToRicciRules::usage = "DefRiemannToRicciRules[riemann, ricci]";
+RiemannOf;
 RicciOf;
 RicciScalarOf;
+DefCurvatureTensors;
 
 RiemannScalars;
 
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
+DefMetricPerturbationRules::usage = "DefMetricPerturbationRules[pert, metric, metricDet, metricPert]";
+DefLeviCivitaCovDPerturbationRules::usage = "DefLeviCivitaCovDPerturbationRules[pert, cd, metric]";
+DefLeviCivitaCurvaturePerturbationRules::usage = "DefLeviCivitaCurvaturePerturbationRules[pert, cd, metric, riem, ricci, ricciScalar]";
 
 Begin["`Private`"];
 
@@ -60,7 +64,14 @@ SyntaxInformation@RiemannDifferencePart2 = {"ArgumentsPattern" -> {_}};
 RiemannDifference[cd_, chris_][a_, b_, c_, d_] := RiemannDifferencePart1[cd, chris][a, b, c, d] + RiemannDifferencePart2[chris][a, b, c, d];
 SyntaxInformation@RiemannDifference = {"ArgumentsPattern" -> {_, _}};
 
-CovDDifference[chris_, v_, a_][];
+CovDDifferenceTerm[expr_, chris_, a_, d_][pos_ -> type_] := With[{
+    ind = Extract[expr, {pos}][[1]]
+}, If[Head@ind === DI,
+    -chris[d, a, ind] * ReplacePart[expr, pos -> DI@d],
+    chris[ind, a, DI@d] * ReplacePart[expr, pos -> DI@d]
+]];
+CovDDifference[expr_, chris_, a_] := Total[CovDDifferenceTerm[expr, chris, a, GetUniqueIndexOfSlotType@None] /@ FindIndicesSlots@expr];
+SyntaxInformation@CovDDifference = {"ArgumentsPattern" -> {_, _, _}};
 
 DerConstantQ[_?NumberQ] = True;
 SyntaxInformation@DerConstantQ = {"ArgumentsPattern" -> {_}};
@@ -278,6 +289,43 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
         del = If[n === 1, "\[Delta]", SuperscriptBox["\[Delta]", MakeBoxes@n]]
     }, InterpretationBox[RowBox@{del, sub}, expr]];
 );
+
+DefMetricPerturbationRules[pert_, metric_, metricDet_, metricPert_] := (
+    pert[metric[a_, b_]] := Switch[{Head@a, Head@b},
+        {DI, DI}, metricPert[1, a, b],
+        {DI, _}, 0,
+        {_, DI}, 0,
+        _, -metricPert[1, a, b]
+    ];
+    pert[metricPert[n_, a_, b_]] := If[Head@a === DI && Head@b === DI,
+        metricPert[n + 1, a, b],
+        pert@SeparateMetricOne[metricPert[n, a, b], {-1, -1}]
+    ];
+    pert[metricDet] := metricDet * IndexScope@metricPert[1, DefaultIndex[1], DI@DefaultIndex[1]];
+);
+SyntaxInformation@DefMetricPerturbationRules = {"ArgumentsPattern" -> {_, _, _, _}};
+
+DefLeviCivitaCovDPerturbationRules[pert_, cd_, metric_] := (
+    pert[cd[expr_, DI@a_]] := cd[pert@expr, DI@a] + CovDDifference[expr, LeviCivitaChristoffelDer[cd, pert, metric], DI@a];
+    pert[cd[expr_, a_?NonDIQ]] := With[{d = GetUniqueIndexOfSlotType@None}, metric[a, d] pert[cd[expr, DI@d]]];
+);
+SyntaxInformation@DefLeviCivitaCovDPerturbationRules = {"ArgumentsPattern" -> {_, _, _}};
+
+DefLeviCivitaCurvaturePerturbationRules[pert_, cd_, metric_, riem_, ricci_, ricciScalar_] := (
+    pert[riem[a_, b_, c_, d_]] := If[SignOfUpSlot /@ {a, b, c, d} === {-1, -1, -1, 1},
+        RiemannDifferencePart1[cd, LeviCivitaChristoffelDer[cd, pert, metric]][a, b, c, d],
+        pert@SeparateMetricOne[riem[a, b, c, d], {-1, -1, -1, 1}]
+    ];
+    pert[ricci[a_, b_]] := If[Head@a === DI && Head@b === DI,
+        With[{d = GetUniqueIndexOfSlotType@None}, pert[Unevaluated@riem[a, DI@d, b, d]]],
+        pert@SeparateMetricOne[ricci[a, b], {-1, -1}]
+    ];
+    pert[ricciScalar] := With[{
+        a = GetUniqueIndexOfSlotType@None,
+        b = GetUniqueIndexOfSlotType@None
+    }, pert[ricci[DI@a, DI@b]]metric[a, b] + ricci[DI@a, DI@b] pert[metric[a, b]]];
+);
+SyntaxInformation@DefLeviCivitaCurvaturePerturbationRules = {"ArgumentsPattern" -> {_, _, _, _, _, _}};
 
 End[];
 
