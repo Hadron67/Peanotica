@@ -891,7 +891,9 @@ PopulateDummyIndexHint[expr_, frees_] := PopulateDummyIndexHintExpanded[ExpandTo
 SyntaxInformation@PopulateDummyIndexHint = {"ArgumentsPattern" -> {_, _}};
 
 IndexScope[expr_, {}, {}] := IndexScope[expr];
-IndexScope /: PreITensorReduce[IndexScope[expr_], opt___] := IndexScope@ITensorReduce[expr, FreeIndexNames -> {}, FilterRules[{opt}, DeleteCases[Options[ITensorReduce], FreeIndexNames -> _]]];
+IndexScope[expr_] := expr /; Length@FindIndicesSlots@expr === 0;
+IndexScope[expr_Plus] := IndexScope /@ expr;
+IndexScope /: PreITensorReduce[HoldPattern@IndexScope[expr_], opt___] := IndexScope@ITensorReduce[expr, FreeIndexNames -> {}, FilterRules[{opt}, DeleteCases[Options[ITensorReduce], FreeIndexNames -> _]]];
 IndexScope /: FindIndicesSlots@IndexScope[expr_] = {};
 IndexScope /: FindIndicesSlots@IndexScope[_, _, inds_List] := MapIndexed[Prepend[#2, 3] -> Null &, inds];
 SyntaxInformation@IndexScope = {"ArgumentsPattern" -> {_, _., _.}};

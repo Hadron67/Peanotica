@@ -8,6 +8,9 @@ RiemannDifferencePart1;
 RiemannDifferencePart2;
 RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the difference of the Riemann tensors of cd and cd1, where christoffel is the Christoffel tensor relation cd and cd1.";
 CovDDifference::usage = "CovDDifference[expr, chris, a] represents the difference ";
+CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
+CovDCommutatorOfRiemann::usage = "CovDCommutator[riemann]";
+SortCovD::usage = "SortCovD[expr, cd, commutator]";
 
 Cocurvature::usage = "";
 Cotorsion::usage = "";
@@ -16,7 +19,9 @@ DerConstantQ::usage = "DerConstantQ[expr] gives true if expr the derivative oper
 DerFunctionQ::usage = "DerFunctionQ[fn] gives true if fn should be treated as a scalar function by the derivative operators. Derivative[...][fn] is always treated so.";
 DerConstants;
 DerFunctions;
-DefGeneralDerivativeOperator;
+DerivativeExpandableQ;
+ExpandDerivative;
+ExpandDerivativeRules;
 
 SymmetriedDer;
 AllowPassThrough;
@@ -42,8 +47,12 @@ RiemannScalars;
 
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
 DefMetricPerturbationRules::usage = "DefMetricPerturbationRules[pert, metric, metricDet, metricPert]";
-DefLeviCivitaCovDPerturbationRules::usage = "DefLeviCivitaCovDPerturbationRules[pert, cd, metric]";
-DefLeviCivitaCurvaturePerturbationRules::usage = "DefLeviCivitaCurvaturePerturbationRules[pert, cd, metric, riem, ricci, ricciScalar]";
+DefLeviCivitaCovDPerturbationRules::usage = "DefLeviCivitaCovDPerturbationRules[pert, cd, metric, metricPert]";
+DefLeviCivitaCurvaturePerturbationRules::usage = "DefLeviCivitaCurvaturePerturbationRules[pert, cd, metric, metricPert, riem, ricci, ricciScalar]";
+ShiftedMetric;
+ShiftedInverseMetric;
+PerturbShiftedMetric::usage = "PerturbShiftedMetric[expr, n]";
+PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd, metric, n]";
 
 Begin["`Private`"];
 
@@ -72,10 +81,25 @@ CovDDifferenceTerm[expr_, chris_, a_, d_][pos_ -> type_] := With[{
     ind = Extract[expr, {pos}][[1]]
 }, If[Head@ind === DI,
     -chris[d, a, ind] * ReplacePart[expr, pos -> DI@d],
-    chris[ind, a, DI@d] * ReplacePart[expr, pos -> DI@d]
+    chris[ind, a, DI@d] * ReplacePart[expr, pos -> d]
 ]];
 CovDDifference[expr_, chris_, a_] := Total[CovDDifferenceTerm[expr, chris, a, GetUniqueIndexOfSlotType@Null] /@ FindIndicesSlots@expr];
 SyntaxInformation@CovDDifference = {"ArgumentsPattern" -> {_, _, _}};
+
+CovDCommutatorNoTorsionTerm[expr_, a_, b_, d_, riemann_][pos_ -> type_] := With[{
+    ind = Extract[expr, {pos}][[1]]
+}, If[Head@ind === DI,
+    riemann[a, b, ind, d] * ReplacePart[expr, pos -> DI@d],
+    -riemann[a, b, DI@d, ind] * ReplacePart[expr, pos -> d]
+]];
+CovDCommutatorNoTorsion[expr_, a_, b_, riemann_] := Total[CovDCommutatorNoTorsionTerm[expr, a, b, GetUniqueIndexOfSlotType@Null, riemann] /@ FindIndicesSlots@expr];
+SyntaxInformation@CovDCommutatorNoTorsion = {"ArgumentsPattern" -> {_, _, _, _}};
+
+CovDCommutatorOfRiemann[riemann_][expr_, a_, b_] := CovDCommutatorNoTorsion[expr, a, b, riemann];
+SyntaxInformation@CovDCommutatorOfRiemann = {"ArgumentsPattern" -> {_}};
+
+SortCovD[expr_, cd_, commutator_] := expr //. cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; !OrderedQ@{a, b};
+SyntaxInformation@SortCovD = {"ArgumentsPattern" -> {_, _, _}};
 
 DerConstantQ[_?NumberQ] = True;
 SyntaxInformation@DerConstantQ = {"ArgumentsPattern" -> {_}};
@@ -84,31 +108,40 @@ DerFunctionQ[Times] = True;
 DerFunctionQ[Power] = True;
 SyntaxInformation@DerFunctionQ = {"ArgumentsPattern" -> {_}};
 
-Options[DefGeneralDerivativeOperator] = {
+MapDerivativeOnFnDerivative[der_, ders_, fn_, {args__}] := With[{
+    mat = IdentityMatrix@Length@{args}
+},
+    Total@MapIndexed[(Derivative @@ (mat[[#2[[1]]]] + ders))[fn][args] der[#1] &, {args}]
+];
+
+Options[ExpandDerivativeRules] = {
     DerConstants -> {_?DerConstantQ},
     DerFunctions -> {_?DerFunctionQ}
 };
-MapDerivativeOnFunction[der_, fn_[args__]] := With[{
-    mat = IdentityMatrix@Length@{args}
+ExpandDerivativeRules[lhs_ :> rhs_, opt : OptionsPattern[]] := With[{
+    exprPatName = Cases[lhs, Verbatim[PatternTest][Verbatim[Pattern][p_, Blank[]], DerivativeExpandableQ] :> p, {0, Infinity}][[1]]
+}, With[{
+    lhsFn = Function @@ {{expr}, lhs /. Verbatim[PatternTest[Pattern[exprPatName, Blank[]], DerivativeExpandableQ]] -> expr},
+    patPlus = expr_Plus,
+    patList = expr_List,
+    patDer = Derivative[ders__][fn_][args__],
+    indexScopePat = HoldPattern@IndexScope[expr_]
+}, Join[{
+    (lhsFn[patPlus] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> (fn /@ exprPatName) /. exprPatName -> expr,
+    (lhsFn[patList] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> (fn /@ exprPatName) /. exprPatName -> expr,
+    (lhsFn[patDer] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> MapDerivativeOnFnDerivative[fn, {ders}, fn, {args}] /. exprPatName -> expr,
+    (lhsFn[indexScopePat] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> fn[ReplaceDummiesToUnique@expr],
+    (lhsFn[_?NumberQ] -> 0)
 },
-    Total@MapIndexed[(Derivative @@ mat[[#2[[1]]]])[fn][args] der[#1] &, {args}]
-];
-DefGeneralDerivativeOperator[sym_, opt : OptionsPattern[]] := (
-    sym[expr_Plus, rest___] := sym[#, rest] & /@ expr;
-    sym[expr_List, rest__] := sym[#, rest] & /@ expr;
-    sym[Derivative[ders__][fn_][args__], rest___] := With[{
-        mat = IdentityMatrix@Length@{args}
-    },
-        Total@MapIndexed[(Derivative @@ (mat[[#2[[1]]]] + {ders}))[fn][args] sym[#1, rest] &, {args}]
-    ];
-    sym[IndexScope[expr_], rest___] := sym[ReplaceDummiesToUnique@expr, rest];
-    Scan[sym[#, ___] = 0; &, OptionValue@DerConstants];
-    Scan[sym[fn : #[args__], rest___] := MapDerivativeOnFunction[sym[#, rest] &, fn]; &, OptionValue@DerFunctions];
-    sym[_?NumberQ] = 0;
-);
-SyntaxInformation@DefGeneralDerivativeOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+    lhsFn[#] -> 0 & /@ OptionValue@DerConstants,
+    With[{fnPat = (fn2 : #)[args__]},
+        lhsFn[fnPat] :> rhs /. ExpandDerivative[fn_, exprPatName] :> MapDerivativeOnFnDerivative[fn, 0, fn2, {args}] /. exprPatName -> expr
+    ] & /@ OptionValue@DerFunctions
+]]];
+SyntaxInformation@ExpandDerivativeRules = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+SyntaxInformation@ExpandDerivative = {"ArgumentsPattern" -> {_, _}};
 
-Options[DefTensorDerivativeOperator] = Join[Options[DefGeneralDerivativeOperator], {
+Options[DefTensorDerivativeOperator] = Join[Options[ExpandDerivativeRules], {
     DisplayName -> "\[PartialD]",
     SymmetriedDer -> False,
     AllowPassThrough -> True (* any usecase for setting this to False ? *)
@@ -128,7 +161,7 @@ SymmetryOfSymmetrizedDer[sym_[expr_, inds__], singleSym_] := With[{
 ];
 SetAttributes[SymmetryOfSymmetrizedDer, HoldAll];
 DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : OptionsPattern[]] := (
-    DefGeneralDerivativeOperator[sym, FilterRules[{opt}, Options@DefGeneralDerivativeOperator]];
+    SetDelayed @@@ ExpandDerivativeRules[sym[expr_?DerivativeExpandableQ, inds__] :> ExpandDerivative[sym[#, inds] &, expr], FilterRules[{opt}, Options@ExpandDerivativeRules]];
     With[{
         len = Length@slots
     }, sym[Null, a__][expr_] := sym[expr, a] /; Length@{a} === len];
@@ -166,12 +199,12 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
 );
 SyntaxInformation@DefTensorDerivativeOperator = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
-Options[DefParametreDerivativeOperator] = Join[Options@DefGeneralDerivativeOperator, {
+Options[DefParametreDerivativeOperator] = Join[Options@ExpandDerivativeRules, {
     DisplayName -> "\[PartialD]",
     AllowPassThrough -> True
 }];
 DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
-    DefGeneralDerivativeOperator[sym, FilterRules[{opt}, Options@DefGeneralDerivativeOperator]];
+    SetDelayed @@@ ExpandDerivativeRules[sym[expr_?DerivativeExpandableQ, v__] :> ExpandDerivative[sym[#, v] &, expr], FilterRules[{opt}, Options@ExpandDerivativeRules]];
     sym[Null, vs__]@expr_ := sym[expr, vs];
     sym[expr_] := expr;
     sym[r_, r_] := 1;
@@ -299,9 +332,11 @@ SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _, _, _, _}};
 
 CBTensor::unmatchedSlots = "";
 
-Options@DefPerturbationOperator = Options@DefGeneralDerivativeOperator;
+Options@DefPerturbationOperator = Options@ExpandDerivativeRules;
 DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
-    DefGeneralDerivativeOperator[symbol, FilterRules[{opt}, Options@DefGeneralDerivativeOperator]];
+    SetDelayed @@@ ExpandDerivativeRules[symbol[expr_?DerivativeExpandableQ, n_] :> symbol[ExpandDerivative[symbol[#, 1] &, expr], n - 1] /; n >= 1, FilterRules[{opt}, Options@ExpandDerivativeRules]];
+    symbol[expr_] := symbol[expr, 1];
+    symbol[expr_, 0] := expr;
     FindIndicesSlots[symbol[t_, n_][inds__]] ^:= FindIndicesSlots[t[inds]];
     SymmetryOfExpression[symbol[t_, n_][inds__]] ^:= SymmetryOfExpression@t@inds;
     symbol /: MakeBoxes[expr : symbol[t_, n_][inds__], StandardForm] := With[{
@@ -309,6 +344,7 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
         del = If[n === 1, "\[Delta]", SuperscriptBox["\[Delta]", MakeBoxes@n]]
     }, InterpretationBox[RowBox@{del, sub}, expr]];
 );
+SyntaxInformation@DefPerturbationOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
 DefMetricPerturbationRules[pert_, metric_, metricDet_, metricPert_] := (
     pert[metric[a_, b_]] := Switch[{Head@a, Head@b},
@@ -325,15 +361,17 @@ DefMetricPerturbationRules[pert_, metric_, metricDet_, metricPert_] := (
 );
 SyntaxInformation@DefMetricPerturbationRules = {"ArgumentsPattern" -> {_, _, _, _}};
 
-DefLeviCivitaCovDPerturbationRules[pert_, cd_, metric_] := (
-    pert[cd[expr_, DI@a_]] := cd[pert@expr, DI@a] + CovDDifference[expr, LeviCivitaChristoffelDer[cd, pert, metric], DI@a];
-    pert[cd[expr_, a_?NonDIQ]] := With[{d = GetUniqueIndexOfSlotType@Null}, metric[a, d] pert[cd[expr, DI@d]]];
-);
-SyntaxInformation@DefLeviCivitaCovDPerturbationRules = {"ArgumentsPattern" -> {_, _, _}};
+LeviCivitaPert[cd_, metricPert_][a_, b_, c_] := 1/2 (cd[metricPert[1, a, c], b] + cd[metricPert[1, b, a], c] - cd[metricPert[1, b, c], a]);
 
-DefLeviCivitaCurvaturePerturbationRules[pert_, cd_, metric_, riem_, ricci_, ricciScalar_] := (
+DefLeviCivitaCovDPerturbationRules[pert_, cd_, metric_, metricPert_] := (
+    pert[cd[expr_, DI@a_]] := cd[pert@expr, DI@a] + CovDDifference[expr, LeviCivitaPert[cd, metricPert], DI@a];
+    pert[cd[expr_, a_?NonDIQ]] := With[{d = GetUniqueIndexOfSlotType@Null}, pert[metric[a, d]cd[expr, DI@d]]];
+);
+SyntaxInformation@DefLeviCivitaCovDPerturbationRules = {"ArgumentsPattern" -> {_, _, _, _}};
+
+DefLeviCivitaCurvaturePerturbationRules[pert_, cd_, metric_, metricPert_, riem_, ricci_, ricciScalar_] := (
     pert[riem[a_, b_, c_, d_]] := If[SignOfUpSlot /@ {a, b, c, d} === {-1, -1, -1, 1},
-        RiemannDifferencePart1[cd, LeviCivitaChristoffelDer[cd, pert, metric]][a, b, c, d],
+        RiemannDifferencePart1[cd, LeviCivitaPert[cd, metricPert]][a, b, c, d],
         pert@SeparateMetricOne[riem[a, b, c, d], {-1, -1, -1, 1}]
     ];
     pert[ricci[a_, b_]] := If[Head@a === DI && Head@b === DI,
@@ -345,7 +383,25 @@ DefLeviCivitaCurvaturePerturbationRules[pert_, cd_, metric_, riem_, ricci_, ricc
         b = GetUniqueIndexOfSlotType@Null
     }, pert[ricci[DI@a, DI@b]]metric[a, b] + ricci[DI@a, DI@b] pert[metric[a, b]]];
 );
-SyntaxInformation@DefLeviCivitaCurvaturePerturbationRules = {"ArgumentsPattern" -> {_, _, _, _, _, _}};
+SyntaxInformation@DefLeviCivitaCurvaturePerturbationRules = {"ArgumentsPattern" -> {_, _, _, _, _, _, _}};
+
+DefSimpleTensor[ShiftedMetric, {Null, Null}, {SCycles@{1, 2}}];
+DefSimpleTensor[ShiftedInverseMetric, {Null, Null}, {SCycles@{1, 2}}];
+
+SetDelayed @@@ ExpandDerivativeRules[
+    PerturbShiftedMetric[expr_?DerivativeExpandableQ, n_] :> PerturbShiftedMetric[ExpandDerivative[PerturbShiftedMetric[#, 1] &, expr], n - 1] /; n >= 1
+];
+PerturbShiftedMetric[expr_] := PerturbShiftedMetric[expr, 1];
+PerturbShiftedMetric[expr_, 0] := expr;
+PerturbShiftedMetric[cd_[ShiftedMetric[a_, b_], c_], metricPert_, n_] := cd[metricPert[n, a, b], c];
+(* PerturbShiftedMetric[ShiftedInverseMetric[a_, b_], metricPert_, n_] := ; *)
+
+PerturbationLeviCivitaChristoffel[cd_, metric_, metricPert_, n_][a_, b_, c_] := PerturbShiftedMetric[
+    LeviCivitaChristoffel[cd, ShiftedMetric, ShiftedInverseMetric][a, b, c],
+    metricPert,
+    n
+] /. {ShiftedMetric -> metric, ShiftedInverseMetric -> metric};
+SyntaxInformation@PerturbationLeviCivitaChristoffel = {"ArgumentsPattern" -> {_, _, _}};
 
 End[];
 
