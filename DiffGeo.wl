@@ -125,17 +125,18 @@ ExpandDerivativeRules[lhs_ :> rhs_, opt : OptionsPattern[]] := With[{
     patPlus = expr_Plus,
     patList = expr_List,
     patDer = Derivative[ders__][fn_][args__],
-    indexScopePat = HoldPattern@IndexScope[expr_]
+    indexScopePat = HoldPattern@IndexScope[expr_],
+    zeroDerValue = rhs /. ExpandDerivative[_, exprPatName] -> 0
 }, Join[{
-    (lhsFn[patPlus] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> (fn /@ exprPatName) /. exprPatName -> expr,
-    (lhsFn[patList] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> (fn /@ exprPatName) /. exprPatName -> expr,
-    (lhsFn[patDer] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> MapDerivativeOnFnDerivative[fn, {ders}, fn, {args}] /. exprPatName -> expr,
-    (lhsFn[indexScopePat] :> rhs) /. ExpandDerivative[fn_, exprPatName] :> fn[ReplaceDummiesToUnique@expr],
-    (lhsFn[_?NumberQ] -> 0)
+    (lhsFn[patPlus] :> rhs) /. ExpandDerivative[fn2_, exprPatName] :> (fn2 /@ exprPatName) /. exprPatName -> expr,
+    (lhsFn[patList] :> rhs) /. ExpandDerivative[fn2_, exprPatName] :> (fn2 /@ exprPatName) /. exprPatName -> expr,
+    (lhsFn[patDer] :> rhs) /. ExpandDerivative[fn2_, exprPatName] :> MapDerivativeOnFnDerivative[fn2, {ders}, fn, {args}] /. exprPatName -> expr,
+    (lhsFn[indexScopePat] :> rhs) /. ExpandDerivative[fn2_, exprPatName] :> fn2[ReplaceDummiesToUnique@expr],
+    (lhsFn[_?NumberQ] -> zeroDerValue)
 },
-    lhsFn[#] -> 0 & /@ OptionValue@DerConstants,
-    With[{fnPat = (fn2 : #)[args__]},
-        lhsFn[fnPat] :> rhs /. ExpandDerivative[fn_, exprPatName] :> MapDerivativeOnFnDerivative[fn, 0, fn2, {args}] /. exprPatName -> expr
+    lhsFn[#] -> zeroDerValue & /@ OptionValue@DerConstants,
+    With[{fnPat = (fn : #)[args__]},
+        lhsFn[fnPat] :> rhs /. ExpandDerivative[fn2_, exprPatName] :> MapDerivativeOnFnDerivative[fn2, 0, fn, {args}] /. exprPatName -> expr
     ] & /@ OptionValue@DerFunctions
 ]]];
 SyntaxInformation@ExpandDerivativeRules = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
