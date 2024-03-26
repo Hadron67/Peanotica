@@ -87,6 +87,10 @@ NoIndicesQ;
 NonTensorTermQ;
 GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
 UnionClosures::usage = "UnionClosures[{list1, list2, ...}]";
+ContractList::usage = "ContractList[list, a, b, slot]";
+IndexedExprFunction::usage = "IndexedExprFunction[expr, frees, dummies, dummyTypes]";
+ToIndexedExprFunction::usage = "ToIndexedExprFunction[expr, frees]";
+RaiseFrees::usage = "RaiseFrees[expr, frees]";
 
 (* canonicalization *)
 ISortedProduct;
@@ -299,6 +303,43 @@ SyntaxInformation@NonTensorTermQ = {"ArgumentsPattern" -> {_}};
 TakeOneUnionClosure[lists_, elems_] := MapIndexed[If[Length@Intersection[elems, #1] > 0, #2[[1]], Nothing] &, lists];
 TakeAllUnionClosureStep[lists_];
 UnionClosures[lists_];
+
+ContractList[list_, a_, b_, slot_] := With[{
+    inds = Join[{a}, Array[GetUniqueIndexOfSlotType@slot &, Length@list - 1], {b}]
+}, MapThread[Construct, {list, Delete[inds, -1], Delete[inds, 1]}]];
+SyntaxInformation@ContractList = {"ArgumentsPattern" -> {_, _, _, _}};
+
+ToIndexedExprFunction[expr_, frees_] := With[{
+    inds = FindAllIndicesNames@expr
+}, With[{
+    freeLen = Length@frees,
+    dummies = Complement[Keys@inds, frees]
+}, IndexedExprFunction[
+    ReplacePart[expr, ReplaceIndicesRules[Map[Delete[2]] /@ inds, Join[
+        MapIndexed[#1 -> IndexSlot @@ #2 &, frees],
+        MapIndexed[#1 -> IndexSlot[#2[[1]] + freeLen] &, dummies]
+    ]]],
+    freeLen,
+    Lookup[inds, #][[1, 2]] & /@ dummies
+]]];
+SyntaxInformation@ToIndexedExprFunction = {"ArgumentsPattern" -> {_, _}};
+
+IndexedExprFunction::args = "Expected `1` arguments, found `2`.";
+IndexedExprFunction[expr_, frees_, dummyTypes_][inds__] := With[{
+    check = If[Length@{inds} === frees, True, Message[IndexedExprFunction::args, frees, Length@{inds}]]
+}, With[{
+    indNames = Join[{inds}, GetUniqueIndexOfSlotType /@ dummyTypes]
+}, expr /. IndexSlot[n_] :> indNames[[n]]] /; check];
+SyntaxInformation@IndexedExprFunction = {"ArgumentsPattern" -> {_, _, _}};
+
+RaiseOneFreeNameRule[name_, indsPos_] := With[{
+    pos = Lookup[indsPos, name, Null]
+}, If[pos =!= Null,
+    Thread[pos[[All, 3]] -> name],
+    {}
+]];
+RaiseFrees[expr_, frees_] := ReplacePart[expr, Join @@ With[{indsPos = FindAllIndicesNames@expr}, RaiseOneFreeNameRule[#, indsPos] & /@ frees]];
+SyntaxInformation@RaiseFrees = {"ArgumentsPattern" -> {_, _}};
 
 CanonicalizationUnitQ[_Plus] = False;
 CanonicalizationUnitQ[_List] = False;
