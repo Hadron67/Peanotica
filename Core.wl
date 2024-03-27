@@ -91,6 +91,7 @@ ContractList::usage = "ContractList[list, a, b, slot]";
 IndexedExprFunction::usage = "IndexedExprFunction[expr, frees, dummies, dummyTypes]";
 ToIndexedExprFunction::usage = "ToIndexedExprFunction[expr, frees]";
 RaiseFrees::usage = "RaiseFrees[expr, frees]";
+WithTempIndex1::usage = "WithTempIndex1[expr]";
 
 (* canonicalization *)
 ISortedProduct;
@@ -128,6 +129,8 @@ ITensorFixedContract::usage = "ITensorFixedContract[t1, t2, n1, n2]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
 ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
 ExtractNITensor::usage = "";
+ToNITensorIndex::usage = "ToNITensorIndex[ind, slot]";
+FromNITensorIndex::usage = "FromNITensorIndex[ind]";
 
 Begin["`Private`"];
 
@@ -139,7 +142,7 @@ $IndexPairPattern = Sort@{IndexNameSlot, DI@IndexNameSlot};
 
 IndexNameSlot /: MakeBoxes[IndexNameSlot, StandardForm] = InterpretationBox["\[FilledCircle]", IndexNameSlot];
 
-TempIndex /: MakeBoxes[expr : TempIndex[n__], StandardForm] := InterpretationBox[SubscriptBox["\[DifferentialD]", #], expr] &@If[Length@Hold@n == 1, MakeBoxes@n, RowBox@Riffle[MakeBoxes /@ {n}, ","]];
+TempIndex /: MakeBoxes[expr : TempIndex[n__], StandardForm] := InterpretationBox[SubscriptBox["\[DifferentialD]", #], expr] &@If[Length@Hold@n === 1, MakeBoxes@n, RowBox@Riffle[MakeBoxes /@ {n}, ","]];
 SyntaxInformation@TempIndex = {"ArgumentsPattern" -> {_}};
 
 DefaultIndex /: MakeBoxes[expr : DefaultIndex[n_], StandardForm] := InterpretationBox[SubscriptBox["\[ImaginaryI]", #], expr] &@MakeBoxes[n, StandardForm];
@@ -341,6 +344,10 @@ RaiseOneFreeNameRule[name_, indsPos_] := With[{
 RaiseFrees[expr_, frees_] := ReplacePart[expr, Join @@ With[{indsPos = FindAllIndicesNames@expr}, RaiseOneFreeNameRule[#, indsPos] & /@ frees]];
 SyntaxInformation@RaiseFrees = {"ArgumentsPattern" -> {_, _}};
 
+WithTempIndex1[body_] := Block[{$TempIndexNumber = 1}, body];
+SetAttributes[WithTempIndex1, HoldAll];
+SyntaxInformation@WithTempIndex1 = {"ArgumentsPattern" -> {_}};
+
 CanonicalizationUnitQ[_Plus] = False;
 CanonicalizationUnitQ[_List] = False;
 CanonicalizationUnitQ[_] = True;
@@ -403,6 +410,7 @@ DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
     ) & @@ ConstantArray[_, Length@slots];
     DefTensorFormatings[sym, opt];
     sym /: NITensorReduce[sym[inds__], frees_] := NITensorReduce[NITensor[sym, IndexName /@ {inds}], frees];
+    SyntaxInformation@sym = {"ArgumentsPattern" -> ConstantArray[_, Length@slots]};
 ];
 SyntaxInformation@DefSimpleTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
 
@@ -1247,6 +1255,7 @@ OneIndexOfNITensor[ind_] := ind;
 OneIndexPosOfNITensor[ind_, pos_] := pos -> Null;
 OneIndexPosOfNITensor[ind_ -> type_, pos_] := Append[pos, 1] -> type;
 NITensor /: FindIndicesSlots[NITensor[_, inds_]] := MapIndexed[OneIndexPosOfNITensor[#1, Prepend[#2, 2]] &, inds];
+NITensor /: ExpressionPassThroughQ[_NITensor, _, {2, __}] = True;
 NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds] /; Head@x =!= NITensor;
 NITensor /: Power[NITensor[t_, inds_], x_] := NITensor[t ^ x, inds];
 SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
@@ -1418,6 +1427,16 @@ ExtractNITensor[NITensor[expr_, inds1_], inds2_] := With[{ret = Catch@With[{
 ]}, ret /; ret =!= Err];
 ExtractNITensor[inds_][expr_] := ExtractNITensor[expr, inds];
 SyntaxInformation@ExtractNITensor = {"ArgumentsPattern" -> {_, _.}};
+
+ToNITensorIndex[a_List, slots_List] := MapThread[ToNITensorIndex, {a, slots}];
+ToNITensorIndex[DI@a_, slot_] := a -> DI@slot;
+ToNITensorIndex[a_?NonDIQ, slot_] := a -> slot;
+SyntaxInformation@ToNITensorIndex = {"ArgumentsPattern" -> {_, _}};
+
+FromNITensorIndex[a_List] := FromNITensorIndex /@ a;
+FromNITensorIndex[ind_ -> _DI] := DI@ind;
+FromNITensorIndex[ind_ -> _?NonDIQ] := ind;
+SyntaxInformation@FromNITensorIndex = {"ArgumentsPattern" -> {_}};
 
 End[];
 

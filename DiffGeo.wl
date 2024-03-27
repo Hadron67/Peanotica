@@ -31,14 +31,19 @@ DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType].
 
 CBTensor::usage = "CBTensor[expr, slots]";
 ICovD::usage = "ICovD[expr, a, value]";
+NIChristoffel::usage = "NIChristoffel[value, slot1, slot2]";
 NITensorCovD::usage = "NITensorCovD[expr, value, inds, ind]";
-NITensorRaiseLowerIndices::usage = "NITensorChangeSlot[tensor, slots]";
+EnsureUpDownIndices::usage = "EnsureUpDownIndices[tensor, slots, newSlotSigns, slotToMetric]";
+AdaptNITensor::usage = "AdaptNITensor[value, slots, inds, metricProvider]";
+AdaptNITensorCovD::usage = "AdaptCovD";
 
 LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric, metricInv]";
 RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
 SymmetricRiemann::usage = "SymmetricRiemann[metric, a, b, c, d]";
 
-DefRiemannToRicciRules::usage = "DefRiemannToRicciRules[riemann, ricci]";
+RiemannToRicciRules::usage = "RiemannToRicciRules[riemann, ricci]";
+RicciToRicciScalarRules::usage = "RicciToRicciScalarRules[ricci, ricciScalar]";
+RiemannRicciRules::usage = "RiemannRicciRules[riemann, ricci, ricciScalar]";
 RiemannOf;
 RicciOf;
 RicciScalarOf;
@@ -47,9 +52,6 @@ DefCurvatureTensors;
 RiemannScalars;
 
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
-DefMetricPerturbationRules::usage = "DefMetricPerturbationRules[pert, metric, metricDet, metricPert]";
-DefLeviCivitaCovDPerturbationRules::usage = "DefLeviCivitaCovDPerturbationRules[pert, cd, metric, metricPert]";
-DefLeviCivitaCurvaturePerturbationRules::usage = "DefLeviCivitaCurvaturePerturbationRules[pert, cd, metric, metricPert, riem, ricci, ricciScalar]";
 VarInverseMatrix::usage = "VarInverseMatrix[invMat[a, b], varmat, order]";
 PredefinedSlotType;
 PredefinedCovD;
@@ -59,6 +61,8 @@ ShiftedInverseMetric;
 PerturbShiftedMetric::usage = "PerturbShiftedMetric[expr, n]";
 PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd, metric, n]";
 PerturbationLeviCivitaRiemann::usage = "";
+ExpandMetricPerturbation::usage = "ExpandMetricPerturbation[expr, {pert, metric, metricPert}]";
+ExpandRiemannPerturbation::usage = "ExpandRiemannPerturbation[expr, {pert, metric, metricPert}, {cd, riemann, ricci, ricciScalar}]";
 
 Begin["`Private`"];
 
@@ -83,14 +87,10 @@ SyntaxInformation@RiemannDifferencePart2 = {"ArgumentsPattern" -> {_}};
 RiemannDifference[cd_, chris_][a_, b_, c_, d_] := RiemannDifferencePart1[cd, chris][a, b, c, d] + RiemannDifferencePart2[chris][a, b, c, d];
 SyntaxInformation@RiemannDifference = {"ArgumentsPattern" -> {_, _}};
 
-CovDDifferenceTerm[expr_, chris_, a_, d_][pos_ -> type_] := With[{
-    ind = Extract[expr, {pos}][[1]]
-}, If[Head@ind === DI,
-    -chris[d, a, ind] * ReplacePart[expr, pos -> DI@d],
-    chris[ind, a, DI@d] * ReplacePart[expr, pos -> d]
-]];
-CovDDifference[expr_, chris_, a_] := Total[CovDDifferenceTerm[expr, chris, a, GetUniqueIndexOfSlotType@Null] /@ FindIndicesSlots@expr];
-SyntaxInformation@CovDDifference = {"ArgumentsPattern" -> {_, _, _}};
+CovDDifferenceTerm[tensor_, inds_, chrisProvider_, a_ -> DI@slot0_, d_][ind_ -> DI@slot_, pos_] := -LookupListOrApply[chrisProvider, {slot0, slot}][d, DI@a, DI@ind] * tensor @@ FromNITensorIndex@ReplacePart[inds, pos -> (d -> DI@slot)];
+CovDDifferenceTerm[tensor_, inds_, chrisProvider_, a_ -> DI@slot0_, d_][ind_ -> slot_?NonDIQ, pos_] := LookupListOrApply[chrisProvider, {slot0, slot}][ind, DI@a, DI@d] * tensor @@ FromNITensorIndex@ReplacePart[inds, pos -> (d -> slot)];
+CovDDifference[tensor_, inds_, chrisProvider_, a_] := Total[MapIndexed[CovDDifferenceTerm[tensor, inds, chrisProvider, a, GetUniqueIndexOfSlotType@Null], inds]];
+SyntaxInformation@CovDDifference = {"ArgumentsPattern" -> {_, _, _, _}};
 
 CovDCommutatorNoTorsionTerm[expr_, a_, b_, d_, riemann_][pos_ -> type_] := With[{
     ind = Extract[expr, {pos}][[1]]
@@ -261,18 +261,29 @@ DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     sym /: NITensorReduce[sym[expr_, vs__], frees_] := sym[NITensorReduce[expr, frees], vs];
 );
 
-DefRiemannToRicciRules[riem_, ricci_] := (
-    HoldPattern@riem[a_, c_, b_, DI@c_] := ricci[a, b];
-    HoldPattern@riem[a_, DI@c_, b_, c_] := ricci[a, b];
-    HoldPattern@riem[a_, c_, DI@c_, b_] := -ricci[a, b];
-    HoldPattern@riem[a_, DI@c_, c_, b_] := -ricci[a, b];
-    HoldPattern@riem[c_, a_, b_, DI@c_] := -ricci[a, b];
-    HoldPattern@riem[DI@c_, a_, b_, c_] := -ricci[a, b];
-    HoldPattern@riem[c_, a_, DI@c_, b_] := ricci[a, b];
-    HoldPattern@riem[DI@c_, a_, c_, b_] := ricci[a, b];
-);
-DefRiemannToRicciRules[riem_] := DefRiemannToRicciRules[riem, RicciOf@riem];
-SyntaxInformation@DefRiemannToRicciRules = {"ArgumentsPattern" -> {_, _.}};
+RiemannToRicciRules[riem_, ricci_] := {
+    riem[a_, c_, b_, DI@c_] :> ricci[a, b],
+    riem[a_, DI@c_, b_, c_] :> ricci[a, b],
+    riem[a_, c_, DI@c_, b_] :> -ricci[a, b],
+    riem[a_, DI@c_, c_, b_] :> -ricci[a, b],
+    riem[c_, a_, b_, DI@c_] :> -ricci[a, b],
+    riem[DI@c_, a_, b_, c_] :> -ricci[a, b],
+    riem[c_, a_, DI@c_, b_] :> ricci[a, b],
+    riem[DI@c_, a_, c_, b_] :> ricci[a, b]
+};
+SyntaxInformation@RiemannToRicciRules = {"ArgumentsPattern" -> {_, _}};
+
+RicciToRicciScalarRules[ricci_, ricciScalar_] := {
+    ricci[DI@a_, a_] :> ricciScalar,
+    ricci[a_, DI@a_] :> ricciScalar
+};
+SyntaxInformation@RicciToRicciScalarRules = {"ArgumentsPattern" -> {_, _}};
+
+RiemannRicciRules[riemann_, ricci_, ricciScalar_] := Join[
+    RiemannToRicciRules[riemann, ricci],
+    RicciToRicciScalarRules[ricci, ricciScalar]
+];
+SyntaxInformation@RiemannRicciRules = {"ArgumentsPattern" -> {_, _, _}};
 
 RiemannScalars::undef = "Riemann scalars of order `1` is not yet defined.";
 RiemannScalars[riem_, slot_, n_] := RiemannScalars[riem, slot, n, RicciOf@riem];
@@ -323,32 +334,60 @@ RiemannScalars[riem_, slot_, n_Integer, ricci_, ricciScalar_] := Null /; (Messag
 SyntaxInformation@RiemannScalars = {"ArgumentsPattern" -> {_, _, _, _., _.}};
 
 ICovD[NITensor[t_, inds_], a_ -> type_, value_] := NITensor[NITensorCovD[t, value, inds[[All, 2]], type], Append[inds, a -> type]];
-ICovD /: FindIndicesSlots@ICovD[expr_, a_, _] := Join[FindIndicesSlots[expr, {1}], {{2} -> Null}];
-ICovD /: FindIndicesSlots@ICovD[expr_, a_ -> type_, _] := Join[FindIndicesSlots[expr, {1}], {{2} -> type}];
-ICovD /: SymmetryOfExpression@ICovD[expr_, _, _] := SymmetryOfExpression@expr;
 SyntaxInformation@ICovD = {_, _, _};
 
+NIChristoffel[chris_, slot1_, slot2_][a_, DI@b_, DI@c_] := NITensor[chris, {a -> slot2, b -> DI@slot1, c -> DI@slot2}];
+SyntaxInformation@NIChristoffel = {"ArgumentsPattern" -> {_, _, _}};
+
+ConvertChrisProviderOne[{slot1_, slot2_}, chris_] := {slot1, slot2} -> NIChristoffel[chris, slot1, slot2];
+ConvertChrisProvider[provider_List] := ConvertChrisProviderOne @@@ provider;
+ConvertChrisProvider[provider_?AssociationQ] := KeyValueMap[ConvertChrisProviderOne, provider];
+
 NITensorCovD[expr_, {ders_, 0}, slots_, DI@newSlot_] := ITensorOuter[ReverseApplied@Construct, expr, ders, {}];
+NITensorCovD[expr_, {ders_, chrisProvider_}, slots_, DI@newSlot_] := NITensorCovD[expr, {ders, 0}, slots, DI@newSlot] + With[{
+    inds = Array[DefaultIndex, Length@slots + 1]
+},
+    Block[{$TempIndexNumber = 1},
+        CovDDifference[NITensor[expr, Thread[(IndexName /@ {##}) -> slots]] &, Thread[Delete[inds, -1] -> slots], ConvertChrisProvider@chrisProvider, inds[[-1]] -> DI@newSlot]
+    ] // NITensorReduce[#, inds] & // ExtractNITensor[inds]
+];
 SyntaxInformation@NITensorCovD = {"ArgumentsPattern" -> {_, _, _, _}};
 
-NITensorRaiseLowerIndices[expr_, slots_, metric_, metricInv_] := NITensorRaiseLowerIndices[expr, If[# === -1, {-1, metric, ContractionSlotOfMetric@metric[DI@a, DI@b]}, {1, metricInv, ContractionSlotOfMetric@metricInv[a, b]}] & /@ slots];
-ChangeOneSign[name_ -> slot_, -1] := name -> DI@slot;
-ChangeOneSign[name_ -> DI@slot_, 1] := name -> slot;
-ChangeOneSign[e_, _] := e;
-NITensorRaiseLowerIndices[NITensor[t_, slots_], slots2_] := NITensor[Fold[RaiseLowerOneSlot, t, Thread@{Range@Length@slots, slots, slots2}], MapThread[ChangeOneSign, {slots, slots2[[All, 1]]}]];
-SyntaxInformation@NITensorRaiseLowerIndices = {"ArgumentsPattern" -> {_, _, _., _.}};
-RaiseLowerOneSlot[t_, {n_, indName_ -> slot_, {sign_, metric_, cslot_}}] := If[SignOfUpSlot@slot =!= sign, ITensorFixedContract[Times, metric, t, cslot, n], t];
+LookupListOrApply[list_List, elem_] := If[Length@list === 1 && Head@list[[1]] =!= Rule, list[[1]], elem /. list];
+LookupListOrApply[list_, elem_] := list@elem;
+EnsureUpDownIndices[tensor_, slots_, newSlotSigns_, slotToMetric_] := Fold[RaiseLowerOneSlot[slotToMetric], tensor, Thread@{Range@Length@slots, slots, newSlotSigns}];
+RaiseLowerOneSlot[slotToMetric_][t_, {n_, DI@slot_, 1}] := ITensorFixedContract[
+    Times, LookupListOrApply[slotToMetric, slot][[2]], t, ContractionSlotOfMetric@MetricOfSlotType[slot][a, b], n
+];
+RaiseLowerOneSlot[slotToMetric_][t_, {n_, slot_?NonDIQ, -1}] := ITensorFixedContract[
+    Times, LookupListOrApply[slotToMetric, slot][[1]], t, ContractionSlotOfMetric@MetricOfSlotType[slot][DI@a, DI@b], n
+];
+RaiseLowerOneSlot[_][t_, _] := t;
+SyntaxInformation@EnsureUpDownIndices = {"ArgumentsPattern" -> {_, _, _, _}};
+
+AdaptNITensor[value_, slots_, inds_, metricProvider_] := NITensor[EnsureUpDownIndices[value, slots, SignOfUpSlot /@ inds, metricProvider], ToNITensorIndex[inds, slots]];
+SyntaxInformation@AdaptNITensor = {"ArgumentsPattern" -> {_, _, _, _}};
+
+AdaptNITensorCovD[NITensor[tensor_, inds_], covdInd_, slot_, covdValue_, metricProvider_] := NITensor[
+    EnsureUpDownIndices[
+        NITensorCovD[tensor, covdValue, inds[[All, 2]], DI@slot],
+        Append[ConstantArray[0, Length@inds], SignOfUpSlot@covdInd],
+        metricProvider
+    ],
+    Append[inds, ToNITensorIndex[covdInd, slot]]
+];
+SyntaxInformation@AdaptNITensorCovD = {"ArgumentsPattern" -> {_, _, _, _, _}};
 
 LeviCivitaChristoffelValue[slot_, cd_, metric_, metricInv_] := LeviCivitaChristoffel[
-    ICovD[#1, IndexName@#2 -> DI@slot, cd] &,
-    NITensor[metric, {IndexName@#1 -> DI@slot, IndexName@#2 -> DI@slot}] &,
-    NITensor[metricInv, {IndexName@#1 -> slot, IndexName@#2 -> slot}] &
+    ICovD[#1, ToNITensorIndex[#2, slot], cd] &,
+    NITensor[metric, ToNITensorIndex[{##}, {slot, slot}]] &,
+    NITensor[metricInv, ToNITensorIndex[{##}, {slot, slot}]] &
 ][a, DI@b, DI@c] // NITensorReduce[#, {a, b, c}] & // ExtractNITensor@{a, b, c};
 SyntaxInformation@LeviCivitaChristoffelValue = {"ArgumentsPattern" -> {_, _, _, _}};
 
 RiemannDifferenceValue[slot_, cd_, chris_] := RiemannDifference[
-    ICovD[#1, IndexName@#2 -> DI@slot, cd] &,
-    NITensor[chris, {IndexName@#1 -> slot, IndexName@#2 -> DI@slot, IndexName@#3 -> DI@slot}] &
+    ICovD[#1, ToNITensorIndex[#2, slot], cd] &,
+    NITensor[chris, ToNITensorIndex[{##}, {slot, slot, slot}]] &
 ][DI@a, DI@b, DI@c, d] // NITensorReduce[#, {a, b, c, d}] & // ExtractNITensor@{a, b, c, d};
 SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};
 
@@ -371,45 +410,6 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
     }, InterpretationBox[RowBox@{del, "(", sub, ")"}, expr]];
 );
 SyntaxInformation@DefPerturbationOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
-
-DefMetricPerturbationRules[pert_, metric_, metricDet_, metricPert_] := (
-    pert[metric[a_, b_]] := Switch[{Head@a, Head@b},
-        {DI, DI}, metricPert[1, a, b],
-        {DI, _}, 0,
-        {_, DI}, 0,
-        _, -metricPert[1, a, b]
-    ];
-    pert[metricPert[n_, a_, b_]] := If[Head@a === DI && Head@b === DI,
-        metricPert[n + 1, a, b],
-        pert@SeparateMetricOne[metricPert[n, a, b], {-1, -1}]
-    ];
-    pert[metricDet] := metricDet * IndexScope@metricPert[1, DefaultIndex[1], DI@DefaultIndex[1]];
-);
-SyntaxInformation@DefMetricPerturbationRules = {"ArgumentsPattern" -> {_, _, _, _}};
-
-LeviCivitaPert[cd_, metricPert_][a_, b_, c_] := 1/2 (cd[metricPert[1, a, c], b] + cd[metricPert[1, b, a], c] - cd[metricPert[1, b, c], a]);
-
-DefLeviCivitaCovDPerturbationRules[pert_, cd_, metric_, metricPert_] := (
-    pert[cd[expr_, DI@a_]] := cd[pert@expr, DI@a] + CovDDifference[expr, LeviCivitaPert[cd, metricPert], DI@a];
-    pert[cd[expr_, a_?NonDIQ]] := With[{d = GetUniqueIndexOfSlotType@Null}, pert[metric[a, d]cd[expr, DI@d]]];
-);
-SyntaxInformation@DefLeviCivitaCovDPerturbationRules = {"ArgumentsPattern" -> {_, _, _, _}};
-
-DefLeviCivitaCurvaturePerturbationRules[pert_, cd_, metric_, metricPert_, riem_, ricci_, ricciScalar_] := (
-    pert[riem[a_, b_, c_, d_]] := If[SignOfUpSlot /@ {a, b, c, d} === {-1, -1, -1, 1},
-        RiemannDifferencePart1[cd, LeviCivitaPert[cd, metricPert]][a, b, c, d],
-        pert@SeparateMetricOne[riem[a, b, c, d], {-1, -1, -1, 1}]
-    ];
-    pert[ricci[a_, b_]] := If[Head@a === DI && Head@b === DI,
-        With[{d = GetUniqueIndexOfSlotType@Null}, pert[Unevaluated@riem[a, DI@d, b, d]]],
-        pert@SeparateMetricOne[ricci[a, b], {-1, -1}]
-    ];
-    pert[ricciScalar] := With[{
-        a = GetUniqueIndexOfSlotType@Null,
-        b = GetUniqueIndexOfSlotType@Null
-    }, pert[ricci[DI@a, DI@b]]metric[a, b] + ricci[DI@a, DI@b] pert[metric[a, b]]];
-);
-SyntaxInformation@DefLeviCivitaCurvaturePerturbationRules = {"ArgumentsPattern" -> {_, _, _, _, _, _, _}};
 
 SortedPartitions[n_] := Union[Join @@ (With[{list = #}, Append[list + # & /@ IdentityMatrix@Length@list, Append[list, 1]]] & /@ SortedPartitions[n - 1])];
 SortedPartitions[1] = {{1}};
@@ -446,15 +446,8 @@ ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[a_, b_], StandardForm] := Tensor
 ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[n_, a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[If[n === 1, "\[Delta]G", RowBox@{SuperscriptBox["\[Delta]", MakeBoxes@n], "G"}], SeparateIndexName /@ {a, b}]];
 DefSimpleTensor[ShiftedInverseMetric, {PredefinedSlotType, PredefinedSlotType}, {SCycles@{1, 2}}, DisplayName -> "\!\(\*SuperscriptBox[\(G\), \(-1\)]\)"];
 
-SetDelayed @@@ ExpandDerivativeRules[
-    PerturbShiftedMetric[expr_?DerivativeExpandableQ, n_] :> PerturbShiftedMetric[ExpandDerivative[PerturbShiftedMetric[#, 1] &, expr], n - 1] /; n >= 1
-];
-PerturbShiftedMetric[expr_] := PerturbShiftedMetric[expr, 1];
-PerturbShiftedMetric[expr_, 0] := expr;
-PerturbShiftedMetric[ShiftedInverseMetric[a_, b_], n_] := VarInverseMatrix[ShiftedInverseMetric[a, b], ShiftedMetric, n];
+DefPerturbationOperator[PerturbShiftedMetric];
 PerturbShiftedMetric[PredefinedCovD[expr_, a_], n_] := PredefinedCovD[PerturbShiftedMetric[expr, n], a];
-PerturbShiftedMetric[ShiftedMetric[a_, b_], n_] := ShiftedMetric[n, a, b];
-PerturbShiftedMetric[ShiftedMetric[n1_, a_, b_], n_] := ShiftedMetric[n1 + n, a, b];
 SyntaxInformation@PerturbShiftedMetric = {"ArgumentsPattern" -> {_, _.}};
 
 PerturbationLeviCivitaChristoffel[cd_, metric_, metricPert_, n_][a_, b_, c_] := PerturbShiftedMetric[
@@ -479,6 +472,9 @@ PerturbationLeviCivitaRiemann[n_] := WithUnprotected[
                 RiemannDifference[PredefinedCovD, LeviCivitaChristoffel[PredefinedCovD, ShiftedMetric, ShiftedInverseMetric]][DI@a, DI@b, DI@c, d],
                 n
             ] /. {
+                PerturbShiftedMetric[ShiftedInverseMetric[a_, b_], n2_] :> VarInverseMatrix[ShiftedInverseMetric[a, b], ShiftedMetric, n2],
+                PerturbShiftedMetric[ShiftedMetric[a_, b_], n2_] :> ShiftedMetric[n2, a, b]
+            } /. {
                 ShiftedMetric[a_, b_] :> PredefinedMetric[a, b],
                 ShiftedInverseMetric -> PredefinedMetric
             } // ContractMetric // ITensorReduce // RaiseFrees[#, {a, b, c, d}] &,
@@ -492,6 +488,28 @@ PerturbationLeviCivitaRiemann[cd_, metric_, metricPert_, n_] := PerturbationLevi
     PredefinedMetric -> metric
 };
 SyntaxInformation@PerturbationLeviCivitaRiemann = {"ArgumentsPattern" -> {_, _., _., _.}};
+
+ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
+    HoldPattern@pert[metric[DI@a_, DI@b_], n_] :> metricPert[n, DI@a, DI@b],
+    HoldPattern@pert[metric[a_?NonDIQ, b_?NonDIQ], n_] :> VarInverseMatrix[{a, b}, metricPert, n]
+};
+ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];
+SyntaxInformation@ExpandMetricPerturbation = {"ArgumentsPattern" -> {_, _.}};
+
+ExpandRiemannPerturbation[expr_, {pert_, metric_, metricPert_}, {cd_, riemann_, ricci_, ricciScalar_}] := expr /. {
+    HoldPattern@pert[ricciScalar, n_] :> With[{
+        a = GetUniqueIndexOfSlotType@Null, b = GetUniqueIndexOfSlotType@Null
+    }, pert[metric[a, b] * ricci[DI@a, DI@b], n]],
+    HoldPattern@pert[e_riemann, n_] :> pert[SeparateMetricOne[e, {-1, -1, -1, 1}], n],
+    HoldPattern@pert[e_ricci, n_] :> pert[SeparateMetricOne[e, {-1, -1}], n]
+} /. {
+    HoldPattern@pert[riemann[inds__], n_] :> PerturbationLeviCivitaRiemann[cd, metric, metricPert, n][inds],
+    HoldPattern@pert[ricci[DI@a_, DI@b_], n_] :> With[{
+        c = GetUniqueIndexOfSlotType@Null
+    }, PerturbationLeviCivitaRiemann[cd, metric, metricPert, n][DI@a, DI@c, DI@b, c]]
+};
+ExpandRiemannPerturbation[a1_, a2_][expr_] := ExpandRiemannPerturbation[expr, a1, a2];
+SyntaxInformation@ExpandRiemannPerturbation = {"ArgumentsPattern" -> {_, _, _.}};
 
 End[];
 
