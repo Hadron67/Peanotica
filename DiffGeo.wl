@@ -30,10 +30,13 @@ DefParametreDerivativeOperator::usage = "";
 DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType].";
 
 CBTensor::usage = "CBTensor[expr, slots]";
-ICovD::usage = "ICovD[expr, a, value]";
+NICovD::usage = "NICovD[expr, a, value]";
 NIChristoffel::usage = "NIChristoffel[value, slot1, slot2]";
-NITensorCovD::usage = "NITensorCovD[expr, value, inds, ind]";
+ITensorCovD::usage = "ITensorCovD[expr, value, inds, ind]";
 EnsureUpDownIndices::usage = "EnsureUpDownIndices[tensor, slots, newSlotSigns, slotToMetric]";
+AdaptIndices::usage = "AdaptIndices[tensor, slots, indPats, adapter]";
+AdaptOneIndex::usage = "AdaptOneIndex[adapter, tensor, i, slot, indPat]";
+MetricAdapter::usage = "MetricAdapter[{slot1 -> {metric, invMetric}, ...}]";
 AdaptNITensor::usage = "AdaptNITensor[value, slots, inds, metricProvider]";
 AdaptNITensorCovD::usage = "AdaptCovD";
 
@@ -286,55 +289,52 @@ RiemannRicciRules[riemann_, ricci_, ricciScalar_] := Join[
 SyntaxInformation@RiemannRicciRules = {"ArgumentsPattern" -> {_, _, _}};
 
 RiemannScalars::undef = "Riemann scalars of order `1` is not yet defined.";
-RiemannScalars[riem_, slot_, n_] := RiemannScalars[riem, slot, n, RicciOf@riem];
-RiemannScalars[riem_, slot_, n_, ricci_] := RiemannScalars[riem, slot, n, ricci, RicciScalarOf@ricci];
-RiemannScalars[riem_, slot_, 1, ricci_, ricciScalar_] := {ricciScalar};
-RiemannScalars[riem_, slot_, 2, ricci_, ricciScalar_] := Function[{a, b, c, d},
-    {ricciScalar^2, ricci[a, b] ricci[DI@a, DI@b], riem[a, b, c, d] riem[DI@a, DI@b, DI@c, DI@d]}
+RiemannScalars[riem_, slot_, 2] := Function[{a, b, c, d},
+    {IndexScope[riem[DI@a, DI@b, a, b]]^2, ricci[a, DI@c, b, c] ricci[DI@a, DI@d, DI@b, d], riem[a, b, c, d] riem[DI@a, DI@b, DI@c, DI@d]}
 ] @@ GetIndicesOfSlotType[ConstantArray[slot, 4], {}];
-RiemannScalars[riem_, slot_, 3, ricci_, ricciScalar_] := Function[{a, b, c, d, e, f}, {
-    ricciScalar^3,
-    ricciScalar * ricci[a, b] * ricci[DI@a, DI@b],
-    ricci[a, DI@b] * ricci[b, DI@c] * ricci[c, DI@a],
-    riem[DI@a, DI@b, DI@c, DI@d] ricci[a, c] ricci[b, d],
-    ricciScalar * riem[a, b, c, d] riem[DI@a, DI@b, DI@c, DI@d],
-    ricci[a, b] riem[DI@a, c, d, e] riem[DI@b, DI@c, DI@d, DI@e],
-    riem[a, b, DI@c, DI@d] riem[c, d, DI@e, DI@f] riem[e, f, DI@a, DI@b],
-    riem[a, DI@c, b, DI@d] riem[c, DI@e, d, DI@f] riem[e, DI@a, f, DI@b]
+RiemannScalars[riem_, slot_, 3] := Function[{a, b, c, d, e, f}, {
+    IndexScope[riem[a, b, DI[a], DI[b]]]^3,
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]],
+    (riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[f, DI[c], DI[e], DI[f]]),
+    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], DI[f]],
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
+    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
+    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], DI[e], DI[d], DI[f]]
 }] @@ GetIndicesOfSlotType[ConstantArray[slot, 6], {}];
-RiemannScalars[riem_, slot_, 4, ricci_, ricciScalar_] := Function[{a, b, c, d, e, f, g, h}, {
-    ricciScalar^4,
-    ricciScalar^2 ricci[a, b] ricci[DI[a],DI[b]],
-    ricciScalar ricci[a, b] ricci[DI[a], c] ricci[DI[b], DI[c]],
-    IndexScope[ricci[a, b] ricci[DI[a], DI[b]]]^2,
-    ricci[a, b] ricci[DI[a], c] ricci[DI[b], d] ricci[DI[c],DI[d]],
-    ricciScalar ricci[a, b] ricci[c, d] riem[DI[a], DI[c], DI[b], DI[d]],
-    ricci[a, b] ricci[c, d] ricci[DI[c], e] riem[DI[a], DI[d], DI[b], DI[e]],
-    ricciScalar^2 riem[a, b, c, d] riem[DI[a], DI[b], DI[c], DI[d]],
-    ricciScalar ricci[a, b] riem[c, d, e, DI[a]] riem[DI[c], DI[d], DI[e], DI[b]],
-    ricci[a, b] ricci[DI[a], DI[b]] riem[c, d, e, f] riem[DI[c], DI[d], DI[e], DI[f]],
-    ricci[a, b] ricci[DI[a], c] riem[d, e, f, DI[b]] riem[DI[d], DI[e], DI[f], DI[c]],
-    ricci[a, b] ricci[c, d] riem[e, f, DI[a], DI[c]] riem[DI[e], DI[f], DI[b], DI[d]],
-    ricci[a, b] ricci[c, d] riem[e, DI[a], f, DI[b]] riem[DI[e], DI[c], DI[f], DI[d]],
-    ricci[a, b] ricci[c, d] riem[e, DI[a], f, DI[c]] riem[DI[e], DI[b], DI[f], DI[d]],
-    ricciScalar riem[a, b, c, d] riem[DI[a], DI[b], e, f] riem[DI[c], DI[d], DI[e], DI[f]],
-    ricciScalar riem[a, b, c, d] riem[DI[a], e, DI[c], f] riem[DI[b], DI[e], DI[d], DI[f]],
-    ricci[a, b] riem[e, f, g, DI[c]] riem[DI[a], c, DI[b], d] riem[DI[e], DI[f], DI[g], DI[d]],
-    ricci[a, b] riem[c, d, e, f] riem[DI[c], DI[d], g, DI[a]] riem[DI[e], DI[f], DI[g], DI[b]],
-    ricci[a, b] riem[c, d, e, f] riem[DI[c], g, DI[e], DI[a]] riem[DI[d], DI[g], DI[f], DI[b]],
-    IndexScope[riem[a, b, c, d] riem[DI[a], DI[b], DI[c], DI[d]]]^2,
-    riem[a, b, c, d] riem[f, g, h, DI[d]] riem[DI[a], DI[b], DI[c], e] riem[DI[f], DI[g], DI[h], DI[e]],
-    riem[a, b, c, d] riem[DI[a], DI[b], e, f] riem[DI[c], DI[d], DI[g], DI[h]] riem[DI[e], DI[f], g, h],
-    riem[a, b, c, d] riem[DI[a], DI[b], e, f] riem[DI[c], DI[e], g, h] riem[DI[d], DI[f], DI[g], DI[h]],
-    riem[a, b, c, d] riem[DI[a], DI[b], e, f] riem[DI[c], g, DI[e], h] riem[DI[d], DI[g], DI[f], DI[h]],
-    riem[a, b, c, d] riem[DI[a], e, DI[c], f] riem[DI[b], DI[g], DI[d], DI[h]] riem[DI[e], g, DI[f], h],
-    riem[a, b, c, d] riem[DI[a], e, DI[c], f] riem[DI[e], g, DI[b], h] riem[DI[f], DI[g], DI[d], DI[h]]
+RiemannScalars[riem_, slot_, 4] := Function[{a, b, c, d, e, f, g, h}, {
+    IndexScope[riem[a, b, DI[a], DI[b]]]^4,
+    IndexScope[riem[a, b, DI[a], DI[b]]]^2*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]],
+    -(IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, DI[e], DI[f]]),
+    IndexScope[riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]]]^2,
+    riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, DI[f], g]*riem[DI[e], h, DI[g], DI[h]],
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], DI[f]],
+    -(riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[f], g]*riem[DI[e], h, DI[g], DI[h]]),
+    IndexScope[riem[a, b, DI[a], DI[b]]]^2*riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]],
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
+    riem[a, b, DI[a], c]*riem[e, f, g, h]*riem[DI[b], d, DI[c], DI[d]]*riem[DI[e], DI[f], DI[g], DI[h]],
+    -(riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]]),
+    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], g, DI[e], DI[f]]*riem[DI[d], h, DI[g], DI[h]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], g]*riem[DI[f], h, DI[g], DI[h]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], g]*riem[DI[f], h, DI[g], DI[h]],
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
+    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], DI[e], DI[d], DI[f]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
+    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]],
+    IndexScope[riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]]]^2,
+    riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], e]*riem[DI[d], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
+    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
+    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[e], g, h]*riem[DI[d], DI[f], DI[g], DI[h]],
+    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]],
+    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], g, DI[d], h]*riem[DI[e], DI[g], DI[f], DI[h]],
+    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]]
 }] @@ GetIndicesOfSlotType[ConstantArray[slot, 8], {}];
-RiemannScalars[riem_, slot_, n_Integer, ricci_, ricciScalar_] := Null /; (Message[RiemannScalars::undef, n]; False);
+RiemannScalars[riem_, slot_, n_Integer] := Null /; (Message[RiemannScalars::undef, n]; False);
 SyntaxInformation@RiemannScalars = {"ArgumentsPattern" -> {_, _, _, _., _.}};
 
-ICovD[NITensor[t_, inds_], a_ -> type_, value_] := NITensor[NITensorCovD[t, value, inds[[All, 2]], type], Append[inds, a -> type]];
-SyntaxInformation@ICovD = {_, _, _};
+NICovD[NITensor[t_, inds_], a_ -> type_, value_] := NITensor[ITensorCovD[t, value, inds[[All, 2]], type], Append[inds, a -> type]];
+SyntaxInformation@NICovD = {_, _, _};
 
 NIChristoffel[chris_, slot1_, slot2_][a_, DI@b_, DI@c_] := NITensor[chris, {a -> slot2, b -> DI@slot1, c -> DI@slot2}];
 SyntaxInformation@NIChristoffel = {"ArgumentsPattern" -> {_, _, _}};
@@ -343,15 +343,16 @@ ConvertChrisProviderOne[{slot1_, slot2_}, chris_] := {slot1, slot2} -> NIChristo
 ConvertChrisProvider[provider_List] := ConvertChrisProviderOne @@@ provider;
 ConvertChrisProvider[provider_?AssociationQ] := KeyValueMap[ConvertChrisProviderOne, provider];
 
-NITensorCovD[expr_, {ders_, 0}, slots_, DI@newSlot_] := ITensorOuter[ReverseApplied@Construct, expr, ders, {}];
-NITensorCovD[expr_, {ders_, chrisProvider_}, slots_, DI@newSlot_] := NITensorCovD[expr, {ders, 0}, slots, DI@newSlot] + With[{
+ITensorCovD[expr_, {ders_, _}, {}, newSlot_] := ITensorScalarMultiply[Construct, ders, expr];
+ITensorCovD[expr_, {ders_, 0}, slots_, newSlot_] := ITensorOuter[ReverseApplied@Construct, expr, ders, {}];
+ITensorCovD[expr_, {ders_, chrisProvider_}, slots_, newSlot_] := ITensorCovD[expr, {ders, 0}, slots, DI@newSlot] + With[{
     inds = Array[DefaultIndex, Length@slots + 1]
 },
     Block[{$TempIndexNumber = 1},
         CovDDifference[NITensor[expr, Thread[(IndexName /@ {##}) -> slots]] &, Thread[Delete[inds, -1] -> slots], ConvertChrisProvider@chrisProvider, inds[[-1]] -> DI@newSlot]
     ] // NITensorReduce[#, inds] & // ExtractNITensor[inds]
 ];
-SyntaxInformation@NITensorCovD = {"ArgumentsPattern" -> {_, _, _, _}};
+SyntaxInformation@ITensorCovD = {"ArgumentsPattern" -> {_, _, _, _}};
 
 LookupListOrApply[list_List, elem_] := If[Length@list === 1 && Head@list[[1]] =!= Rule, list[[1]], elem /. list];
 LookupListOrApply[list_, elem_] := list@elem;
@@ -365,28 +366,71 @@ RaiseLowerOneSlot[slotToMetric_][t_, {n_, slot_?NonDIQ, -1}] := ITensorFixedCont
 RaiseLowerOneSlot[_][t_, _] := t;
 SyntaxInformation@EnsureUpDownIndices = {"ArgumentsPattern" -> {_, _, _, _}};
 
-AdaptNITensor[value_, slots_, inds_, metricProvider_] := NITensor[EnsureUpDownIndices[value, slots, SignOfUpSlot /@ inds, metricProvider], ToNITensorIndex[inds, slots]];
+AdaptIndices[tensor_, slots_, indPats_, adapter_] := Fold[AdaptIndicesHelper@adapter, {tensor, {}}, Thread@{Range@Length@slots, slots, indPats}];
+AdaptIndicesHelper[adapter_][{tensor_, curSlots_}, {i_, slot_, Verbatim[_]}] := {tensor, curSlots};
+AdaptIndicesHelper[adapter_][{tensor_, curSlots_}, {i_, slot_, indPat_}] := With[{
+    ret = AdaptOneIndex[adapter, tensor, i, slot, indPat]
+}, If[Length@ret === 2,
+    {ret[[1]], Append[curSlots, ret[[2]]]},
+    {ret[[1]], curSlots}
+]];
+SyntaxInformation@AdaptIndices = {"ArgumentsPattern" -> {_, _, _, _}};
+
+AdaptOneIndex[_, tensor_, _, DI@slot_, DI@IndexNameSlot] := {tensor, DI@slot};
+AdaptOneIndex[_, tensor_, _, slot_?NonDIQ, IndexNameSlot] := {tensor, slot};
+SyntaxInformation@AdaptOneIndex = {"ArgumentsPattern" -> {_, _, _, _, _}};
+
+MetricAdapter /: AdaptOneIndex[MetricAdapter[slotToMetric_], tensor_, i_, DI@slot_, IndexNameSlot] := {
+    ITensorFixedContract[
+        Times, LookupListOrApply[slotToMetric, slot][[2]], tensor, ContractionSlotOfMetric@MetricOfSlotType[slot][a, b], i
+    ],
+    slot
+};
+MetricAdapter /: AdaptOneIndex[MetricAdapter[slotToMetric_], tensor_, i_, slot_?NonDIQ, DI@IndexNameSlot] := {
+    ITensorFixedContract[
+        Times, LookupListOrApply[slotToMetric, slot][[1]], tensor, ContractionSlotOfMetric@MetricOfSlotType[slot][DI@a, DI@b], i
+    ],
+    DI@slot
+};
+SyntaxInformation@MetricAdapter = {"ArgumentsPattern" -> {_}};
+
+AdaptNITensor[value_, slots_, inds_, adapter_] := NITensor[EnsureUpDownIndices[value, slots, SignOfUpSlot /@ inds, metricProvider], ToNITensorIndex[inds, slots]];
+AdaptNITensor[value_, slots_, inds_, adapter_] := With[{
+    inds2 = SeparateIndexName /@ inds
+}, With[{
+    adaptedTensorAndSlots = AdaptIndices[value, slots, inds2[[All, 2]], adapter]
+}, NITensor[
+    adaptedTensorAndSlots[[1]],
+    Thread[inds2[[All, 1]] -> adaptedTensorAndSlots[[2]]]
+]]];
 SyntaxInformation@AdaptNITensor = {"ArgumentsPattern" -> {_, _, _, _}};
 
-AdaptNITensorCovD[NITensor[tensor_, inds_], covdInd_, slot_, covdValue_, metricProvider_] := NITensor[
-    EnsureUpDownIndices[
-        NITensorCovD[tensor, covdValue, inds[[All, 2]], DI@slot],
-        Append[ConstantArray[0, Length@inds], SignOfUpSlot@covdInd],
-        metricProvider
-    ],
-    Append[inds, ToNITensorIndex[covdInd, slot]]
+AdaptNITensorCovD[e_NITensor, covdInd_, slot_, covdValue_, metricProvider_] := AdaptNITensorCovD2[
+    NITensorReduce@e, covdInd, slot, covdValue, metricProvider
 ];
+AdaptNITensorCovD2[NITensor[tensor_, inds_], covdInd_, slot_, covdValue_, metricProvider_] := With[{
+    ret = AdaptOneIndex[
+        metricProvider,
+        ITensorCovD[tensor, covdValue, inds[[All, 2]], slot],
+        Length@inds + 1,
+        DI@slot,
+        SeparateIndexName[covdInd][[2]]
+    ]
+}, NITensor[
+    ret[[1]],
+    Append[inds, IndexName@covdInd -> ret[[2]]]
+]];
 SyntaxInformation@AdaptNITensorCovD = {"ArgumentsPattern" -> {_, _, _, _, _}};
 
 LeviCivitaChristoffelValue[slot_, cd_, metric_, metricInv_] := LeviCivitaChristoffel[
-    ICovD[#1, ToNITensorIndex[#2, slot], cd] &,
+    NICovD[#1, ToNITensorIndex[#2, slot], cd] &,
     NITensor[metric, ToNITensorIndex[{##}, {slot, slot}]] &,
     NITensor[metricInv, ToNITensorIndex[{##}, {slot, slot}]] &
 ][a, DI@b, DI@c] // NITensorReduce[#, {a, b, c}] & // ExtractNITensor@{a, b, c};
 SyntaxInformation@LeviCivitaChristoffelValue = {"ArgumentsPattern" -> {_, _, _, _}};
 
 RiemannDifferenceValue[slot_, cd_, chris_] := RiemannDifference[
-    ICovD[#1, ToNITensorIndex[#2, slot], cd] &,
+    NICovD[#1, ToNITensorIndex[#2, slot], cd] &,
     NITensor[chris, ToNITensorIndex[{##}, {slot, slot, slot}]] &
 ][DI@a, DI@b, DI@c, d] // NITensorReduce[#, {a, b, c, d}] & // ExtractNITensor@{a, b, c, d};
 SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};

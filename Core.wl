@@ -63,6 +63,7 @@ IndexedObject::usage = "IndexedObject[expr, {name -> type, ...}] represents an i
 ToIndexedObject::usage = "ToIndexedObject[expr, inds] returns an IndexedObject.";
 MapIndexSlots::usage = "MapIndexSlots[fn, expr] replaces all IndexSlot[n] in expr as fn[n], skipping IndexedObject's and ETensor's.";
 NonDIQ::usage = "NonDIQ[i] returns false on DI[a] or -a, otherwise true.";
+ReplaceFreesRules::usage = "ReplaceFreesRules[indsAndPos, oldFrees, newFrees]";
 ReplaceFrees::usage = "ReplaceFrees[expr, oldFrees, newFrees]";
 DummyIndex::usage = "DummyIndex[name, repeats] represents an index with hint that it's a dummy index with specified repeats.";
 PopulateDummyIndexHint::usage = "PopulateDummyIndexHint[expr, frees]";
@@ -125,9 +126,11 @@ NITensor::usage = "NITensor[expr, indices]";
 ITensorTranspose::usage = "ITensorTranspose[t, permutation] transposes the tensor according to the given permutation. Similar to Transpose, permutation may contain repeated elements, in which case the resulting tensor has lower rank.";
 ITensorOuter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
 ITensorSum::usage = "ITensorSum[sum, t, {a1, a2, ...}]";
+ITensorScalarMultiply::usage = "ITensorScalarMultiply[prod, tensor, scalar]";
 ITensorFixedContract::usage = "ITensorFixedContract[t1, t2, n1, n2]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
 ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
+ScalarValue::usage = "ScalarValue[expr] represents a scalar value expr.";
 ExtractNITensor::usage = "";
 ToNITensorIndex::usage = "ToNITensorIndex[ind, slot]";
 FromNITensorIndex::usage = "FromNITensorIndex[ind]";
@@ -563,7 +566,7 @@ SelectMetricForContraction[All][expr_] := ContractableMetricQ@expr;
 SelectMetricForContraction[metrics_List][expr_] := MatchQ[expr, Alternatives @@ metrics];
 SelectMetricForContraction[metrics_][expr_] := MatchQ[expr, metrics];
 ContractMetricExpanded[expr_Plus, metrics_] := Function[{arg}, ContractMetricExpanded[arg, metrics]] /@ expr;
-ContractMetricExpanded[expr_List, metrics_] := Function[{arg}, ContractMetricExpanded[arg, metrics]] /@ expr;
+ContractMetricExpanded[expr_?ArrayQ, metrics_] := Map[Function[{arg}, ContractMetricExpanded[arg, metrics]], expr, {ArrayDepth@expr}];
 ContractOneMetric[expr_, metric_] := With[{
     exprIndToPos = First /@ Select[GroupBy[FindIndicesSlotsAndNames@expr, Extract[{2, 1}] -> ({#[[2, 2]], #[[1]]} &)], Length@# === 1 &],
     metricInds = FindIndicesSlotsAndNames[metric][[All, 2, 1]],
@@ -907,9 +910,7 @@ FindAllIndicesNames[expr_, pos_] := With[{
 SetAttributes[{FindAllIndicesNames, FindAllIndicesNamesSubExpression}, HoldFirst];
 SyntaxInformation@FindAllIndicesNames = {"ArgumentsPattern" -> {_, _.}};
 
-ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
-    allIndsPos = FindAllIndicesNames@expr
-}, With[{
+ReplaceFreesRules[allIndsPos_, frees0_, newFrees0_] := With[{
     frees = Cases[frees0, Alternatives @@ Keys@allIndsPos]
 }, With[{
     dummies = Select[Complement[Keys@allIndsPos, frees], RenamingGroupOfIndexName@# =!= Null &],
@@ -920,12 +921,20 @@ ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
 }, With[{
     replacementDummies = GetIndicesOfSlotType[allIndsPos[#][[1, 2]] & /@ dummiesNeedsReplacing, Union[dummiesToKeep, newFrees]]
 }, {
-    ReplacePart[expr, Join[
-        ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[frees -> newFrees]],
+    Join[
+        ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[frees -> Take[newFrees, Length@frees]]],
         ReplaceIndicesRules[Map[Delete[2]] /@ allIndsPos, Thread[dummiesNeedsReplacing -> replacementDummies]]
-    ]],
+    ],
     FoldPairList[If[MemberQ[frees, #2], {newFrees[[#1]], #1 + 1}, {Null, #1}] &, 1, frees0]
-}]]]]];
+}]]]];
+SyntaxInformation@ReplaceFreesRules = {"ArgumentsPattern" -> {_, _, _}};
+
+ReplaceFrees[expr_, frees0_, newFrees0_] := With[{
+    rules = ReplaceFreesRules[FindAllIndicesNames@expr, frees0, newFrees0]
+}, {
+    ReplacePart[expr, rules[[1]]],
+    rules[[2]]
+}];
 SyntaxInformation@ReplaceFrees = {"ArgumentsPattern" -> {_, _, _}};
 
 PopulateDummyIndexHintExpanded[expr_Plus, frees_] := PopulateDummyIndexHintExpanded[#, frees] & /@ expr;
@@ -1068,51 +1077,72 @@ ETensor /: PreITensorReduce[ETensor[expr_, frees_], opt : OptionsPattern[]] := W
     ReconstructETensorIndices[ReplacePart[freesObj, 1 -> newExprAndFrees[[2]]]]
 ]]];
 ETensor::plusincompat = "Cannot combine ETensor's with incompatible free indices `1` and `2`.";
-UncatchedETensorPlus[head_, exprs_] := With[{
-    structs = Map@MultiILength /@ exprs[[All, 2]],
-    freesFlatten = Flatten /@ exprs[[All, 2]],
+
+NoneSlot;
+CheckUnequalFreesLength[frees_] := With[{
+    len = Length@frees[[1]]
+},
+    If[Length@# =!= len, Message[ETensor::plusincompat, frees[[1]], #]; Throw@Err;] & /@ Delete[frees, 1];
+];
+CheckExistsLists[list_] := If[Head@list[[1]] === List,
+    If[Head@# =!= List, Message[ETensor::plusincompat, list[[1]], #]; Throw@Err;] & /@ Delete[list, 1];
+    True
+,
+    If[Head@# === List, Message[ETensor::plusincompat, list[[1]], #]; Throw@Err;] & /@ Delete[list, 1];
+    False
+];
+CombineETensorFreesHelper[{allInds_, curInds_}, slots_] := With[{
+    nonNull = DeleteCases[slots, NoneSlot]
+}, If[Length@nonNull > 0,
+    If[CheckExistsLists@nonNull,
+        MapAt[Append[curInds, #] &, CombineETensorFrees0[nonNull, allInds], 2]
+    ,
+        With[{
+            newInd = GetIndexOfSlotType[nonNull[[1]], allInds]
+        }, {Append[allInds, newInd], Append[curInds, newInd]}]
+    ]
+,
+    {allInds, Append[curInds, Null]}
+]];
+CombineETensorFrees0[inds_, allInds_] := Fold[CombineETensorFreesHelper, {allInds, {}}, CheckUnequalFreesLength[inds]; Transpose@inds];
+CombineETensorFrees[inds_] := CombineETensorFrees0[inds, {}][[2]];
+
+LookupOneFreeTypeOrNone[frees_List, poses_] := LookupOneFreeTypeOrNone[#, poses] & /@ frees;
+LookupOneFreeTypeOrNone[Null, _] := NoneSlot;
+LookupOneFreeTypeOrNone[free_, poses_] := poses[free][[1, 2]];
+MakeETensorReplaceFreesInner[{reps1_, reps2_, others_}, {Null, inds_}] := {reps1, reps2, Append[others, inds]};
+MakeETensorReplaceFreesInner[{reps1_, reps2_, others_}, {inds1_List, inds2_List}] := {Join[reps1, inds1], Join[reps2, inds2], others};
+MakeETensorReplaceFreesInner[{reps1_, reps2_, others_}, {ind1_, ind2_}] := {Append[reps1, ind1], Append[reps2, ind2], others};
+MakeETensorReplaceFrees[inds1_, inds2_] := With[{
+    ret = Fold[MakeETensorReplaceFreesInner, {{}, {}, {}}, Thread@{inds1, inds2}]
+}, {ret[[1]], Join @@ Delete[ret, 1]}];
+ReplaceETensorFrees[ETensor[expr_, inds_], indPos_, frees_] := ReplacePart[
+    expr,
+    With[{reps = MakeETensorReplaceFrees[inds, frees]}, ReplaceFreesRules[indPos, reps[[1]], reps[[2]]][[1]]]
+];
+
+ScalarETensorQ[ETensor[_, inds_]] := AllTrue[inds, # === Null &];
+UncatchedETensorPlus[head_, exprs_] := If[AllTrue[exprs, ScalarETensorQ],
+    CheckUnequalFreesLength@exprs[[All, 2]];
+    ETensor[head @@ exprs[[All, 1]], exprs[[1, 2]]]
+,
+    UncatchedETensorPlusNonNullInds[head, exprs]
+];
+UncatchedETensorPlusNonNullInds[head_, exprs_] := With[{
     indPoses = FindAllIndicesNames /@ exprs[[All, 1]]
 }, With[{
-    len = Length@freesFlatten[[1]]
-}, MapThread[
-    If[Length@#2 =!= len, Message[ETensor::plusincompat, exprs[[1, 2]], #1[[2]]]; Throw@Err;] &,
-    {Delete[exprs, 1], Delete[freesFlatten, 1]}
-]]; With[{
-    indPosesNoType = Map@Map@ETensorPlusHelper1DeleteTypeAndPrepend1ToPos /@ indPoses
-}, With[{
-    dummies = MapThread[Delete[#1, {Key@#} & /@ DeleteCases[#2, Null]] &, {indPosesNoType, freesFlatten}],
-    freesFlattenWithTypes = MapThread[With[{indToType = #1}, If[# === Null, {Null, Null}, {#, indToType[#]}] & /@ #2] &, {GetIndicesNamesToType /@ indPoses, freesFlatten}]
-}, With[{
-    selectedInd = MaximalBy[MapIndexed[List, dummies], Length@#[[1]] &][[1, 2, 1]]
-}, With[{
-    exprsWithDummiesReplaced = With[{
-        selectedDummies = dummies[[selectedInd]]
-    }, MapThread[ReplacePart[Hold@#1, ReplaceIndicesRules[#2, With[{
-        dummiesToRep = Complement[Keys@#2, Keys@selectedDummies]
-    }, Thread[dummiesToRep -> Take[Keys@selectedDummies, Length@dummiesToRep]]]]] &, {exprs[[All, 1]], dummies}]],
-    newFrees = With[{
-        freeSlotsNeedInds = MapThread[
-            With[{noNoneInd = Select[#2, #[[1]] =!= Null &]}, If[#1 === Null && Length@noNoneInd > 0, {#3, noNoneInd[[1, 2]]}, Nothing]] &, {
-                freesFlatten[[selectedInd]],
-                Transpose@Delete[freesFlattenWithTypes, selectedInd],
-                Range@Length@freesFlatten[[1]]
-            }
-        ]
-    }, ReplacePart[
-        freesFlatten[[selectedInd]],
-        Thread[freeSlotsNeedInds[[All, 1]] -> GetIndicesOfSlotType[freeSlotsNeedInds[[All, 2]], Keys@indPoses[[selectedInd]]]]
-    ]]
-},
-    ETensor[
-        head @@ MapThread[
-            ReleaseHold@ReplacePart[#1, ReplaceIndicesRules[#3, MapThread[If[#1 === Null || #1 === #2, Nothing, #1 -> #2] &, {#2, newFrees}]]] &,
-            {exprsWithDummiesReplaced, freesFlatten, indPosesNoType}
-        ],
-        DeflattenFrees[newFrees, structs[[selectedInd]]]
-    ]
-]]]]];
-ETensor /: e1_ETensor + e2_ETensor := With[{ret = Catch@UncatchedETensorPlus[Plus, {e1, e2}]}, ret /; ret =!= Err];
-ETensor /: prod_?ProductQ[x_, ETensor[expr_, arg__]] := ETensor[prod[x, expr], arg];
+    combinedFrees = CombineETensorFrees[MapThread[LookupOneFreeTypeOrNone, {exprs[[All, 2]], indPoses}]]
+}, ETensor[
+    head @@ MapThread[
+        ReplaceETensorFrees[#1, #2, combinedFrees] &,
+        {exprs, indPoses}
+    ],
+    combinedFrees
+]]];
+PlusQ[Plus] = True;
+PlusQ[_] = False;
+ETensor /: _?PlusQ[e1__ETensor] := With[{ret = Catch@UncatchedETensorPlus[Plus, {e1}]}, ret /; ret =!= Err];
+ETensor /: prod_?ProductQ[l___, ETensor[expr_, arg__], r___] := ETensor[prod[l, expr, r], arg];
 ETensor /: D[ETensor[expr_, frees_], args__] := ETensor[D[expr, args], frees];
 
 SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
@@ -1191,6 +1221,11 @@ ITensorOuterInner[prod_, s1_, s2_, cont_] := Switch[{TensorValueQ@s1, TensorValu
     _,
     If[s1 === 0 || s2 === 0, 0, Message[ITensorOuter::nonzeronontensor, s1, s2]; Throw@Err;]
 ];
+OuterOrMap[0, 0] := {fn, list1, list2} |-> fn[list1, list2];
+OuterOrMap[0, n_] := {fn, list1, list2} |-> Map[fn[list1, #] &, list2, {n}];
+OuterOrMap[n_, 0] := {fn, list1, list2} |-> Map[fn[#, list2] &, list1, {n}];
+OuterOrMap[n1_, n2_] := {fn, list1, list2} |-> Outer[fn, list1, list2, n1, n2];
+
 ITensorOuter[prod_, s1_?ArrayQ, s2_?ArrayQ, cont_] := With[{
     ret = Catch@With[{
         perm1 = PermutationOfMovingToFirst[cont[[All, 1]]],
@@ -1200,15 +1235,16 @@ ITensorOuter[prod_, s1_?ArrayQ, s2_?ArrayQ, cont_] := With[{
     },
         Transpose[
             MapIndexed[
-                If[Length@cont < ArrayDepth@s1,
-                    Outer[
-                        ITensorOuterInner[prod, #1, #2, cont] &,
-                        #1,
-                        Extract[s22, {#2}][[1]]
-                    ] &
-                ,
-                    ITensorOuterInner[prod, #1, Extract[s22, {#2}][[1]], cont] &
-                ],
+                With[{
+                    map = OuterOrMap[
+                        ArrayDepth@s1 - Length@cont,
+                        ArrayDepth@s2 - Length@cont
+                    ]
+                }, map[
+                    ITensorOuterInner[prod, #1, #2, cont] &,
+                    #1,
+                    Extract[s22, {#2}][[1]]
+                ] &],
                 Transpose[s1, perm1],
                 {Length@cont}
             ],
@@ -1238,6 +1274,10 @@ ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
 ITensorSum[ETensor[expr_, frees_], dims_] := ETensor[expr, Delete[frees, Transpose@{dims}]];
 SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
 
+ITensorScalarMultiply[prod_, tensor_?ArrayQ, scalar_] := Map[If[TensorValueQ@#, ITensorScalarMultiply[prod, #, scalar], prod[#, scalar]] &, tensor, {ArrayDepth@tensor}];
+ITensorScalarMultiply[prod_, ETensor[expr_, inds_], scalar_] := ETensor[prod[expr, scalar], inds];
+SyntaxInformation@ITensorScalarMultiply = {"ArgumentsPattern" -> {_, _, _}};
+
 PermutationOfMoveTo[n_, n_] := {1};
 PermutationOfMoveTo[from_Integer, to_Integer] := If[
     from < to,
@@ -1260,11 +1300,12 @@ NITensor /: prod_?ProductQ[x_, NITensor[t_, inds_]] := NITensor[prod[x, t], inds
 NITensor /: Power[NITensor[t_, inds_], x_] := NITensor[t ^ x, inds];
 SyntaxInformation@NITensor = {"ArgumentsPattern" -> {_, _}};
 
+TakeFrees[inds_] := Cases[KeyValueMap[List, Counts@inds], {a_, 1} :> a];
 FreesByArgs[frees_, freeArgs_] := Array[Union @@ Append[Delete[freeArgs, #], frees] &, Length@freeArgs];
 GetINTensorIndexNames[NITensor[_, inds_]] := OneIndexOfNITensor /@ inds;
 GetINTensorIndexNames[_] = {};
 NITensorReduce::incompatinds = "Cannot combine NITensors `1` and `2` with different indices.";
-NITensorReduce[expr_] := NITensorReduce[expr, {}];
+NITensorReduce[expr_] := NITensorReduce[expr, Automatic];
 NITensorReduce[prod_?ProductQ[args__], frees_] := ReduceNITensorContractions[prod, {args}, frees];
 NITensorReduce[t_NITensor, frees_] := ContractOneNITensor[t, frees];
 NITensorReduce[expr_Plus, frees_] := With[{
@@ -1279,6 +1320,7 @@ NITensorReduce[expr_, _] := With[{
     Message[NITensorReduce::unknown, HoldForm@expr];
     NITensor[Hold@expr, Keys@inds]
 ]];
+SyntaxInformation@NITensorReduce = {"ArgumentsPattern" -> {_, _.}};
 
 PermutationOfMergeIndices[inds_, n_] := With[{
     firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)
@@ -1302,8 +1344,10 @@ PermutationOfMergeIndices[inds_, n_] := With[{
     {ConstantArray[Null, n], 1},
     Range@n
 ]][[1]];
-ContractOneNITensor[NITensor[t1_, inds_], frees_] := With[{
+ContractOneNITensor[NITensor[t1_, inds_], frees0_] := With[{
     indsByName = Sort /@ GroupBy[MapIndexed[{SeparateIndexName[OneIndexOfNITensor@#1][[1]], #2[[1]]} &, inds], First -> Extract[2]]
+}, With[{
+    frees = If[frees0 === Automatic, Cases[KeyValueMap[List, indsByName], {ind_, {_}} :> ind], frees0]
 }, With[{
     toContract = Select[indsByName, Length@# >= 2 &]
 }, With[{
@@ -1325,11 +1369,13 @@ ContractOneNITensor[NITensor[t1_, inds_], frees_] := With[{
         NITensor[ITensorSum[ret[[1]], Join @@ (Values@summed)], Delete[ret[[2]], Values@summed]],
         NITensor[ret[[1]], ret[[2]]]
     ]
-]]]];
+]]]]];
 
 NITensorSlot;
 
 ContractTwoNITensors[prod_, {}, {}, frees_] := NITensor[prod[NITensorSlot[1], NITensorSlot[2]], {}];
+ContractTwoNITensors[prod_, inds1_, {}, _] := NITensor[ITensorScalarMultiply[prod, NITensorSlot[1], NITensorSlot[2]], inds1];
+ContractTwoNITensors[prod_, {}, inds2_, _] := NITensor[ITensorScalarMultiply[ReverseApplied@prod, NITensorSlot[2], NITensorSlot[1]], inds2];
 ContractTwoNITensors[prod_, inds1_, inds2_, frees_] := With[{
     inds1ByName = Association @@ MapIndexed[SeparateIndexName[OneIndexOfNITensor@#1][[1]] -> #2[[1]] &, inds1],
     inds2ByName = Association @@ MapIndexed[SeparateIndexName[OneIndexOfNITensor@#1][[1]] -> #2[[1]] &, inds2]
@@ -1356,8 +1402,10 @@ CountContractions[ITensorOuter[_, _, _, cont_]] := Length@Flatten@cont - Length@
 CountContractions[ITensorSum[t_, sums_]] := Length@sums + CountContractions@t;
 CountContractions[_] = 0;
 (* TODO: phase for products like Wedge *)
-ReduceNITensorContractionsStep[prod_, factors_, frees_] := With[{
+ReduceNITensorContractionsStep[prod_, factors_, frees0_] := With[{
     freesByArg = SeparateIndexName[OneIndexOfNITensor@#][[1]] & /@ factors[[All, 2]]
+}, With[{
+    frees = If[frees0 === Automatic, TakeFrees[Join @@ freesByArg], frees0]
 }, With[{
     choosenCountraction = MaximalBy[
         With[{
@@ -1375,7 +1423,7 @@ ReduceNITensorContractionsStep[prod_, factors_, frees_] := With[{
         Delete[factors, {{choosenCountraction[[1]]}, {choosenCountraction[[2]]}}],
         choosenCountraction[[3]] /. {NITensorSlot[1] -> factors[[choosenCountraction[[1]], 1]], NITensorSlot[2] -> factors[[choosenCountraction[[2]], 1]]}
     ]
-]];
+]]];
 
 AbsorbNonNITensorStep[prod_][{factors_, cursor_}] := With[{
     factor1 = factors[[cursor]],
@@ -1398,9 +1446,14 @@ AbsorbNonNITensor[prod_, factors_] := NestWhile[
 WrapScalarInNITensor[e_NITensor] := e;
 WrapScalarInNITensor[e_] := NITensor[e, {}];
 ReduceNITensorContractions[prod_, factors_, frees_] := With[{
-    freesByArg = FreesByArgs[frees, Keys@FindAllIndicesNames@# & /@ factors]
+    indsByArgs = Keys@FindAllIndicesNames@# & /@ factors
 }, With[{
-    factors2 = AbsorbNonNITensor[prod, WrapScalarInNITensor /@ MapThread[NITensorReduce, {factors, freesByArg}]]
+    factors2 = AbsorbNonNITensor[
+        prod, WrapScalarInNITensor /@ MapThread[
+            NITensorReduce,
+            {factors, If[frees === Automatic, ConstantArray[Automatic, Length@factors], FreesByArgs[frees, indsByArgs]]}
+        ]
+    ]
 },
     Nest[ReduceNITensorContractionsStep[prod, #, frees] &, factors2, Length@factors2 - 1][[1]]
 ]];
@@ -1419,6 +1472,7 @@ UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := W
 ], firstInds]];
 
 ExtractNITensor::incompat = "Incompatible indices `1` and `2`.";
+ExtractNITensor[NITensor[0, _], _] = 0;
 ExtractNITensor[NITensor[expr_, inds1_], inds2_] := With[{ret = Catch@With[{
     perm = FirstPosition[inds2, OneIndexOfNITensor@#, Null, {1}][[1]] & /@ inds1
 },
@@ -1429,13 +1483,11 @@ ExtractNITensor[inds_][expr_] := ExtractNITensor[expr, inds];
 SyntaxInformation@ExtractNITensor = {"ArgumentsPattern" -> {_, _.}};
 
 ToNITensorIndex[a_List, slots_List] := MapThread[ToNITensorIndex, {a, slots}];
-ToNITensorIndex[DI@a_, slot_] := a -> DI@slot;
-ToNITensorIndex[a_?NonDIQ, slot_] := a -> slot;
+ToNITensorIndex[a_, slot_] := With[{ind = SeparateIndexName@a}, ind[[1]] -> (ind[[2]] /. IndexNameSlot -> slot)];
 SyntaxInformation@ToNITensorIndex = {"ArgumentsPattern" -> {_, _}};
 
 FromNITensorIndex[a_List] := FromNITensorIndex /@ a;
-FromNITensorIndex[ind_ -> _DI] := DI@ind;
-FromNITensorIndex[ind_ -> _?NonDIQ] := ind;
+FromNITensorIndex[name_ -> slot_] := SeparateIndexName[slot][[2]] /. IndexNameSlot -> name;
 SyntaxInformation@FromNITensorIndex = {"ArgumentsPattern" -> {_}};
 
 End[];

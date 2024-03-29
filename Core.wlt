@@ -121,3 +121,13 @@ VerificationTest[
     ReplaceFrees[t1[g, a, h, a], {h, d, b, g}, Automatic],
     {t1[b, c, a, c], {a, Null, Null, b}}
 ];
+
+VerificationTest[
+    NITensorReduce[NITensor[hkm, {a, b}] NITensor[rfnj, {a, b, c, c, d, d}], Automatic],
+    NITensor[ITensorSum[ITensorOuter[Times, hkm, ITensorSum[ITensorTranspose[rfnj, {1, 2, 3, 3, 4, 4}], {3, 4}], {{1, 1}, {2, 2}}], {1, 2}], {}]
+];
+
+VerificationTest[
+    ITensorOuter[Times, SparseArray[{{1, 1} -> a, {2, 2} -> b}], {c, d}, {{2, 1}}],
+    SparseArray[{{1, 1} -> a c, {2, 2} -> b d}]
+];
