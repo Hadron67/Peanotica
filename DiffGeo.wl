@@ -53,6 +53,7 @@ RicciScalarOf;
 DefCurvatureTensors;
 
 RiemannScalars;
+RiemannScalarIndexPermutations::usage = "RiemannScalarIndexPermutations[n]";
 
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
 VarInverseMatrix::usage = "VarInverseMatrix[invMat[a, b], varmat, order]";
@@ -288,49 +289,58 @@ RiemannRicciRules[riemann_, ricci_, ricciScalar_] := Join[
 ];
 SyntaxInformation@RiemannRicciRules = {"ArgumentsPattern" -> {_, _, _}};
 
-RiemannScalars::undef = "Riemann scalars of order `1` is not yet defined.";
-RiemannScalars[riem_, slot_, 2] := Function[{a, b, c, d},
-    {IndexScope[riem[DI@a, DI@b, a, b]]^2, ricci[a, DI@c, b, c] ricci[DI@a, DI@d, DI@b, d], riem[a, b, c, d] riem[DI@a, DI@b, DI@c, DI@d]}
-] @@ GetIndicesOfSlotType[ConstantArray[slot, 4], {}];
-RiemannScalars[riem_, slot_, 3] := Function[{a, b, c, d, e, f}, {
-    IndexScope[riem[a, b, DI[a], DI[b]]]^3,
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]],
-    (riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[f, DI[c], DI[e], DI[f]]),
-    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], DI[f]],
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
-    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
-    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], DI[e], DI[d], DI[f]]
-}] @@ GetIndicesOfSlotType[ConstantArray[slot, 6], {}];
-RiemannScalars[riem_, slot_, 4] := Function[{a, b, c, d, e, f, g, h}, {
-    IndexScope[riem[a, b, DI[a], DI[b]]]^4,
-    IndexScope[riem[a, b, DI[a], DI[b]]]^2*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]],
-    -(IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, DI[e], DI[f]]),
-    IndexScope[riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], DI[d]]]^2,
-    riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, DI[f], g]*riem[DI[e], h, DI[g], DI[h]],
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], DI[f]],
-    -(riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[f], g]*riem[DI[e], h, DI[g], DI[h]]),
-    IndexScope[riem[a, b, DI[a], DI[b]]]^2*riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]],
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
-    riem[a, b, DI[a], c]*riem[e, f, g, h]*riem[DI[b], d, DI[c], DI[d]]*riem[DI[e], DI[f], DI[g], DI[h]],
-    -(riem[a, b, DI[a], c]*riem[DI[b], d, DI[d], e]*riem[DI[c], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]]),
-    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], g, DI[e], DI[f]]*riem[DI[d], h, DI[g], DI[h]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, DI[e], g]*riem[DI[f], h, DI[g], DI[h]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], DI[e], g]*riem[DI[f], h, DI[g], DI[h]],
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], DI[e], DI[f]],
-    IndexScope[riem[a, b, DI[a], DI[b]]]*riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], DI[e], DI[d], DI[f]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, DI[c], e]*riem[DI[d], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], DI[d], g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
-    riem[a, b, DI[a], c]*riem[DI[b], d, e, f]*riem[DI[c], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]],
-    IndexScope[riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], DI[d]]]^2,
-    riem[a, b, c, d]*riem[DI[a], DI[b], DI[c], e]*riem[DI[d], f, g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
-    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[d], g, h]*riem[DI[e], DI[f], DI[g], DI[h]],
-    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], DI[e], g, h]*riem[DI[d], DI[f], DI[g], DI[h]],
-    riem[a, b, c, d]*riem[DI[a], DI[b], e, f]*riem[DI[c], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]],
-    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], g, DI[d], h]*riem[DI[e], DI[g], DI[f], DI[h]],
-    riem[a, b, c, d]*riem[DI[a], e, DI[c], f]*riem[DI[b], g, DI[e], h]*riem[DI[d], DI[g], DI[f], DI[h]]
-}] @@ GetIndicesOfSlotType[ConstantArray[slot, 8], {}];
-RiemannScalars[riem_, slot_, n_Integer] := Null /; (Message[RiemannScalars::undef, n]; False);
+RiemannScalarIndexPermutations::undef = "Riemann scalar permutations of order `1` is not yet defined.";
+RiemannScalarIndexPermutations[1] = {{1, 3, 2, 4}};
+RiemannScalarIndexPermutations[2] = {{1, 3, 2, 4, 5, 7, 6, 8}, {1, 3, 5, 4, 2, 7, 6, 8}, {1, 3, 5, 7, 2, 4, 6, 8}};
+RiemannScalarIndexPermutations[3] = {
+    {1, 3, 2, 4, 5, 7, 6, 8, 9, 11, 10, 12},
+    {1, 3, 2, 4, 5, 7, 9, 8, 6, 11, 10, 12},
+    {1, 3, 5, 4, 2, 7, 9, 8, 6, 11, 10, 12},
+    {1, 3, 5, 7, 2, 9, 6, 10, 4, 11, 8, 12},
+    {1, 3, 5, 7, 2, 4, 6, 8, 9, 11, 10, 12},
+    {1, 3, 5, 7, 2, 4, 6, 9, 8, 11, 10, 12},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 8, 10, 12},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 10, 8, 12}
+};
+RiemannScalarIndexPermutations[4] = {
+    {1, 3, 2, 4, 5, 7, 6, 8, 9, 11, 10, 12, 13, 15, 14, 16},
+    {1, 3, 2, 4, 5, 7, 6, 8, 9, 11, 13, 12, 10, 15, 14, 16},
+    {1, 3, 2, 4, 5, 7, 9, 8, 6, 11, 13, 12, 10, 15, 14, 16},
+    {1, 3, 5, 4, 9, 11, 13, 12, 2, 7, 6, 8, 10, 15, 14, 16},
+    {1, 3, 5, 4, 2, 7, 9, 8, 6, 11, 13, 12, 10, 15, 14, 16},
+    {1, 3, 5, 7, 13, 15, 14, 16, 2, 9, 6, 10, 4, 11, 8, 12},
+    {1, 3, 5, 7, 2, 9, 6, 10, 4, 11, 13, 12, 8, 15, 14, 16},
+    {1, 3, 5, 7, 2, 4, 6, 8, 9, 11, 10, 12, 13, 15, 14, 16},
+    {1, 3, 5, 7, 2, 4, 6, 9, 13, 15, 14, 16, 8, 11, 10, 12},
+    {1, 3, 5, 7, 2, 4, 6, 8, 9, 11, 13, 12, 10, 15, 14, 16},
+    {1, 3, 5, 7, 2, 4, 6, 9, 11, 13, 8, 14, 12, 15, 10, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 13, 10, 14, 8, 15, 12, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 13, 8, 14, 10, 15, 12, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 13, 10, 14, 8, 15, 12, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 8, 10, 12, 13, 15, 14, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 10, 8, 12, 13, 15, 14, 16},
+    {1, 3, 5, 7, 2, 4, 6, 9, 8, 11, 10, 13, 12, 15, 14, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 8, 10, 13, 12, 15, 14, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 10, 8, 13, 12, 15, 14, 16},
+    {1, 3, 5, 7, 9, 11, 13, 15, 2, 4, 6, 8, 10, 12, 14, 16},
+    {1, 3, 5, 7, 2, 4, 6, 9, 8, 11, 13, 15, 10, 12, 14, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 8, 13, 15, 10, 12, 14, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 10, 13, 15, 8, 12, 14, 16},
+    {1, 3, 5, 7, 2, 4, 9, 11, 6, 13, 10, 15, 8, 14, 12, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 13, 8, 15, 10, 14, 12, 16},
+    {1, 3, 5, 7, 2, 9, 6, 11, 4, 13, 10, 15, 8, 14, 12, 16}
+};
+RiemannScalarIndexPermutations[n_] := Null /; (Message[RiemannScalarIndexPermutations::undef, n]; False);
+SyntaxInformation@RiemannScalarIndexPermutations = {"ArgumentsPattern" -> {_}};
+
+RiemannScalars[riemann_, slot_, n_Integer] := RiemannScalars[riemann, slot, RiemannScalarIndexPermutations[n]];
+RiemannScalars[riemann_, slot_, perms_List?MatrixQ] := With[{
+    n = Length@perms[[1]] / 4
+}, With[{
+    inds = Join @@ ({#, DI@#} & /@ GetIndicesOfSlotType[ConstantArray[slot, 2n], {}])
+},
+    Times @@ (riemann @@@ Partition[Permute[inds, InversePermutation@#], 4]) & /@ perms
+]];
 SyntaxInformation@RiemannScalars = {"ArgumentsPattern" -> {_, _, _, _., _.}};
 
 NICovD[NITensor[t_, inds_], a_ -> type_, value_] := NITensor[ITensorCovD[t, value, inds[[All, 2]], type], Append[inds, a -> type]];
@@ -534,7 +544,10 @@ PerturbationLeviCivitaRiemann[cd_, metric_, metricPert_, n_] := PerturbationLevi
 SyntaxInformation@PerturbationLeviCivitaRiemann = {"ArgumentsPattern" -> {_, _., _., _.}};
 
 ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
+    HoldPattern@pert[mp_metricPert, n_] :> pert[SeparateMetricOne[mp, {-1, -1}], n]
+} /. {
     HoldPattern@pert[metric[DI@a_, DI@b_], n_] :> metricPert[n, DI@a, DI@b],
+    HoldPattern@pert[metricPert[n_, DI@a_, DI@b_], n2_] :> metricPert[n + n2, DI@a, DI@b],
     HoldPattern@pert[metric[a_?NonDIQ, b_?NonDIQ], n_] :> VarInverseMatrix[{a, b}, metricPert, n]
 };
 ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];

@@ -93,6 +93,8 @@ IndexedExprFunction::usage = "IndexedExprFunction[expr, frees, dummies, dummyTyp
 ToIndexedExprFunction::usage = "ToIndexedExprFunction[expr, frees]";
 RaiseFrees::usage = "RaiseFrees[expr, frees]";
 WithTempIndex1::usage = "WithTempIndex1[expr]";
+PermuteIndices::usage = "PermuteIndices[expr, inds, perm]";
+ImposeSymmetry::usage = "ImposeSymmetry[expr, inds, genset]";
 
 (* canonicalization *)
 ISortedProduct;
@@ -350,6 +352,27 @@ SyntaxInformation@RaiseFrees = {"ArgumentsPattern" -> {_, _}};
 WithTempIndex1[body_] := Block[{$TempIndexNumber = 1}, body];
 SetAttributes[WithTempIndex1, HoldAll];
 SyntaxInformation@WithTempIndex1 = {"ArgumentsPattern" -> {_}};
+
+GetIndsPos[expr_, inds_] := Thread[inds -> With[{
+    indPos = FindAllIndicesNames@expr
+}, Lookup[indPos, #, {}][[All, 3]] & /@ inds]];
+SetAttributes[GetIndsPos, HoldFirst];
+
+PermuteIndices[expr_, inds_, a_ * img_Images] := a * PermuteIndices[expr, inds, img];
+PermuteIndices[expr_, inds_, perm_] := PermuteIndices[expr, GetIndsPos[expr, inds], perm] /; Head@inds[[1]] =!= Rule;
+PermuteIndices[expr_, inds_, img_Images] := ReplacePart[
+    expr,
+    Join @@ MapThread[Thread[#2 -> #1] &, {Permute[inds[[All, 1]], List @@ img], inds[[All, 2]]}]
+] /; Head@inds[[1]] === Rule;
+SyntaxInformation@PermuteIndices = {"ArgumentsPattern" -> {_, _, _}};
+
+ImposeSymmetry[expr_, inds_, genset_] := With[{
+    indsWithPos = GetIndsPos[expr, inds],
+    elems = PPermGroupElements@genset
+},
+    Total[PermuteIndices[expr, indsWithPos, #] & /@ elems] / Length@elems
+];
+SyntaxInformation@ImposeSymmetry = {"ArgumentsPattern" -> {_, _, _}};
 
 CanonicalizationUnitQ[_Plus] = False;
 CanonicalizationUnitQ[_List] = False;
@@ -949,8 +972,11 @@ PopulateDummyIndexHint[expr_, frees_] := PopulateDummyIndexHintExpanded[ExpandTo
 SyntaxInformation@PopulateDummyIndexHint = {"ArgumentsPattern" -> {_, _}};
 
 IndexScope[expr_, {}, {}] := IndexScope[expr];
-IndexScope[expr_] := expr /; Length@FindIndicesSlots@expr === 0;
 IndexScope[expr_Plus] := IndexScope /@ expr;
+IndexScope[expr_Times] := With[{
+    indsByArgs = Lookup[GroupBy[List @@ expr, Length@FindIndicesSlots@# === 0 &], {True, False}, {}]
+}, (Times @@ indsByArgs[[1]])IndexScope[Times @@ indsByArgs[[2]]] /; Length@indsByArgs[[1]] > 0];
+IndexScope[expr_] := expr /; Length@FindIndicesSlots@expr === 0;
 IndexScope /: PreITensorReduce[HoldPattern@IndexScope[expr_], opt___] := IndexScope@ITensorReduce[expr, FreeIndexNames -> {}, FilterRules[{opt}, DeleteCases[Options[ITensorReduce], FreeIndexNames -> _]]];
 IndexScope /: FindIndicesSlots@IndexScope[expr_] = {};
 IndexScope /: FindIndicesSlots@IndexScope[_, _, inds_List] := MapIndexed[Prepend[#2, 3] -> Null &, inds];
@@ -1139,8 +1165,7 @@ UncatchedETensorPlusNonNullInds[head_, exprs_] := With[{
     ],
     combinedFrees
 ]]];
-PlusQ[Plus] = True;
-PlusQ[_] = False;
+PlusQ[a_] := a === Plus;
 ETensor /: _?PlusQ[e1__ETensor] := With[{ret = Catch@UncatchedETensorPlus[Plus, {e1}]}, ret /; ret =!= Err];
 ETensor /: prod_?ProductQ[l___, ETensor[expr_, arg__], r___] := ETensor[prod[l, expr, r], arg];
 ETensor /: D[ETensor[expr_, frees_], args__] := ETensor[D[expr, args], frees];
