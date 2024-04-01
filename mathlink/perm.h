@@ -330,7 +330,7 @@ struct PermutationSet {
     PermutationView reservePermutation() {
         return this->permutations.push();
     }
-    void addPermutation(const PermutationView &perm);
+    bool addPermutation(const PermutationView &perm);
     bool checkOppositeSignAndAddPermutation(PermutationView perm);
     OptionalUInt<std::size_t> findPermutation(const PermutationView &perm);
     void removeAndFetchLast(std::size_t index);
@@ -915,11 +915,9 @@ inline void filterBasePoints(Acceptor acceptor, Provider provider, std::size_t b
 
 struct GroupEnumerator {
     PermutationStack *permStack = nullptr;
-    PermutationSet elements;
-    private:
-    std::size_t prevCosetRep = 0;
     PermutationList generators;
-    void addGenerator(PermutationView generator);
+    PermutationSet elements;
+    void generate();
 };
 
 namespace meta {

@@ -297,6 +297,24 @@ static void registerFunctions(WSTPEnv &env) {
         }
     );
     env.registerFunction(
+        P_PREFIX "MathLinkPPermGroupElements[" P_PREFIX "genset_List, " P_PREFIX "n_Integer]",
+        "{" P_PREFIX "n, " P_PREFIX "genset}",
+        [](WSTPEnv &env) -> bool {
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            PermutationStack stack(16 * permLen);
+            GroupEnumerator enumerator;
+            enumerator.permStack = &stack;
+            enumerator.generators.setPermutationLength(permLen);
+            TRY(readPermutationList(env.stdlink, enumerator.generators));
+            enumerator.generate();
+
+            TRY(WSNewPacket(env.stdlink));
+            TRY(writePermutationList(env.stdlink, enumerator.elements.permutations));
+            return true;
+        }
+    );
+    env.registerFunction(
         P_PREFIX "MathLinkOpenLogFile[" P_PREFIX "path_String]",
         "{" P_PREFIX "path}",
         [](WSTPEnv &env) -> bool {

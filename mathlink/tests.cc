@@ -398,34 +398,35 @@ static bool doubleCosetRepRiemannMonomialCase(bool twoStep) {
 }
 
 static bool testDoubleCosetRep(bool twoStep) {
+    auto ret = true;
     if(!doubleCosetRepCase<
         4,
         Images<1, 3, 2, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         Symmetric<1, 2>,
         Neg<Images<0, 1, 2, 3>>
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
     if (!doubleCosetRepCase<
         4,
         Images<1, 3, 2, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         Symmetric<1, 3>,
         Zero
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
     if (!doubleCosetRepCase<
         8,
         Images<0, 2, 4, 6, 1, 3, 7, 5>,
         Join<RiemannSymmetric<0, 1, 2, 3>, RiemannSymmetric<4, 5, 6, 7>, GenSet<SCycles<List<0, 4>, List<1, 5>, List<2, 6>, List<3, 7>>>>,
         Join<Symmetric<0, 1>, Symmetric<2, 3>, Symmetric<4, 5>, Symmetric<6, 7>>,
         Neg<Images<0, 2, 4, 6, 1, 3, 5, 7>>
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
     if (!doubleCosetRepCase<
         4,
         Images<2, 3, 1, 0>,
         RiemannSymmetric<0, 1, 2, 3>,
         GenSet<>,
         Neg<Images<0, 1, 2, 3>>
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
     if (!doubleCosetRepRiemannMonomialCase<1, 2, Images<2, 1, 0, 3>, Neg<Images<0, 2, 1, 3>>>(twoStep)) return false;
     if (!doubleCosetRepRiemannMonomialCase<2, 0, Images<5, 6, 1, 3, 2, 4, 7, 0>, Images<0, 2, 4, 6, 1, 5, 3, 7>>(twoStep)) return false;
     if (!doubleCosetRepRiemannMonomialCase<2, 4, Images<7, 2, 5, 0, 4, 6, 3, 1>, Neg<Images<0, 4, 2, 6, 1, 3, 5, 7>>>(twoStep)) return false;
@@ -434,14 +435,62 @@ static bool testDoubleCosetRep(bool twoStep) {
         0,
         Images<19, 7, 2, 17, 11, 4, 3, 13, 18, 5, 14, 6, 0, 16, 1, 12, 9, 15, 10, 8>,
         Neg<Images<0, 2, 1, 4, 3, 6, 8, 10, 5, 7, 12, 14, 9, 13, 11, 16, 15, 18, 17, 19>>
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
     if (!doubleCosetRepRiemannMonomialCase<
         5,
         10,
         Images<8, 15, 11, 5, 3, 7, 19, 14, 1, 18, 16, 12, 13, 17, 9, 10, 4, 0, 2, 6>,
         Neg<Images<0, 4, 2, 6, 1, 10, 12, 14, 3, 7, 11, 16, 5, 18, 8, 17, 9, 19, 13, 15>>
-    >(twoStep)) return false;
+    >(twoStep)) ret = false;
+    return ret;
+}
+
+template<unsigned int N, typename GenSet, typename Expected>
+static bool groupElementsTestCase() {
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
+    PermutationStack stack(16 * N);
+    GroupEnumerator enumerator;
+    enumerator.generators.setPermutationLength(N);
+    enumerator.permStack = &stack;
+    GenSet::buildInPlace(enumerator.generators);
+    enumerator.generate();
+    auto expected = Expected::build(N);
+    auto report = [&]() {
+        std::cout << "Unexpected result on genset = " << formatter.formatRef(enumerator.generators) << std::endl
+            << "    expected = " << formatter.formatRef(expected) << std::endl
+            << "    actual = " << formatter.formatRef(enumerator.elements) << std::endl;
+    };
+    if (expected.getSize() != enumerator.elements.getSize()) {
+        report();
+        return false;
+    }
+    for (auto perm : expected) {
+        if (!enumerator.elements.contains(perm)) {
+            report();
+            return false;
+        }
+    }
     return true;
+}
+
+static bool testGroupElementEnumeration() {
+    bool ret = true;
+    if (!groupElementsTestCase<
+        4,
+        GenSet<Neg<SCycles<List<0, 1>>>, Neg<SCycles<List<2, 3>>>, SCycles<List<0, 2>, List<1, 3>>>,
+        GenSet<
+            SCycles<>,
+            Neg<SCycles<List<0, 1>>>,
+            Neg<SCycles<List<2, 3>>>,
+            SCycles<List<0, 1>, List<2, 3>>,
+            SCycles<List<0, 2>, List<1, 3>>,
+            Neg<SCycles<List<0, 2, 1, 3>>>,
+            Neg<SCycles<List<0, 3, 1, 2>>>,
+            SCycles<List<0, 3>, List<1, 2>>
+        >
+    >()) ret = false;
+    return ret;
 }
 
 int main(int argc, const char *args[]) {
@@ -461,6 +510,7 @@ int main(int argc, const char *args[]) {
     TEST(testGroupOrder());
     TEST(testDoubleCosetRep(false));
     TEST(testDoubleCosetRep(true));
+    TEST(testGroupElementEnumeration());
     if (passed) {
         std::cout << "All tests passed" << std::endl;
         return 0;

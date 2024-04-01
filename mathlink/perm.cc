@@ -224,12 +224,12 @@ namespace {
     };
 }
 
-void PermutationSet::addPermutation(const PermutationView &perm) {
-    this->permToId.computeIfAbsent(perm, PermutationHashContext{this, this->ignoreSign}, [this](PermutationView perm){
+bool PermutationSet::addPermutation(const PermutationView &perm) {
+    return this->permToId.computeIfAbsent(perm, PermutationHashContext{this, this->ignoreSign}, [this](PermutationView perm){
         auto id = this->getSize();
         this->permutations.push().copy(perm);
         return id;
-    });
+    }).second;
 }
 
 bool PermutationSet::checkOppositeSignAndAddPermutation(PermutationView perm) {
@@ -1521,18 +1521,43 @@ namespace {
     };
 }
 
-void GroupEnumerator::addGenerator(PermutationView generator) {
-    auto permLen = this->elements.getPermutationLength();
-    this->prevCosetRep = this->elements.getSize();
-    if (this->elements.getSize() == 0) {
-        auto perm = this->permStack->pushStacked(permLen);
-        perm.copy(generator);
-        while (!perm.isIdentity()) {
-            this->elements.addPermutation(perm);
-            perm.multiply(perm, generator);
+void GroupEnumerator::generate() {
+    auto permLen = this->generators.getPermutationLength();
+    this->elements.clear();
+    this->elements.setPermutationLength(permLen);
+    {
+        auto g = this->permStack->pushStacked(permLen).identity();
+        this->elements.addPermutation(g);
+        auto first = this->generators.get(0);
+        g.copy(first);
+        while (!g.isIdentity()) {
+            this->elements.addPermutation(g);
+            g.multiply(g, first);
         }
-        this->generators.addPermutation(generator);
-    } else if (!this->elements.findPermutation(generator).isPresent()) {
-
+    }
+    auto tmp = this->permStack->pushStacked(permLen);
+    auto elt = this->permStack->pushStacked(permLen);
+    for (std::size_t i = 1; i < this->generators.getSize(); i++) {
+        auto curGenerator = this->generators.get(i);
+        if (this->elements.addPermutation(curGenerator)) {
+            auto cosetSize = this->elements.getSize() - 1;
+            auto cosetRepPos = cosetSize;
+            for (std::size_t j = 1; j < cosetRepPos; j++) {
+                tmp.multiply(this->elements.get(i), curGenerator);
+                this->elements.addPermutation(tmp);
+            }
+            while (cosetRepPos < this->elements.getSize()) {
+                for (std::size_t j = 0; j <= i; j++) {
+                    elt.multiply(this->elements.get(cosetRepPos), this->generators.get(j));
+                    if (this->elements.addPermutation(elt)) {
+                        for (std::size_t k = 1; k < cosetSize; k++) {
+                            tmp.multiply(this->elements.get(k), elt);
+                            this->elements.addPermutation(tmp);
+                        }
+                    }
+                }
+                cosetRepPos += cosetSize;
+            }
+        }
     }
 }
