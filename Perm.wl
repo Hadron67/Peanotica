@@ -84,6 +84,7 @@ SignedInversePermutation[0] = 0;
 SignedInversePermutation[expr_Images] := Images @@ InversePermutation[List @@ expr];
 SyntaxInformation@SignedInversePermutation = {"ArgumentsPattern" -> {_}};
 
+SymmetricGenSet[] = {};
 SymmetricGenSet[points__] := MapThread[SCycles[{#1, #2}] &, {Drop[{points}, -1], Drop[{points}, 1]}];
 SyntaxInformation@SymmetricGenSet = {"ArgumentsPattern" -> {__}};
 
@@ -175,5 +176,7 @@ PPermOpenLogFile[path_] := (
 SyntaxInformation@PPermOpenLogFile = {"ArgumentsPattern" -> {_}};
 
 End[];
+
+Protect @@ Names["`*"];
 
 EndPackage[];

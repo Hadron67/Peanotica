@@ -10,6 +10,7 @@ RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the di
 CovDDifference::usage = "CovDDifference[expr, chris, a] represents the difference ";
 CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
 CovDCommutatorOfRiemann::usage = "CovDCommutator[riemann]";
+CovDDefaultIndexOrderedQ::usage = "CovDDefaultIndexOrderedQ[a, b]";
 SortCovD::usage = "SortCovD[expr, cd, commutator]";
 
 Cocurvature::usage = "";
@@ -38,7 +39,7 @@ AdaptIndices::usage = "AdaptIndices[tensor, slots, indPats, adapter]";
 AdaptOneIndex::usage = "AdaptOneIndex[adapter, tensor, i, slot, indPat]";
 MetricAdapter::usage = "MetricAdapter[{slot1 -> {metric, invMetric}, ...}]";
 AdaptNITensor::usage = "AdaptNITensor[value, slots, inds, metricProvider]";
-AdaptNITensorCovD::usage = "AdaptCovD";
+AdaptNITensorCovD::usage = "AdaptNITensorCovD[NITensor[...], ind, slot, covdValue, metricProvider]";
 
 LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric, metricInv]";
 RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
@@ -108,8 +109,11 @@ SyntaxInformation@CovDCommutatorNoTorsion = {"ArgumentsPattern" -> {_, _, _, _}}
 CovDCommutatorOfRiemann[riemann_][expr_, a_, b_] := CovDCommutatorNoTorsion[expr, a, b, riemann];
 SyntaxInformation@CovDCommutatorOfRiemann = {"ArgumentsPattern" -> {_}};
 
-SortCovD[expr_, cd_, commutator_] := SortCovD[expr, cd, commutator, False];
-SortCovD[expr_, cd_, commutator_, reverse_] := expr //. cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; Xor[!OrderedQ@{a, b}, reverse];
+CovDDefaultIndexOrderedQ[a_, b_] := OrderedQ@{SeparateIndexName@a, SeparateIndexName@b};
+SyntaxInformation@CovDDefaultIndexOrderedQ = {"ArgumentsPattern" -> {_, _, _}};
+
+SortCovD[expr_, cd_, commutator_] := SortCovD[expr, cd, commutator, CovDDefaultIndexOrderedQ];
+SortCovD[expr_, cd_, commutator_, orderedQ_] := expr //. cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; !orderedQ[a, b];
 SyntaxInformation@SortCovD = {"ArgumentsPattern" -> {_, _, _, _.}};
 
 DerConstantQ[_?NumberQ] = True;
@@ -137,8 +141,7 @@ ExpandDerivativeRules[lhs_ :> rhs_, opt : OptionsPattern[]] := With[{
     patList = expr_List,
     patProd = prod_?ProductQ[args__],
     patDer = Derivative[ders__][fn_][args__],
-    indexScopePat = HoldPattern@IndexScope[expr_],
-    zeroDerValue = rhs /. {ExpandDerivative[_, exprPatName] -> 0, ExpandDerivativeWithRest[_, exprPatName] -> 0}
+    indexScopePat = HoldPattern@IndexScope[expr_]
 }, Join[{
     (lhsFn[patPlus] :> rhs) //. {
         ExpandDerivative[fn2_, exprPatName] :> (fn2 /@ expr),
@@ -156,9 +159,15 @@ ExpandDerivativeRules[lhs_ :> rhs_, opt : OptionsPattern[]] := With[{
         ExpandDerivative[fn2_, exprPatName] :> fn2[ReplaceDummiesToUnique@expr],
         ExpandDerivativeWithRest[fn2_, exprPatName] :> fn2[ReplaceDummiesToUnique@expr, 1]
     },
-    (lhsFn[_?NumberQ] -> zeroDerValue)
+    (lhsFn[_?NumberQ] :> rhs) /. {
+        ExpandDerivative[_, exprPatName] -> 0,
+        ExpandDerivativeWithRest[_, exprPatName] -> 0
+    }
 },
-    lhsFn[#] -> zeroDerValue & /@ OptionValue@DerConstants,
+    (lhsFn[#] :> rhs) /. {
+        ExpandDerivative[_, exprPatName] -> 0,
+        ExpandDerivativeWithRest[_, exprPatName] -> 0
+    } & /@ OptionValue@DerConstants,
     With[{fnPat = (fn : #)[args__]},
         lhsFn[fnPat] :> rhs /. {
             ExpandDerivative[fn2_, exprPatName] :> MapDerivativeOnFnDerivative[#2 * fn2@#1 &, 0, fn, {args}],
@@ -204,7 +213,7 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
     ,
         sym /: SymmetryOfExpression[sym[expr_, __]] := SymmetryOfExpression@expr
     ]];
-    sym /: SumPassThroughQ[_sym, _] = True;
+    sym /: SumPassThroughQ[sym[expr_, inds__], pos_] := If[pos[[1]] >= 2, True, SumPassThroughQ[expr, Delete[pos, 1]]];
     If[OptionValue@AllowPassThrough,
         sym /: ExpressionPassThroughQ[sym[expr_, inds__], tensor_, pos_] := Switch[pos[[1]],
             1, sym[tensor, inds] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
@@ -553,7 +562,7 @@ ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
 ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];
 SyntaxInformation@ExpandMetricPerturbation = {"ArgumentsPattern" -> {_, _.}};
 
-ExpandRiemannPerturbation[expr_, {pert_, metric_, metricPert_}, {cd_, riemann_, ricci_, ricciScalar_}] := expr /. {
+ExpandRiemannPerturbation[expr_, metricPertArgs : {pert_, metric_, metricPert_}, {cd_, riemann_, ricci_, ricciScalar_}] := expr /. {
     HoldPattern@pert[ricciScalar, n_] :> With[{
         a = GetUniqueIndexOfSlotType@Null, b = GetUniqueIndexOfSlotType@Null
     }, pert[metric[a, b] * ricci[DI@a, DI@b], n]],
@@ -564,7 +573,7 @@ ExpandRiemannPerturbation[expr_, {pert_, metric_, metricPert_}, {cd_, riemann_, 
     HoldPattern@pert[ricci[DI@a_, DI@b_], n_] :> With[{
         c = GetUniqueIndexOfSlotType@Null
     }, PerturbationLeviCivitaRiemann[cd, metric, metricPert, n][DI@a, DI@c, DI@b, c]]
-};
+} // ExpandMetricPerturbation[metricPertArgs];
 ExpandRiemannPerturbation[a1_, a2_][expr_] := ExpandRiemannPerturbation[expr, a1, a2];
 SyntaxInformation@ExpandRiemannPerturbation = {"ArgumentsPattern" -> {_, _, _.}};
 
