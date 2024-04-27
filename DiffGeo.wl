@@ -116,11 +116,13 @@ SortCovD[expr_, cd_, commutator_] := SortCovD[expr, cd, commutator, CovDDefaultI
 SortCovD[expr_, cd_, commutator_, orderedQ_] := expr //. cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; !orderedQ[a, b];
 SyntaxInformation@SortCovD = {"ArgumentsPattern" -> {_, _, _, _.}};
 
-DerConstantQ[_?NumberQ] = True;
+DerConstantQ[_?NumericQ] = True;
+DerConstantQ[symbol_Symbol] := MemberQ[Attributes@symbol, Constant];
 SyntaxInformation@DerConstantQ = {"ArgumentsPattern" -> {_}};
 
 DerFunctionQ[Times] = True;
 DerFunctionQ[Power] = True;
+DerFunctionQ[symbol_Symbol] := MemberQ[Attributes@symbol, NumericFunction];
 SyntaxInformation@DerFunctionQ = {"ArgumentsPattern" -> {_}};
 
 MapDerivativeOnFnDerivative[der_, ders_, fn_, {args__}] := With[{

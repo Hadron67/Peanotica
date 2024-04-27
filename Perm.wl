@@ -177,6 +177,6 @@ SyntaxInformation@PPermOpenLogFile = {"ArgumentsPattern" -> {_}};
 
 End[];
 
-Protect @@ Names["`*"];
+Protect @@ Complement[Names["`*"], {"$PPermLink", "PPermCloseLogFile"}];
 
 EndPackage[];

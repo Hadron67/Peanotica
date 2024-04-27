@@ -63,6 +63,7 @@ IndexedObject::usage = "IndexedObject[expr, {name -> type, ...}] represents an i
 ToIndexedObject::usage = "ToIndexedObject[expr, inds] returns an IndexedObject.";
 MapIndexSlots::usage = "MapIndexSlots[fn, expr] replaces all IndexSlot[n] in expr as fn[n], skipping IndexedObject's and ETensor's.";
 NonDIQ::usage = "NonDIQ[i] returns false on DI[a] or -a, otherwise true.";
+NoDI::usage = "NoDI[DI[a]] gives a, NoDI[a] gives a if Head[a] =!= DI.";
 ReplaceFreesRules::usage = "ReplaceFreesRules[indsAndPos, oldFrees, newFrees]";
 ReplaceFrees::usage = "ReplaceFrees[expr, oldFrees, newFrees]";
 DummyIndex::usage = "DummyIndex[name, repeats] represents an index with hint that it's a dummy index with specified repeats.";
@@ -82,8 +83,8 @@ ContractMetric::usage = "ContractMetric[expr, metrics] tries to contract all the
 SeparateMetricOne;
 
 (* utility functions *)
-DefSimpleTensor;
-DefSimpleSlotType;
+DefSimpleTensor::usage = "DefSimpleTensor[name, slots, symmetry]";
+DefSimpleSlotType::usage = "DefSimpleSlotType[name, dimension, indices]";
 NoIndicesQ;
 NonTensorTermQ;
 GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
@@ -184,12 +185,16 @@ GetIndexOfSlotType[type_, inds_List] := With[{
 ]]];
 SyntaxInformation@GetIndexOfSlotType = {"ArgumentsPattern" -> {_, _}};
 
+GetIndicesOfSlotTypeHelper1[a_] := {a};
+GetIndicesOfSlotTypeHelper1[type_ -> n_Integer] := ConstantArray[type, n];
+GetIndicesOfSlotType[types_] := GetIndicesOfSlotType[types, {}];
+GetIndicesOfSlotType[type_, inds_] := GetIndicesOfSlotType[{type}, inds] /; Head@type =!= List;
 GetIndicesOfSlotType[types_List, inds_List] := FoldPairList[
     With[{i = GetIndexOfSlotType[#2, #1]}, {i, Append[#1, i]}] &,
     inds,
-    types
+    Join @@ (GetIndicesOfSlotTypeHelper1 /@ types)
 ];
-SyntaxInformation@GetIndicesOfSlotType = {"ArgumentsPattern" -> {_, _}};
+SyntaxInformation@GetIndicesOfSlotType = {"ArgumentsPattern" -> {_, _., _.}};
 
 $TempIndexNumber = 1;
 GetUniqueIndexOfSlotType[type_] := TempIndex[$TempIndexNumber++];
@@ -215,6 +220,10 @@ NonDIQ[DI[_]] = False;
 NonDIQ[-_] = False;
 NonDIQ[_] = True;
 SyntaxInformation@NonDIQ = {"ArgumentsPattern" -> {_}};
+
+NoDI[DI@a_] := a;
+NoDI[a_] := a;
+SyntaxInformation@NoDI = {"ArgumentsPattern" -> {_}};
 
 ExpressionPassThroughQ[_, _, {_}] = True;
 ExpressionPassThroughQ[_?ProductQ[args__], tensor_, pos_] := Extract[Hold@{args}, {1, pos[[1]]}, Function[{a}, ExpressionPassThroughQ[a, tensor, Drop[pos, 1]], {HoldAll}]];
@@ -256,6 +265,8 @@ FindIndicesSlots[HoldPattern@Plus[args__]] := {DeleteCases[
     {HoldFirst}], Hold@args],
     {}
 ]};
+FindIndicesSlots[HoldForm@expr_] := FindIndicesSlots[expr, {1}];
+FindIndicesSlots[Hold@expr_] := FindIndicesSlots[expr, {1}];
 FindIndicesSlots[fn_[args___]] := Join[
     WrapList@FindIndicesSlots[fn, {0}]
 ,
@@ -277,6 +288,8 @@ FlattenIndicesSlots[SummedIndices[l__]] := FlattenIndicesSlots /@ Join[l];
 FlattenIndicesSlots[list_] := list //. SummedIndices[l__] :> Sequence @@ Join[l];
 
 SymmetryOfExpression[_] = {};
+SymmetryOfExpression[Hold@expr_] := SymmetryOfExpression@expr;
+SymmetryOfExpression[HoldForm@expr_] := SymmetryOfExpression@expr;
 SymmetryOfExpression@ISortedGeneral[expr_] := SymmetryOfExpression@expr;
 SymmetryOfExpression@ISortedProduct[head_, args_, symList_] := With[{
     argSlotCounts = Length@FindIndicesSlots@# & /@ args
@@ -462,7 +475,9 @@ DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
 },
     (
         sym /: FindIndicesSlots[sym[##]] = slotsAndPos;
-        sym /: SymmetryOfExpression[sym[##]] = symmetry;
+        If[symmetry =!= {},
+            sym /: SymmetryOfExpression[sym[##]] = symmetry;
+        ];
     ) & @@ ConstantArray[_, Length@slots];
     DefTensorFormatings[sym, opt];
     sym /: NITensorReduce[sym[inds__], frees_] := NITensorReduce[NITensor[sym, IndexName /@ {inds}], frees];
@@ -644,6 +659,7 @@ ContractMetricExpanded[expr_Times, metrics_] := With[{
 ContractMetricExpanded[expr_, _] := expr;
 
 ContractMetric[expr_?ArrayQ, metrics_] := Map[ContractMetric[#, metrics] &, expr, {ArrayDepth@expr}];
+ContractMetric[expr_Association, metrics_] := ContractMetric[#, metrics] & /@ expr;
 ContractMetric[ETensor[expr_, inds_], metrics_] := ETensor[ContractMetric[expr, metrics], inds];
 ContractMetric[expr_, metrics_] := ContractMetricExpanded[ExpandToTensorPolynomial@expr, metrics];
 ContractMetric[expr_] := ContractMetric[expr, All];
@@ -935,6 +951,7 @@ SyntaxInformation@IndexSlot = {"ArgumentsPattern" -> {_}};
 
 Options@PreITensorReduce = Options@ITensorReduce;
 PreITensorReduce[arr_?ArrayQ, opt___] := Map[PreITensorReduce[#, opt] &, arr, {ArrayDepth@arr}];
+PreITensorReduce[expr_Association, opt___] := PreITensorReduce[#, opt] & /@ expr;
 PreITensorReduce[head_[args___], opt___] := PreITensorReduce[head, opt] @@ Map[PreITensorReduce[#, opt] &, {args}];
 PreITensorReduce[expr_, ___] := With[{
     allInds = FindAllIndicesNames@expr
