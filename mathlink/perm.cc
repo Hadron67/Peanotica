@@ -963,6 +963,11 @@ void BaseChanger::completeBaseChange(MutableSlice<upoint_type> base, Slice<upoin
 }
 
 void BaseChanger::makeFirstPoint(MutableSlice<upoint_type> base, upoint_type point, PermutationStack &stack) {
+    if (point == base[0]) {
+        return;
+    }
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
     auto permLen = this->genset.getPermutationLength();
     std::size_t pos = 0;
     auto baseLen = base.getLength();
@@ -970,18 +975,21 @@ void BaseChanger::makeFirstPoint(MutableSlice<upoint_type> base, upoint_type poi
     this->orbit1.appendOrbit(point, this->genset.permutations, this->queue);
     while (pos < baseLen) {
         if (this->orbit1.pointToOrbitId[base[pos]].isPresent()) {
-            auto gInv = traceSchreierVector(stack, base[pos], this->genset.permutations, this->orbit1.vector.get());
-            auto g = stack.pushStacked(permLen);
-            g.inverse(gInv);
-            for (std::size_t i = 0; i < baseLen; i++) {
-                base[i] = g.mapPoint(base[i]);
+            if (point != base[pos]) {
+                auto gInv = traceSchreierVector(stack, base[pos], this->genset.permutations, this->orbit1.vector.get());
+                auto g = stack.pushStacked(permLen);
+                g.inverse(gInv);
+                for (std::size_t i = 0; i < baseLen; i++) {
+                    base[i] = g.mapPoint(base[i]);
+                }
+                auto tmp = stack.pushStacked(permLen);
+                for (auto gen : this->genset) {
+                    tmp.multiply(gInv, gen);
+                    tmp.multiply(tmp, g);
+                    gen.copy(tmp);
+                }
+                this->genset.updateIndex();
             }
-            auto tmp = stack.pushStacked(permLen);
-            for (auto gen : this->genset) {
-                tmp.multiply(gInv, gen);
-                tmp.multiply(tmp, g);
-            }
-            this->genset.updateIndex();
             break;
         }
         pos++;
@@ -1452,6 +1460,13 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
             }
         }
 
+#ifdef PPERM_DEBUG
+        if (this->log) {
+            *this->log << "S = " << this->permFormatter.formatRef(gensetSProvider) << std::endl;
+            *this->log << "D = " << this->permFormatter.formatRef(gensetDProvider) << std::endl;
+        }
+#endif
+
         this->baseChangeOfDTime += measureElapsed([&]() {
             gensetSProvider.stabilizeOnePoint(this->permStack, i);
             gensetDProvider.stabilizeOnePoint(this->permStack, pi);
@@ -1460,7 +1475,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "S_" << i << " = " << this->permFormatter.formatRef(gensetSProvider) << std::endl;
-            *this->log << "D_" << i << " = " << this->permFormatter.formatRef(gensetDProvider) << std::endl;
+            *this->log << "D_" << pi << " = " << this->permFormatter.formatRef(gensetDProvider) << std::endl;
             *this->log << "new sgd = " << this->sgdSet << std::endl;
             *this->log << "Length[sgd] = " << this->sgdSet.getSize() << std::endl;
             *this->log << "iteration i = " << i << " done" << std::endl;

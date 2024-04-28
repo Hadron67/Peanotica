@@ -10,15 +10,17 @@ RandomNonZeroRiemannMonomialIndices[n_, freen_] := NestWhile[
 ];
 
 TestRiemannMonomialCanon::wrong = "Different results on input `1`: Peanotica: `2`, xPerm: `3`.";
-
+Options@TestRiemannMonomialCanon = {
+    MetricSymSign -> 1
+};
 TestRiemannMonomialCanon[n_, freen_] := TestRiemannMonomialCanon[n, freen, PermutationList[RandomPermutation[4 n], 4 n]];
-TestRiemannMonomialCanon[n_, freen_, testPerm_] := Module[
+TestRiemannMonomialCanon[n_, freen_, testPerm_, opt : OptionsPattern[]] := Module[
     {dummySet, peanoticaResult, xPermResult},
     dummySet = Partition[Range[freen + 1, 4 n], 2];
     peanoticaResult = Peanotica`Perm`DoubleCosetRepresentative[
         RiemannMonomialGenSet[n],
         Peanotica`Perm`Images @@ testPerm,
-        DummiesGenSet[1, dummySet]
+        DummiesGenSet[OptionValue@MetricSymSign, dummySet]
     ] // AbsoluteTiming;
     xPermResult = CanonicalPerm[
         xAct`xPerm`Images@testPerm,
@@ -28,7 +30,7 @@ TestRiemannMonomialCanon[n_, freen_, testPerm_] := Module[
             GenSet @@ (RiemannMonomialGenSet[n] /. SCycles -> xAct`xPerm`Cycles)
         ],
         Range@freen,
-        {DummySet[0, dummySet, 1]}
+        {DummySet[0, dummySet, OptionValue@MetricSymSign]}
     ] /. Peanotica`Perm`Images -> xAct`xPerm`Images /. xAct`xPerm`Images[{inds__}] :> Peanotica`Perm`Images[inds] // AbsoluteTiming;
     If[peanoticaResult[[2]] =!= xPermResult[[2]], Message[TestRiemannMonomialCanon::wrong, testPerm, peanoticaResult[[2]], xPermResult[[2]]]];
     If[peanoticaResult[[1]] === $Failed, Abort[]];
@@ -40,6 +42,10 @@ PPermOpenLogFile["hkm.txt"];
 SetOptions[Peanotica`Perm`DoubleCosetRepresentative, PPermVerbose -> True];
 Scan[TestRiemannMonomialCanon[10, 20] &, Range@100];
 Scan[TestRiemannMonomialCanon[10, 0] &, Range@100];
+SetOptions[TestRiemannMonomialCanon, MetricSymSign -> 0];
+Scan[TestRiemannMonomialCanon[10, 20] &, Range@100];
+Scan[TestRiemannMonomialCanon[10, 0] &, Range@100];
+SetOptions[TestRiemannMonomialCanon, MetricSymSign -> 1];
 SetOptions[Peanotica`Perm`DoubleCosetRepresentative, UseTwoStep -> True];
 Scan[TestRiemannMonomialCanon[10, 20] &, Range@100];
 Scan[TestRiemannMonomialCanon[10, 0] &, Range@100];
