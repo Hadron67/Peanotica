@@ -399,206 +399,7 @@ bool pperm::isInGroup(PermutationStack &stack, PermutationView perm, Permutation
     return tmp.isIdentity();
 }
 
-void JerrumBranching::setPermutationLength(std::size_t permLen) {
-    auto tableSize = permLen * (permLen + 1);
-    this->permLen = permLen;
-    if (tableSize > this->tableSize) {
-        if (this->tableData) {
-            delete[] this->tableData;
-        }
-        this->tableData = new OptionalPtr[tableSize];
-        this->tableSize = tableSize;
-    }
-    arraySet(this->tableData, tableSize, None{});
-    this->permutationStorage.setPermutationLength(permLen);
-    this->freePermutations.clear();
-}
-
-JerrumBranching::Ptr JerrumBranching::allocPermutation() {
-    auto freeSize = this->freePermutations.size();
-    if (freeSize > 0) {
-        auto ret = this->freePermutations[freeSize - 1];
-        this->freePermutations.pop_back();
-        return Ptr(ret);
-    } else {
-        auto value = this->permutationStorage.getSize();
-        this->permutationStorage.push();
-        return Ptr(value);
-    }
-}
-
-void JerrumBranching::setEdge(upoint_type i, upoint_type j, OptionalPtr value) {
-    auto &old = this->tableData[i * this->permLen + j];
-    if (old.isPresent()) {
-        this->retainPermutation(old.get());
-    }
-    old = value;
-}
-
-void JerrumBranching::recalculateVertices(std::deque<upoint_type> &workStack) {
-    auto ptr = this->tableData + this->permLen*this->permLen;
-    for (upoint_type p = 0; p < this->permLen; p++) {
-        if (ptr[p].isPresent()) {
-            this->retainPermutation(ptr[p].get());
-            ptr[p] = None{};
-        }
-    }
-    workStack.clear();
-
-    auto root = this->findRoot();
-    if (root.isPresent()) {
-        auto ptr0 = this->allocPermutation();
-        this->getPermutation(ptr0).identity();
-        ptr[root.get()] = ptr0;
-        workStack.push_back(root.get());
-    }
-
-    while (!workStack.empty()) {
-        upoint_type point = workStack[0];
-        workStack.pop_front();
-        auto permId = ptr[point].get();
-        for (upoint_type point2 = 0; point2 < this->permLen; point2++) {
-            auto edge = this->getEdge(point, point2);
-            if (edge.isPresent()) {
-                auto ptr0 = this->allocPermutation();
-                this->getPermutation(ptr0).multiply(this->getPermutation(permId), this->getPermutation(edge.get()));
-                ptr[point2] = ptr0;
-                workStack.push_back(point2);
-            }
-        }
-    }
-}
-
-bool JerrumBranching::hasPath(std::deque<upoint_type> &queue, upoint_type p1, upoint_type p2) {
-    queue.clear();
-    queue.push_back(p1);
-    while (!queue.empty()) {
-        auto point = queue[0];
-        queue.pop_front();
-        for (upoint_type point2 = 0; point2 < this->permLen; point2++) {
-            if (this->getEdge(point, point2).isPresent()) {
-                if (p2 == point2) {
-                    return true;
-                }
-                queue.push_back(point2);
-            }
-        }
-    }
-    return false;
-}
-
-OptionalUInt<upoint_type> JerrumBranching::findRoot() const {
-    for (upoint_type p1 = 0; p1 < this->permLen;) {
-        auto hasNext = false;
-        auto hasPrev = false;
-        auto nextP = p1 + 1;
-        for (upoint_type p2 = 0; p2 < this->permLen; p2++) {
-            if (this->getEdge(p1, p2).isPresent()) {
-                hasNext = true;
-            }
-            if (this->getEdge(p2, p1).isPresent()) {
-                hasPrev = false;
-                nextP = p2;
-            }
-        }
-        if (hasNext && !hasPrev) {
-            return p1;
-        }
-        p1 = nextP;
-    }
-    return None{};
-}
-
-void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm) {
-    PermutationFormatter formatter;
-    formatter.useCycles = true;
-    StackedPermutation tmp(stack, this->permLen), tmp2(stack, this->permLen);
-    tmp.copy(perm);
-    auto findEdge1 = [this](upoint_type j, upoint_type l) -> OptionalUInt<upoint_type> {
-        for (upoint_type m = j + 1; m < this->permLen; m++) {
-            if (this->getEdge(m, l).isPresent()) {
-                return m;
-            }
-        }
-        return None{};
-    };
-    while (1) {
-        auto j = tmp.firstNonFixedPoint();
-        auto l = tmp.mapPoint(j);
-        std::cout << "j = " << j << ", l = " << l << std::endl;
-        while (j + 1 < this->permLen && this->hasPath(queue, j, l)) {
-            tmp2.inverse(this->getPermutation(this->getVertex(l).get()));
-            tmp.multiply(tmp, tmp2);
-            tmp.multiply(tmp, this->getPermutation(this->getVertex(j).get()));
-            std::cout << "path exists, new g = " << formatter.formatValue(tmp) << std::endl;
-            j = tmp.firstNonFixedPoint();
-            l = tmp.mapPoint(j);
-            std::cout << "new j = " << j << ", l = " << l << std::endl;
-        }
-        if (j + 1 == this->permLen) {
-            std::cout << "returning" << std::endl;
-            return;
-        }
-        auto m0 = findEdge1(j, l);
-        while (m0.isPresent()) {
-            auto m = m0.get();
-            std::cout << "edge ml with m > j exists, m = " << m << std::endl;
-            tmp2.inverse(this->getPermutation(this->getEdge(m, l).get()));
-            tmp.multiply(tmp, tmp2);
-            l = m;
-            m0 = findEdge1(j, l);
-            std::cout << "new g = " << formatter.formatValue(tmp) << std::endl;
-        }
-        m0 = findEdge1(0, l);
-        if (m0.isPresent()) {
-            std::cout << "edge ml exists" << std::endl;
-            StackedPermutation tmp3(stack, this->permLen);
-            auto m = m0.get();
-            tmp3.copy(this->getPermutation(this->getEdge(m, l).get()));
-            this->setEdge(m, l, None{});
-            this->setEdgePermutation(j, l, tmp);
-            tmp2.inverse(tmp);
-            tmp3.multiply(tmp3, tmp2);
-            tmp.copy(tmp3);
-            std::cout << "new g = " << formatter.formatValue(tmp) << std::endl;
-            this->recalculateVertices(queue);
-        } else {
-            std::cout << "edge ml does not exist" << std::endl;
-            this->setEdgePermutation(j, l, tmp);
-            this->recalculateVertices(queue);
-            return;
-        }
-    }
-}
-
-void JerrumBranching::dump(std::ostream &os, PermutationFormatter &formatter) {
-    std::deque<upoint_type> queue;
-    auto root = this->findRoot();
-    if (root.isPresent()) {
-        queue.push_back(root.get());
-    }
-    os << "branching {" << std::endl;
-    while (!queue.empty()) {
-        auto p = queue[0];
-        queue.pop_front();
-        for (upoint_type p2 = 0; p2 < this->permLen; p2++) {
-            auto edge = this->getEdge(p, p2);
-            if (edge.isPresent()) {
-                os << "    " << p << " -- " << formatter.formatValue(this->getPermutation(edge.get())) << " --> " << p2 << std::endl;
-                queue.push_back(p2);
-            }
-        }
-    }
-    for (upoint_type p = 0; p < this->permLen; p++) {
-        auto ver = this->getVertex(p);
-        if (ver.isPresent()) {
-            std::cout << "    v(" << p << ") = " << formatter.formatValue(this->getPermutation(ver.get())) << std::endl;
-        }
-    }
-    os << "}" << std::endl;
-}
-
-void JerrumBranching2::recalculateVertices(std::deque<upoint_type> &queue) {
+void JerrumBranching::recalculateVertices(std::deque<upoint_type> &queue) {
     for (upoint_type p = 0; p < this->permLen; p++) {
         auto entry = this->get(p);
         if (!entry.getParent().isPresent()) {
@@ -623,7 +424,7 @@ void JerrumBranching2::recalculateVertices(std::deque<upoint_type> &queue) {
     }
 }
 
-bool JerrumBranching2::hasPath(upoint_type p1, upoint_type p2) {
+bool JerrumBranching::hasPath(upoint_type p1, upoint_type p2) {
     auto parent = this->get(p2).getParent();
     while (parent.isPresent()) {
         auto p3 = parent.get();
@@ -635,7 +436,7 @@ bool JerrumBranching2::hasPath(upoint_type p1, upoint_type p2) {
     return false;
 }
 
-void JerrumBranching2::dump(std::ostream &os, PermutationFormatter &formatter, std::deque<upoint_type> &queue) {
+void JerrumBranching::dump(std::ostream &os, PermutationFormatter &formatter, std::deque<upoint_type> &queue) {
     os << "JerrumBraching {" << std::endl;
     for (upoint_type p = 0; p < this->permLen; p++) {
         auto entry = this->get(p);
@@ -664,7 +465,7 @@ void JerrumBranching2::dump(std::ostream &os, PermutationFormatter &formatter, s
     os << "}" << std::endl;
 }
 
-void JerrumBranching2::reset() {
+void JerrumBranching::reset() {
     for (upoint_type p = 0; p < this->permLen; p++) {
         auto entry = this->get(p);
         entry.setParent(None{});
@@ -672,7 +473,7 @@ void JerrumBranching2::reset() {
     }
 }
 
-void JerrumBranching2::siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm, SiftLogger log) {
+void JerrumBranching::siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm, SiftLogger log) {
     StackedPermutation tmp(stack, this->permLen), tmp2(stack, this->permLen);
     tmp.copy(perm);
     while (1) {
@@ -789,7 +590,7 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
         this->orbit.appendOrbit(p, this->currentGens, this->queue);
         this->augment(p);
         this->schreierGens.clear();
-        schreierGenerators(this->schreierGens, *this->permStack, this->currentGens, this->orbit);
+        schreierGenerators([this](PermutationView perm){ this->schreierGens.addPermutation(perm); }, *this->permStack, this->currentGens, this->orbit);
 #ifdef PPERM_DEBUG
         if (this->log) {
             *this->log << "schreier generators = " << this->formatter.formatRef(this->schreierGens) << std::endl;
@@ -802,7 +603,7 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
                 *this->log << "sifting element " << this->formatter.formatValue(perm) << std::endl;
             }
 #endif
-            this->siftingBranching.siftElement(*this->permStack, this->queue, perm, JerrumBranching2::SiftLogger(this->log, this->formatter));
+            this->siftingBranching.siftElement(*this->permStack, this->queue, perm, JerrumBranching::SiftLogger(this->log, this->formatter));
 #ifdef PPERM_DEBUG
             if (this->log) {
                 std::deque<upoint_type> queue;
@@ -823,9 +624,7 @@ static inline upoint_type findFirstPoint(const bool *points, std::size_t size) {
             return ret;
         }
     }
-#ifdef PPERM_DEBUG
     throw std::runtime_error("first point not found");
-#endif
 }
 
 static inline void boolListComplement(bool *dest, const bool *exclude, std::size_t len) {
@@ -1197,16 +996,6 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
         }
         return ret;
     }
-}
-
-static upoint_type minPointWithRespectToBase(const bool *points, std::size_t permLen, Slice<upoint_type> base) {
-    for (auto b : base) {
-        if (points[b]) return b;
-    }
-    for (upoint_type p = 0; p < permLen; p++) {
-        if (points[p]) return p;
-    }
-    throw std::runtime_error("first point not found");
 }
 
 StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentative(PermutationView perm, StrongGenSetProvider &gensetSProvider, upoint_type minNonFixedPointOfD, bool *finishedPoints) {

@@ -70,6 +70,8 @@ DummyIndex::usage = "DummyIndex[name, repeats] represents an index with hint tha
 PopulateDummyIndexHint::usage = "PopulateDummyIndexHint[expr, frees]";
 IndexScope;
 SignOfUpSlot;
+PermuteIndexList::usage = "PermuteIndexList[list, perm]";
+ApplyIndices::usage = "ApplyIndices[expr, indPos, indList]";
 
 (* metric related *)
 DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
@@ -110,7 +112,7 @@ ITensorReduceOneTerm;
 RenameDummies;
 UseMetricOnSlots;
 FreeIndexNames;
-FreeIndicesSymmetry;
+FreeIndicesSymmetry::usage = "FreeIndicesSymmetry is an option for ITensorReduceOneTerm and related functions, specifying the symmetry of free indices, as if they are contracted with a tensor with certain symmetry.";
 PeanoticaVerbose;
 ReleaseISort;
 ExpandToTensorPolynomial;
@@ -855,6 +857,15 @@ PermuteIndexList[list_, a_ * perm_] := a * PermuteIndexList[list, perm];
 PermuteIndexList[list_, perm_Images] := IndexList @@ Permute[list, List @@ perm];
 PermuteIndexList[_, 0] = 0;
 
+ConvertFreeIndicesSym[sym_List, frees_] := sym;
+ConvertFreeIndicesSym[inds_ -> sym_, frees_] := With[{
+    perm = Images @@ (FirstPosition[inds, #][[1]] & /@ frees)
+}, With[{
+    invPerm = SignedInversePermutation@perm
+},
+    PPermPermutationProduct[perm, #, invPerm] & /@ sym
+]];
+
 CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSelector_] := With[{
     indPos = FindIndicesSlots@expr,
     slotsSym = SymmetryOfExpression@expr
@@ -863,24 +874,25 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
 }, With[{
     groupedInds = FindAndDropFrees[GroupIndexList[actualInds], frees]
 }, With[{
-    dummySymList = AddSymmetryToGroupedIndexList[groupedInds[[2]], ExpressionPairSymProvider[expr, indPos, symDummyPairSelector]]
+    dummySymList = AddSymmetryToGroupedIndexList[groupedInds[[2]], ExpressionPairSymProvider[expr, indPos, symDummyPairSelector]],
+    freeInds = CollectGroupedIndices@groupedInds[[1]]
 }, With[{
     indsSym = Join[
         ShiftPermutation[
             SymmetryGroupOfSymmetricIndexList@dummySymList,
-            Length@CollectGroupedIndices@groupedInds[[1]]
+            Length@freeInds
         ],
-        freesSym
+        ConvertFreeIndicesSym[freesSym, Echo@freeInds[[All, 2]]]
     ],
     groupedDummies = MapAt[Extract[1], 1] /@ dummySymList
 }, With[{
-    canonIndsAndPos = {CollectGroupedIndices@groupedInds[[1]], CollectGroupedIndices[MapAt[First, 1] /@ dummySymList]}
+    canonIndsAndPos = {freeInds, CollectGroupedIndices[MapAt[First, 1] /@ dummySymList]}
 }, With[{
     perm = InversePermutation@(Join @@ canonIndsAndPos)[[All, 1]],
     canonInds = (Join @@ canonIndsAndPos)[[All, 2]]
 }, With[{
     renamedCanonInds = If[renameDummies, Join[
-        CollectGroupedIndices@groupedInds[[1]],
+        freeInds,
         CollectGroupedIndices@RenameGroupedIndexList[groupedDummies, CollectGroupedIndicesNames@groupedInds[[1]], indPos[[#, 2]] &]
     ][[All, 2]], canonInds]
 },

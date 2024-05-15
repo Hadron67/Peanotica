@@ -18,9 +18,10 @@ WSMDEFN(void, WSDefaultHandler, (WSLINK wslp, int message, int n));
 static bool readPermutation(WSLINK link, PermutationView perm) {
     int len2;
     TRY(WSTestHead(link, "List", &len2));
-    TRY(perm.len + 1 == len2);
+    TRY(len2 >= 1 && len2 <= perm.len + 1);
     int sign;
     TRY(WSGetInteger32(link, &sign));
+    perm.identity();
     if (sign == -1) {
         perm.setNegative(true);
     } else {
@@ -28,7 +29,7 @@ static bool readPermutation(WSLINK link, PermutationView perm) {
         perm.setNegative(false);
     }
     auto images = perm.images();
-    for (std::size_t i = 0; i < perm.len; i++, images++) {
+    for (std::size_t i = 0; i < len2 - 1; i++, images++) {
         int val;
         TRY(WSGetInteger32(link, &val));
         TRY(val >= 1 && val <= perm.len);
@@ -311,6 +312,35 @@ static void registerFunctions(WSTPEnv &env) {
 
             TRY(WSNewPacket(env.stdlink));
             TRY(writePermutationList(env.stdlink, enumerator.elements.permutations));
+            return true;
+        }
+    );
+    env.registerFunction(
+        P_PREFIX "MathLinkPPermStabilizer[" P_PREFIX "n_Integer, " P_PREFIX "genset_List, " P_PREFIX "point_Integer]",
+        "{" P_PREFIX "n, " P_PREFIX "genset, " P_PREFIX "point}",
+        [](WSTPEnv &env) -> bool {
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            PermutationList genset(permLen);
+            TRY(readPermutationList(env.stdlink, genset));
+            int point;
+            TRY(WSGetInteger32(env.stdlink, &point));
+            TRY(point >= 1 && point <= permLen);
+
+            PermutationStack stack(permLen * 16);
+            SchreierOrbit orbit(permLen);
+            std::deque<upoint_type> queue;
+            JerrumBranching sifter(permLen);
+            orbit.appendOrbit(point - 1, genset, queue);
+            schreierGenerators([&](PermutationView perm) {
+                sifter.siftElement(stack, queue, perm, None{});
+            }, stack, genset, orbit);
+
+            PermutationList output(permLen);
+            sifter.collectLabels([&output](PermutationView perm) { output.addPermutation(perm); });
+
+            TRY(WSNewPacket(env.stdlink));
+            TRY(writePermutationList(env.stdlink, output));
             return true;
         }
     );

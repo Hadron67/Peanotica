@@ -536,91 +536,6 @@ inline StackedPermutation PermutationStack::pushStacked(std::size_t permLen) {
 }
 
 struct JerrumBranching {
-    struct Ptr {
-        Ptr() = default;
-        explicit Ptr(std::uint32_t value): value(value) {}
-        private:
-        std::uint32_t value;
-        friend JerrumBranching;
-    };
-    struct OptionalPtr {
-        OptionalPtr() = default;
-        OptionalPtr(None n): OptionalPtr() {}
-        OptionalPtr(Ptr p): value(p.value) {}
-        explicit OptionalPtr(OptionalUInt<std::uint32_t> value): value(value) {}
-        bool isPresent() const {
-            return this->value.isPresent();
-        }
-        Ptr get() const {
-            return Ptr(this->value.get());
-        };
-        private:
-        OptionalUInt<std::uint32_t> value;
-        friend JerrumBranching;
-    };
-    JerrumBranching() = default;
-    JerrumBranching(std::size_t permLen): JerrumBranching() {
-        this->setPermutationLength(permLen);
-    }
-    ~JerrumBranching() {
-        if (this->tableData != nullptr) {
-            delete[] this->tableData;
-        }
-    }
-    void setPermutationLength(std::size_t permLen);
-    void reset() {
-        this->setPermutationLength(this->permLen);
-    }
-    Ptr allocPermutation();
-    void retainPermutation(Ptr ptr) {
-        this->freePermutations.push_back(ptr);
-    }
-    PermutationView getPermutation(Ptr p) {
-        return this->permutationStorage.get(p.value);
-    }
-    OptionalPtr getEdge(upoint_type i, upoint_type j) const {
-        return this->tableData[i * this->permLen + j];
-    }
-    void setEdge(upoint_type i, upoint_type j, OptionalPtr value);
-    void setEdgePermutation(upoint_type i, upoint_type j, PermutationView perm) {
-        this->setEdge(i, j, None{});
-        auto ptr = this->allocPermutation();
-        this->getPermutation(ptr).copy(perm);
-        this->setEdge(i, j, ptr);
-    }
-    OptionalPtr getVertex(upoint_type i) {
-        return this->tableData[this->permLen * this->permLen + i];
-    }
-    void setVertex(upoint_type i, OptionalPtr value) {
-        auto &old = this->tableData[this->permLen * this->permLen + i];
-        if (old.isPresent()) {
-            this->retainPermutation(old.get());
-        }
-        old = value;
-    }
-    void recalculateVertices(std::deque<upoint_type> &workStack);
-    bool hasPath(std::deque<upoint_type> &queue, upoint_type p1, upoint_type p2);
-    OptionalUInt<upoint_type> findRoot() const;
-    void siftElement(PermutationStack &stack, std::deque<upoint_type> &queue, PermutationView perm);
-    template<typename Fn>
-    void collectLabels(Fn &&consumer) {
-        auto ptr = this->tableData;
-        for (upoint_type i = 0; i < this->permLen * this->permLen; i++, ptr++) {
-            if (ptr->isPresent()) {
-                consumer(this->getPermutation(ptr->get()));
-            }
-        }
-    }
-    void dump(std::ostream &os, PermutationFormatter &formatter);
-    private:
-    std::size_t permLen = 0;
-    OptionalPtr *tableData = nullptr;
-    std::size_t tableSize = 0;
-    PermutationList permutationStorage;
-    std::vector<Ptr> freePermutations;
-};
-
-struct JerrumBranching2 {
     struct Entry {
         OptionalUInt<upoint_type> getParent() const {
             return OptionalUInt<upoint_type>::fromRaw(this->data[0]);
@@ -647,16 +562,17 @@ struct JerrumBranching2 {
         upoint_type *data;
         std::size_t permLen;
         Entry(upoint_type *data, std::size_t permLen): data(data), permLen(permLen) {}
-        friend JerrumBranching2;
+        friend JerrumBranching;
     };
     struct SiftLogger {
         std::ostream *os = nullptr;
         PermutationFormatter *formatter = nullptr;
         SiftLogger() = default;
+        SiftLogger(None n): SiftLogger() {}
         SiftLogger(std::ostream *os, PermutationFormatter &formatter): os(os), formatter(&formatter) {}
     };
-    JerrumBranching2() = default;
-    JerrumBranching2(std::size_t permLen) {
+    JerrumBranching() = default;
+    JerrumBranching(std::size_t permLen) {
         this->setPermutationLength(permLen);
     }
     void setPermutationLength(std::size_t permLen) {
@@ -689,14 +605,14 @@ struct JerrumBranching2 {
 struct JerrumBranchingBuilder {
     std::ostream *log = nullptr;
     PermutationFormatter formatter;
-    JerrumBranching2 branching;
+    JerrumBranching branching;
     void build(PermutationStack &permStack, PermutationList &genset);
     private:
     PermutationStack *permStack;
     SchreierOrbit orbit;
     PermutationList currentGens;
     PermutationSet schreierGens; // maybe PermutationList is also ok? cause we don't know whether the Schreier generators contain dupes
-    JerrumBranching2 siftingBranching;
+    JerrumBranching siftingBranching;
     std::deque<upoint_type> queue;
     void augment(upoint_type i);
 };
@@ -707,8 +623,8 @@ void computeOrbit(bool *points, upoint_type start, PermutationList &perms, std::
 // has allocation
 bool isInGroup(PermutationStack &stack, PermutationView perm, PermutationList &genset, Slice<upoint_type> base);
 
-template<typename Set>
-inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationList &gens, SchreierOrbit &orbit) {
+template<typename Consumer>
+inline void schreierGenerators(Consumer ret, PermutationStack &stack, PermutationList &gens, SchreierOrbit &orbit) {
     auto permLen = gens.getPermutationLength();
     auto tmp = stack.pushStacked(permLen);
     for (upoint_type gamma = 0; gamma < permLen; gamma++) if (orbit.pointToOrbitId[gamma].isPresent()) {
@@ -719,7 +635,7 @@ inline void schreierGenerators(Set &ret, PermutationStack &stack, PermutationLis
             tmp.multiply(tmp1, gen);
             tmp.multiply(tmp, tmp2);
             if (!tmp.isIdentity()) {
-                ret.addPermutation(tmp);
+                ret(tmp);
             }
         }
     }
