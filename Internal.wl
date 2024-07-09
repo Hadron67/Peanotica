@@ -4,6 +4,8 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{"`*", "`Private`*"}];
 
 xToolsDebugPrint::usage = "xToolsDebugPrint[tag, msg] prints debug message with specified tag.";
 FilterExprList::usage = "FilterExprList[filter, expr] returns true if expr is not filtered by filter.";
+ThreadableQ;
+ExpandThreadableRules::usage = "ExpandThreadableRules[lhs :> rhs]";
 NestWith;
 
 $xToolsDebugFilter;
@@ -36,6 +38,10 @@ Options[ArraySimplify] = Options@Simplify;
 ArraySimplify[arr_?ArrayQ, opt : OptionsPattern[]] := Map[ArraySimplify[#, opt] &, arr, {ArrayDepth@arr}];
 ArraySimplify[expr_, opt : OptionsPattern[]] := Simplify[expr, opt];
 SyntaxInformation@ArraySimplify = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+
+ExpandThreadableRules[lhs :> rhs] := With[{
+    exprPatName = Cases[lhs, Verbatim[PatternTest][Verbatim[Pattern][p_, Blank[]], ThreadableQ] :> p, {0, Infinity}][[1]]
+}];
 
 End[];
 

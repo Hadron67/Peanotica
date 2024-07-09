@@ -11,10 +11,10 @@ SymmetryOfExpression;
 UnorderedProductQ;
 ProductQ;
 TensorTermQ;
-ISort;
+ISort::usage = "ISort[expr]";
 RenamingGroupOfIndexName::usage = "RenamingGroupOfIndexName[a] gives the renaming group of the index name a. Index names with the same renaming group can be interchanged, while the renaming group None cannot be renamed.";
 ExpressionPassThroughQ::usage = "ExpressionPassThroughQ[T[..., i, ...], expr, pos] gives True if T[..., i, ...] expr = T[..., i * expr, ...], where the position of i is given by pos.";
-SumPassThroughQ;
+SumPassThroughQ::usage = "SumPassThroughQ[expr, pos]";
 SignOfSymmetricPair::usage = "SignOfSymmetricPair[type1, type2, ind] returns 1 or -1.";
 InterchangableIndexPairQ::usage = "InterchangableIndexPairQ[type, a] gives true if the index name a and DI[a] can be interchanged.";
 ITensor::usage = "ITensor[expr, indices] represents a general tensor object.";
@@ -64,14 +64,26 @@ ToIndexedObject::usage = "ToIndexedObject[expr, inds] returns an IndexedObject."
 MapIndexSlots::usage = "MapIndexSlots[fn, expr] replaces all IndexSlot[n] in expr as fn[n], skipping IndexedObject's and ETensor's.";
 NonDIQ::usage = "NonDIQ[i] returns false on DI[a] or -a, otherwise true.";
 NoDI::usage = "NoDI[DI[a]] gives a, NoDI[a] gives a if Head[a] =!= DI.";
+CopyDI::usage = "CopyDI[a, b]";
 ReplaceFreesRules::usage = "ReplaceFreesRules[indsAndPos, oldFrees, newFrees]";
 ReplaceFrees::usage = "ReplaceFrees[expr, oldFrees, newFrees]";
 DummyIndex::usage = "DummyIndex[name, repeats] represents an index with hint that it's a dummy index with specified repeats.";
 PopulateDummyIndexHint::usage = "PopulateDummyIndexHint[expr, frees]";
-IndexScope;
+IndexScope::usage = "IndexScope[expr]";
+PutIndexScope::usage = "PutIndexScope[expr, frees]";
 SignOfUpSlot;
 PermuteIndexList::usage = "PermuteIndexList[list, perm]";
 ApplyIndices::usage = "ApplyIndices[expr, indPos, indList]";
+ReplaceIndexNames::usage = "ReplaceIndexNames[expr, reps]";
+TryReplaceIndexNames::usage = "TryReplaceIndexNames[expr, reps]";
+
+(* IndexedSum *)
+IndexedSum::usage = "IndexedSum[expr, {ind, type}, ...]";
+ScalarIndexedSumQ::usage = "ScalarIndexedSumQ[expr]";
+MoveIndexedSumToOutermost::usage = "MoveIndexedSumToOutermost[expr]";
+MoveIndexedSumToInnermost::usage = "MoveIndexedSumToInnermost[expr]";
+IndexedSumTimes::usage = "IndexedSumTimes[{inds...}, factor1, factor2, ...]";
+PopulateIndexedSumTimes::usage = "PopulateIndexedSumTimes[expr]";
 
 (* metric related *)
 DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
@@ -82,7 +94,7 @@ ContractionRuleMode::usage = "ContractionRuleMode is an option for DefSimpleMetr
 ContractableMetricQ::usage = "ContractableMetricQ[expr] returns true of expr is a metric that can be used in ContractMetric.";
 ContractionSlotOfMetric::usage = "ContractionSlotOfMetric[metric] returns 1 or 2, specifiying which slot of the metric to be contracted with. Specifically, for 1 we have p[DI@a] = g[DI@b, DI@a]p[b], while for 2 we have p[DI@a] = g[DI@a, DI@b]p[b]. The default is north-west convention: p[a] = g[a, b]p[DI@b], p[DI@a] = p[b]g[DI@b, DI@a]. Note that the value is only relevant for non-symmetric metrics.";
 ContractMetric::usage = "ContractMetric[expr, metrics] tries to contract all the specified metrics in expr. ContractMetric[expr] or ContractMetric[expr, All] contracts all metrics that returns true when acting ContractableMetricQ on them.";
-SeparateMetricOne;
+SeparateMetricOne::usage = "SeparateMetricOne[expr, indPattern, metricProvider]";
 
 (* utility functions *)
 DefSimpleTensor::usage = "DefSimpleTensor[name, slots, symmetry]";
@@ -101,6 +113,8 @@ ImposeSymmetry::usage = "ImposeSymmetry[expr, inds, genset]";
 ExpandScalarIndexScope::usage = "ExpandScalarIndexScope[expr]";
 MapScalarIndexScopes::usage = "MapScalarIndexScopes[fn, expr] or MapScalarIndexScopes[fn][expr]";
 DeepContractMetric::usage = "DeepContractMetric[expr, metrics]";
+MetricBarrier::usage = "MetricBarrier[expr]";
+ReleaseMetricBarrier::usage = "ReleaseMetricBarrier[expr]";
 
 (* canonicalization *)
 ISortedProduct;
@@ -116,13 +130,17 @@ FreeIndicesSymmetry::usage = "FreeIndicesSymmetry is an option for ITensorReduce
 PeanoticaVerbose;
 ReleaseISort;
 ExpandToTensorPolynomial;
-ITensorReduce;
+ITensorReduce::usage = "ITensorReduce[expr]";
+IndexWrapper::usage = "IndexWrapper[expr, innerInds, outerInds]";
+PutIndexWrapper::usage = "PutIndexWrapper[expr]";
+ReleaseIndexWrapper::usage = "ReleaseIndexWrapper[expr]";
 
 (* formatting *)
-TensorGridBox;
+TensorGridBox::usage = "TensorGridBox[head, indices]";
 TensorInterpretationBox;
 AllowSubsuperscriptBox;
-DefTensorFormatings;
+IndexStyle;
+DefTensorFormatings::usage = "DefTensorFormatings[name, options...]";
 
 (* ETensor *)
 ETensor::usage = "ETensor[expr, freeCount, dummyCount] represents an expression tensor.";
@@ -133,7 +151,7 @@ CETensor::usage = "CETensor[array] represents a concrete tensor whose components
 NITensor::usage = "NITensor[expr, indices]";
 ITensorTranspose::usage = "ITensorTranspose[t, permutation] transposes the tensor according to the given permutation. Similar to Transpose, permutation may contain repeated elements, in which case the resulting tensor has lower rank.";
 ITensorOuter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
-ITensorSum::usage = "ITensorSum[sum, t, {a1, a2, ...}]";
+ITensorSum::usage = "ITensorSum[t, {a1, a2, ...}]";
 ITensorScalarMultiply::usage = "ITensorScalarMultiply[prod, tensor, scalar]";
 ITensorFixedContract::usage = "ITensorFixedContract[t1, t2, n1, n2]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
@@ -180,7 +198,7 @@ SyntaxInformation@IndicesCandidateOfSlotType = {"ArgumentsPattern" -> {_}};
 GetIndexOfSlotType[type_, inds_List] := With[{
     indCands = IndicesCandidateOfSlotType@type
 }, With[{
-    inds2 = Complement[indCands[[1]], inds]
+    inds2 = DeleteCases[indCands[[1]], Alternatives @@ inds]
 }, If[Length@inds2 > 0,
     First@inds2,
     indCands[[2]][1 + Max @@ Append[First /@ Cases[inds, Blank[indCands[[2]]]], 0]]
@@ -226,6 +244,10 @@ SyntaxInformation@NonDIQ = {"ArgumentsPattern" -> {_}};
 NoDI[DI@a_] := a;
 NoDI[a_] := a;
 SyntaxInformation@NoDI = {"ArgumentsPattern" -> {_}};
+
+CopyDI[_DI, a_] := DI@a;
+CopyDI[_, a_] := a;
+SyntaxInformation@CopyDI = {"ArgumentsPattern" -> {_, _}};
 
 ExpressionPassThroughQ[_, _, {_}] = True;
 ExpressionPassThroughQ[_?ProductQ[args__], tensor_, pos_] := Extract[Hold@{args}, {1, pos[[1]]}, Function[{a}, ExpressionPassThroughQ[a, tensor, Drop[pos, 1]], {HoldAll}]];
@@ -360,7 +382,8 @@ ToIndexedExprFunction[expr_, frees_] := With[{
     freeLen,
     Lookup[inds, #][[1, 2]] & /@ dummies
 ]]];
-SyntaxInformation@ToIndexedExprFunction = {"ArgumentsPattern" -> {_, _}};
+ToIndexedExprFunction[ETensor[expr_, inds_]] := ToIndexedExprFunction[expr, inds];
+SyntaxInformation@ToIndexedExprFunction = {"ArgumentsPattern" -> {_, _.}};
 
 IndexedExprFunction::args = "Expected `1` arguments, found `2`.";
 IndexedExprFunction[expr_, frees_, dummyTypes_][inds__] := With[{
@@ -419,6 +442,14 @@ DeepContractMetric[expr_, metrics_] := ContractMetric[expr /. HoldPattern@IndexS
 DeepContractMetric[expr_] := DeepContractMetric[expr, All];
 SyntaxInformation@DeepContractMetric = {"ArgumentsPattern" -> {_, _.}};
 
+FindIndicesSlots[MetricBarrier[expr_]] ^:= FindIndicesSlots[expr, {1}];
+SymmetryOfExpression[MetricBarrier[expr_]] ^:= SymmetryOfExpression@expr;
+MetricBarrier /: ExpressionPassThroughQ[_MetricBarrier, _, _] = False;
+SyntaxInformation@MetricBarrier = {"ArgumentsPattern" -> {_}};
+
+ReleaseMetricBarrier[expr_] := expr /. MetricBarrier[e_] :> e;
+SyntaxInformation@ReleaseMetricBarrier = {"ArgumentsPattern" -> {_}};
+
 CanonicalizationUnitQ[_Plus] = False;
 CanonicalizationUnitQ[_List] = False;
 CanonicalizationUnitQ[_] = True;
@@ -430,13 +461,21 @@ NoIndicesQ[expr_Plus] := AllTrue[List @@ expr, NoIndicesQ];
 SetAttributes[NoIndicesQ, HoldAll];
 
 Options@TensorGridBox = {
-    AllowSubsuperscriptBox -> False
+    AllowSubsuperscriptBox -> False,
+    IndexStyle -> "Default"
 };
 SelectUpDownIndices[{{a_, IndexNameSlot}, {b_, DI@IndexNameSlot}}] := {a, b};
 SelectUpDownIndices[{{a_, DI@IndexNameSlot}, {b_, IndexNameSlot}}] := {b, a};
-TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := Which[
+ConvertIndexStyle["Default"][ind_] := ind;
+ConvertIndexStyle["AllUp"][{a_, _}] := {a, IndexNameSlot};
+ConvertIndexStyle["AllDown"][{a_, _}] := {a, DI@IndexNameSlot};
+IndexToGridRow[{a_, IndexNameSlot}] := {MakeBoxes@a, ""};
+IndexToGridRow[{a_, DI@IndexNameSlot}] := {"", MakeBoxes@a};
+TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := With[{
+    inds2 = ConvertIndexStyle[OptionValue@IndexStyle] /@ inds
+}, Which[
     Length@inds === 1,
-    With[{ind = inds[[1]], indName = inds[[1, 1]]}, Switch[ind[[2]],
+    With[{ind = inds2[[1]], indName = inds2[[1, 1]]}, Switch[ind[[2]],
         IndexNameSlot, SuperscriptBox[t, MakeBoxes@indName],
         DI@IndexNameSlot, SubscriptBox[t, MakeBoxes@indName]
     ]],
@@ -447,13 +486,10 @@ TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := Which[
     True,
     GridBox[{{t, StyleBox[
         GridBox[
-            Transpose@Map[Replace@{
-                {a_, IndexNameSlot} :> {MakeBoxes@a, ""},
-                {a_, DI@IndexNameSlot} :> {"", MakeBoxes@a}
-            }, inds], RowSpacings -> 0, ColumnSpacings -> 0
+            Transpose[IndexToGridRow /@ inds2], RowSpacings -> 0, ColumnSpacings -> 0
         ], FontSize -> 39/4
     ]}}, ColumnSpacings -> 0.05, RowAlignments -> Center]
-];
+]];
 SyntaxInformation@TensorGridBox = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
 TensorInterpretationBox[expr_, box_] := InterpretationBox[StyleBox[box, ShowAutoStyles -> False], expr, Editable -> False];
@@ -481,7 +517,7 @@ DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
             sym /: SymmetryOfExpression[sym[##]] = symmetry;
         ];
     ) & @@ ConstantArray[_, Length@slots];
-    DefTensorFormatings[sym, opt];
+    If[OptionValue@DisplayName =!= None, DefTensorFormatings[sym, opt]];
     sym /: NITensorReduce[sym[inds__], frees_] := NITensorReduce[NITensor[sym, IndexName /@ {inds}], frees];
     SyntaxInformation@sym = {"ArgumentsPattern" -> ConstantArray[_, Length@slots]};
 ];
@@ -533,6 +569,9 @@ MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotTyp
 MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
 MetricOfSlotType /: MetricOfSlotType[type_][a_, b_?AbsIndexNameQ]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
 
+ReplaceIndexNames[expr_, reps_] := ReplacePart[expr, ReplaceIndicesRules[Map@Delete[2] /@ FindAllIndicesNames@expr, reps]];
+SyntaxInformation@ReplaceIndexNames = {"ArgumentsPattern" -> {_, _}};
+
 TryReplaceIndexNames[expr_, reps_] := With[{
     reps2 = Select[reps, AbsIndexNameQ@#[[1]] &]
 }, If[Length@reps2 > 0,
@@ -548,6 +587,8 @@ TryReplaceIndexNames[expr_, reps_] := With[{
 ,
     $Failed
 ]];
+SyntaxInformation@TryReplaceIndexNames = {"ArgumentsPattern" -> {_, _}};
+
 MetricOfSlotType /: Times[MetricOfSlotType[type_][DI@b_, a_?NonDIQ], rest_] := With[{
     newExpr = TryReplaceIndexNames[rest, {a -> b, b -> a}]
 }, newExpr /; newExpr =!= $Failed];
@@ -615,17 +656,14 @@ DefSimpleDeltaTensor[symbol_, type_, opt : OptionsPattern[]] := (
     FindIndicesSlots[symbol[_, _]] ^= {{1} -> type, {2} -> type};
     SymmetryOfExpression[symbol[_, _]] ^= {SCycles@{1, 2}};
 
-    DefTensorFormatings[symbol, opt];
+    If[OptionValue@DisplayName =!= None, DefTensorFormatings[symbol, opt]];
 
-    symbol[DummyIndex[a_, 2], DummyIndex[a_, 2]] := DimensionOfSlotType@type;
-    symbol[a_DummyIndex, b_?NonDummyIndexQ] := symbol[b, a];
-    symbol[a_, DummyIndex[_, 1]] := symbol@a;
-    symbol[DummyIndex[_, 1]] := DimensionOfSlotType@type;
     symbol /: _?TimesQ[l___, symbol[a_, b_], r___] := With[{
-        newExpr = TryReplaceIndexNames[Times[l, r], {b -> a}]
-    }, symbol[a, ReduceDummyCount@b] * newExpr /; newExpr =!= $Failed];
-    symbol /: _?TimesQ[l___, symbol[a_], r___] := Times[l, r] /; CheckOneSummableIndex[{l, r}, a];
-    symbol /: Power[symbol[a_], _] := symbol[a];
+        newExpr = TryReplaceIndexNames[Times[l, r], {a -> b}]
+    }, symbol[a, b] * newExpr /; a =!= b && newExpr =!= $Failed];
+    symbol /: IndexedSumTimes[inds_, r1___, symbol[a_, b_], r2___] := With[{
+        otherInds = Intersection[{a, b}, Complement[inds[[All, 1]], Keys@FindAllIndicesNames@Times[r1, r2]]]
+    }, IndexedSumTimes[DeleteCases[inds, {otherInds[[1]], _}], r1, r2] /; Length@otherInds > 0];
 );
 SyntaxInformation@DefSimpleDeltaTensor = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
@@ -667,16 +705,18 @@ ContractMetric[expr_, metrics_] := ContractMetricExpanded[ExpandToTensorPolynomi
 ContractMetric[expr_] := ContractMetric[expr, All];
 SyntaxInformation@ContractMetric = {"ArgumentsPattern" -> {_, _.}};
 
+LookupListOrApply[list_List, elem_] := If[Length@list === 1 && Head@list[[1]] =!= Rule, list[[1]], elem /. list];
+LookupListOrApply[list_, elem_] := list@elem;
 MoveMetricContractSlotTo1[metric_[a_, b_]] := If[ContractionSlotOfMetric@metric[a, b] === 2, metric[b, a], metric[a, b]];
-SeparateMetricOneIndex[pos_ -> type_, {indName_, IndexNameSlot}, -1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> DI@dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][dummy, indName]}];
-SeparateMetricOneIndex[pos_ -> type_, {indName_, DI@IndexNameSlot}, 1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> dummy, MoveMetricContractSlotTo1@MetricOfSlotType[type][DI@dummy, DI@indName]}];
-SeparateMetricOneIndex[_, _, _] = Nothing;
-SeparateMetricOne[expr_, indsPat_] := With[{
+SeparateMetricOneIndex[pos_ -> type_, metric_, {indName_, IndexNameSlot}, -1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> DI@dummy, MoveMetricContractSlotTo1@metric[dummy, indName]}];
+SeparateMetricOneIndex[pos_ -> type_, metric_, {indName_, DI@IndexNameSlot}, 1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> dummy, MoveMetricContractSlotTo1@metric[DI@dummy, DI@indName]}];
+SeparateMetricOneIndex[_, _, _, _] = Nothing;
+SeparateMetricOne[expr_, indsPat_, metricProvider_] := With[{
     indPos = FindIndicesSlots@expr
 }, With[{
-    reps = Transpose@MapThread[SeparateMetricOneIndex[#1, SeparateIndexName@#2, #3] &, {indPos, Extract[expr, indPos[[All, 1]]], indsPat}]
+    reps = Transpose@MapThread[SeparateMetricOneIndex[#1, LookupListOrApply[metricProvider, #1[[2]]], SeparateIndexName@#2, #3] &, {indPos, Extract[expr, indPos[[All, 1]]], indsPat}]
 }, If[Length@reps =!= 0, ReplacePart[expr, reps[[1]]] * Times @@ reps[[2]], expr]]];
-SyntaxInformation@SeparateMetricOne = {"ArgumentsPattern" -> {_, _}};
+SyntaxInformation@SeparateMetricOne = {"ArgumentsPattern" -> {_, _, _}};
 
 MapShiftedIndexed[f_, expr_] := MapThread[f, {Drop[expr, -1], Drop[expr, 1], Range[Length@expr - 1]}];
 
@@ -776,19 +816,14 @@ SyntaxInformation@SortGroupedIndexList = {"ArgumentsPattern" -> {_}};
 
 ToPattern[list_List] := Alternatives @@ (ToPattern /@ list);
 ToPattern[patt_] := patt;
-FindAndDropFrees[list_List, Automatic] := With[{
-    l = GroupBy[list, Length@#[[1]] === 1 &]
-}, Function[{b}, SortGroupedIndexList[Lookup[l, b, {}]]] /@ {True, False}];
-FindAndDropFrees[list_List, freeNames_] := With[{
-    pat = ToPattern@freeNames
-},
-    If[Length@list =!= 0,
-        SortGroupedIndexList /@ Select[Length@#[[2]] > 0 &] /@ Transpose[
-            Function[{indPat, inds}, Function[{a}, indPat -> a] /@ Lookup[GroupBy[inds, a |-> MatchQ[a[[1]], pat]], {True, False}, {}]] @@@ list
-        ]
-    ,
-        {{}, {}}
-    ]
+FindAndDropFrees[list_List, Automatic] := FindAndDropFrees[list, Length@#1 === 1 &];
+FindAndDropFrees[list_List, frees_List] := FindAndDropFrees[list, MemberQ[frees, #2] &];
+FindAndDropFreesOneGroup[indPat_ -> inds_List, freePredicate_] := indPat -> # & /@ Lookup[GroupBy[inds, freePredicate[indPat, #[[1]]] &], {True, False}, {}];
+FindAndDropFrees[list_List, freePredicate_] := If[Length@list > 0,
+    SortGroupedIndexList /@ Select[Length@#[[2]] > 0 &] /@ Transpose[
+        FindAndDropFreesOneGroup[#, freePredicate] & /@ list
+    ],
+    {{}, {}}
 ];
 SyntaxInformation@FindAndDropFrees = {"ArgumentsPattern" -> {_, _}};
 
@@ -857,15 +892,16 @@ PermuteIndexList[list_, a_ * perm_] := a * PermuteIndexList[list, perm];
 PermuteIndexList[list_, perm_Images] := IndexList @@ Permute[list, List @@ perm];
 PermuteIndexList[_, 0] = 0;
 
-ConvertFreeIndicesSym[sym_List, frees_] := sym;
-ConvertFreeIndicesSym[inds_ -> sym_, frees_] := With[{
-    perm = Images @@ (FirstPosition[inds, #][[1]] & /@ frees)
+ConvertFreeIndicesSym[{inds_, sym_}, frees_] := With[{
+    perm = FillNoneSlots[Images @@ (FirstPosition[inds, #, {Null}][[1]] & /@ frees), Length@inds + 1]
 }, With[{
     invPerm = SignedInversePermutation@perm
 },
     PPermPermutationProduct[perm, #, invPerm] & /@ sym
 ]];
+ConvertFreeIndicesSym[sym_List, frees_] := sym;
 
+CheckNoSummedIndices[expr_] := If[FreeQ[expr, SummedIndices], expr, Throw@$Failed];
 CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSelector_] := With[{
     indPos = FindIndicesSlots@expr,
     slotsSym = SymmetryOfExpression@expr
@@ -882,18 +918,19 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
             SymmetryGroupOfSymmetricIndexList@dummySymList,
             Length@freeInds
         ],
-        ConvertFreeIndicesSym[freesSym, Echo@freeInds[[All, 2]]]
+        ConvertFreeIndicesSym[freesSym, freeInds[[All, 2]]]
     ],
     groupedDummies = MapAt[Extract[1], 1] /@ dummySymList
 }, With[{
     canonIndsAndPos = {freeInds, CollectGroupedIndices[MapAt[First, 1] /@ dummySymList]}
 }, With[{
     perm = InversePermutation@(Join @@ canonIndsAndPos)[[All, 1]],
-    canonInds = (Join @@ canonIndsAndPos)[[All, 2]]
+    canonInds = (Join @@ canonIndsAndPos)[[All, 2]],
+    renamedDummyGroup = RenameGroupedIndexList[groupedDummies, CollectGroupedIndicesNames@groupedInds[[1]], indPos[[#, 2]] &]
 }, With[{
     renamedCanonInds = If[renameDummies, Join[
         freeInds,
-        CollectGroupedIndices@RenameGroupedIndexList[groupedDummies, CollectGroupedIndicesNames@groupedInds[[1]], indPos[[#, 2]] &]
+        CollectGroupedIndices@renamedDummyGroup
     ][[All, 2]], canonInds]
 },
     xToolsDebugPrint[CanonicalizeOneSorted, "input: ", HoldForm@expr];
@@ -911,12 +948,12 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
             xToolsDebugPrint[CanonicalizeOneSorted, "canonical permutation: ", canonPerm];
             With[{ret = ApplyIndices[expr, indPos[[All, 1]], PermuteIndexList[renamedCanonInds, SignedInversePermutation@canonPerm]]},
                 xToolsDebugPrint[CanonicalizeOneSorted, "result: ", ret];
-                ret
+                {ret, Association@Thread[CollectGroupedIndicesNames@groupedDummies -> CollectGroupedIndicesNames@renamedDummyGroup]}
             ]
         ]
     ,
         xToolsDebugPrint[CanonicalizeOneSorted, "result: ", HoldForm@expr];
-        expr
+        {expr, <||>}
     ]
 ]]]]]]]];
 
@@ -924,31 +961,57 @@ Options@ITensorReduceOneTerm = {
     UseMetricOnSlots -> All,
     FreeIndexNames -> Automatic,
     FreeIndicesSymmetry -> {},
-    RenameDummies -> True
+    RenameDummies -> True,
+    FixedPoint -> False
 };
 ITensorReduceOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
 ITensorReduceOneTerm[expr_Plus, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
 ITensorReduceOneTerm[expr_?ArrayQ, opt : OptionsPattern[]] := Map[ITensorReduceOneTerm[#, opt] &, expr, {ArrayDepth@expr}];
 ITensorReduceOneTerm[expr_List, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
-ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := If[TensorTermQ@expr,
-    PostITensorReduce@ReleaseISort@CanonicalizeOneSorted[
+PutIndexWrapperIfNeeded[expr_Times] := PutIndexWrapperIfNeeded /@ expr;
+PutIndexWrapperIfNeeded[expr_] := If[!FreeQ[FindIndicesSlots@expr, SummedIndices], PutIndexWrapper@expr, expr];
+ITensorReduceOneTermInner[expr_, opt : OptionsPattern[]] := With[{
+    exprAndSummedInds = CollectIndexedSumTerm[expr, False]
+}, With[{
+    ret = CanonicalizeOneSorted[
         With[{expr2 =
-            PreITensorReduce@With[{frees = OptionValue@FreeIndexNames}, If[frees =!= Automatic, PopulateDummyIndexHintExpanded[expr, frees] /. DummyIndex[a_, _] :> a, expr]]
+            PreITensorReduce[exprAndSummedInds[[1]], opt] //
+                PutIndexWrapperIfNeeded
         }, ISort@expr2],
-        OptionValue[FreeIndexNames],
-        OptionValue[FreeIndicesSymmetry],
-        OptionValue[RenameDummies],
-        OptionValue[UseMetricOnSlots]
+        If[Length@exprAndSummedInds > 0,
+            With[{summed = exprAndSummedInds[[2, All, 1]]}, Length@#1 === 1 && !MemberQ[summed, #2] &],
+            OptionValue[ITensorReduceOneTerm, opt, FreeIndexNames]
+        ],
+        OptionValue[ITensorReduceOneTerm, opt, FreeIndicesSymmetry],
+        OptionValue[ITensorReduceOneTerm, opt, RenameDummies],
+        OptionValue[ITensorReduceOneTerm, opt, UseMetricOnSlots]
     ]
-,
-    Message[ITensorReduceOneTerm::nottensorterm, HoldForm@expr];
-    expr
+}, With[{
+    exprRet = ret[[1]] //
+        ReleaseISort //
+        PostITensorReduce //
+        ReleaseIndexWrapper // PopulateIndexedSumTimes,
+    summedIndsRet = {Lookup[ret[[2]], #1, #1], #2} & @@@ exprAndSummedInds[[2]]
+},
+    If[Length@summedIndsRet > 0,
+        IndexedSum[exprRet, ##] & @@ summedIndsRet,
+        exprRet
+    ]
+]]];
+ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := With[{
+    ret = If[OptionValue@FixedPoint,
+        FixedPoint[ITensorReduceOneTermInner[#, opt] &, expr],
+        ITensorReduceOneTermInner[expr, opt]
+    ]
+},
+    If[ret === $Failed, Message[ITensorReduceOneTerm::nottensorterm, HoldForm@expr]; expr, ret]
 ];
 SyntaxInformation@ITensorReduceOneTerm = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
 ExpandToTensorPolynomial[expr_] := expr //. {
     e_IndexScope :> e,
-    prod_?ProductQ[l___, p_Plus?NonTensorTermQ, r___] :> Function[{a}, prod[l, a, r]] /@ p
+    prod_?ProductQ[l___, p_Plus?NonTensorTermQ, r___] :> Function[{a}, prod[l, a, r]] /@ p,
+    Power[a_Plus?NonTensorTermQ, b_Integer] :> Total@Flatten[(Outer[Times, ##] & @@ ConstantArray[List @@ a, b]), b - 1] /; b > 0
 };
 SyntaxInformation@ExpandToTensorPolynomial = {"ArgumentsPattern" -> {_}};
 
@@ -964,6 +1027,7 @@ SyntaxInformation@IndexSlot = {"ArgumentsPattern" -> {_}};
 Options@PreITensorReduce = Options@ITensorReduce;
 PreITensorReduce[arr_?ArrayQ, opt___] := Map[PreITensorReduce[#, opt] &, arr, {ArrayDepth@arr}];
 PreITensorReduce[expr_Association, opt___] := PreITensorReduce[#, opt] & /@ expr;
+PreITensorReduce[expr_IndexedSum?ScalarIndexedSumQ, opt___] := ITensorReduce[expr, opt];
 PreITensorReduce[head_[args___], opt___] := PreITensorReduce[head, opt] @@ Map[PreITensorReduce[#, opt] &, {args}];
 PreITensorReduce[expr_, ___] := With[{
     allInds = FindAllIndicesNames@expr
@@ -978,9 +1042,6 @@ PostITensorReduce[head_[args__], opt___] := PostITensorReduce[head, opt] @@ Map[
 PostITensorReduce[expr_, ___] := expr;
 SyntaxInformation@PostITensorReduce = {"ArgumentsPattern" -> {_}};
 
-ExpressionQ[_[___]] = True;
-ExpressionQ[_] = False;
-SetAttributes[ExpressionQ, HoldAll];
 FindAllIndicesNames[expr_] := FindAllIndicesNames[expr, {}];
 FindAllIndicesNamesHelper1[ind_, pos_ -> slot_] := Join[SeparateIndexName@ind, {slot, pos}];
 FindAllIndicesNames[expr_, pos_] := With[{
@@ -1023,7 +1084,7 @@ SyntaxInformation@ReplaceFrees = {"ArgumentsPattern" -> {_, _, _}};
 PopulateDummyIndexHintExpanded[expr_Plus, frees_] := PopulateDummyIndexHintExpanded[#, frees] & /@ expr;
 PopulateDummyIndexHintExpanded[expr_List, frees_] := PopulateDummyIndexHintExpanded[#, frees] & /@ expr;
 ReplaceDummyHint1[name_, len_][{type_, slot_, pos_}] := pos -> (type /. IndexNameSlot -> DummyIndex[name, len]);
-PopulateDummyIndexHintExpanded[expr_?TensorTermQ, frees_] := With[{
+PopulateDummyIndexHintExpanded[expr_, frees_] := With[{
     dummies = KeyDrop[FindAllIndicesNames@expr, frees]
 }, ReplacePart[expr,
     Join @@ KeyValueMap[ReplaceDummyHint1[#1, Length@#2] /@ #2 &, dummies]
@@ -1038,13 +1099,27 @@ SplitIndexScopeFactorIndexList[indNames_] := With[{
     UnionClosures@splitNoInds[[1]]
 }];
 
+TrySplitIndexScopeFactors[factors_, frees0_] := With[{
+    inds = Keys@FindAllIndicesNames@# & /@ factors
+}, With[{
+    frees = If[Head@frees0 === "Not", Complement[Union @@ inds, frees0[[1]]], frees0]
+}, With[{
+    dummies = Complement[#, frees] & /@ inds
+}, With[{
+    inds2 = Lookup[GroupBy[MapIndexed[#2[[1]] -> #1 &, dummies], Length@#[[2]] > 0 &], {True, False}, {}]
+}, With[{
+    splittedInds = UnionClosures@inds2[[1]],
+    constsInds = inds2[[2, All, 1]]
+}, If[Length@splittedInds > 1 || Length@constsInds > 0,
+    {Times @@ Extract[factors, Thread@{constsInds}], {Times @@ Extract[factors, Thread@{#}], Union @@ Extract[dummies, Thread@{#}]} & /@ splittedInds},
+    $Failed
+]]]]]];
+
 IndexScope[expr_, {}, {}] := IndexScope[expr];
 IndexScope[expr_Plus] := IndexScope /@ expr;
 IndexScope[expr_Times] := With[{
-    splitInds = SplitIndexScopeFactorIndexList[Keys@FindAllIndicesNames@# & /@ List @@ expr]
-},
-    (Times @@ Extract[expr, Thread@{splitInds[[1]]}]) * (Times @@ (IndexScope[Times @@ Extract[expr, Thread@{#}]] & /@ splitInds[[2]])) /; Length@splitInds[[1]] > 0 || Length@splitInds[[2]] > 1
-];
+    ret = TrySplitIndexScopeFactors[List @@ expr, {}]
+}, ret[[1]] * Times @@ (IndexScope /@ ret[[2, All, 1]]) /; ret =!= $Failed];
 IndexScope[expr_] := expr /; Length@FindIndicesSlots@expr === 0;
 IndexScope /: PreITensorReduce[HoldPattern@IndexScope[expr_], opt___] := IndexScope@ITensorReduce[expr, FreeIndexNames -> {}, FilterRules[{opt}, DeleteCases[Options[ITensorReduce], FreeIndexNames -> _]]];
 IndexScope /: FindIndicesSlots@IndexScope[expr_] = {};
@@ -1054,6 +1129,111 @@ IndexScope /: MakeBoxes[expr : IndexScope[expr2_], StandardForm] := With[{
     red = Red
 }, InterpretationBox[RowBox@{StyleBox["(", FontColor -> red], box, StyleBox[")", FontColor -> red]}, expr]];
 SyntaxInformation@IndexScope = {"ArgumentsPattern" -> {_, _., _.}};
+
+PutIndexScope[expr_, {}] := IndexScope@expr;
+PutIndexScope[expr_Plus, frees_] := PutIndexScope[#, frees] & /@ expr;
+PutIndexScope[expr_List, frees_] := PutIndexScope[#, frees] & /@ expr;
+PutIndexScope[expr_Times, frees_] := With[{
+    splitInds = SplitIndexScopeFactorIndexList[Join[{frees}, Keys@FindAllIndicesNames@# & /@ List @@ expr]]
+}, With[{
+    freesAndDummies = MapThread[Construct, {{
+        DeleteCases[Join[#[[1]], splitInds[[1]]], 1] - 1 &,
+        # - 1 &
+    }, Lookup[GroupBy[splitInds[[2]], MemberQ[1]], {True, False}, {}]}]
+},
+    (Times @@ Extract[expr, Thread@{freesAndDummies[[1]]}]) * (Times @@ (IndexScope[Times @@ Extract[expr, Thread@{#}]] & /@ freesAndDummies[[2]]))
+]];
+PutIndexScope[expr_, frees_] := If[Length@Intersection[frees, Keys@FindAllIndicesNames@expr] === 0, IndexScope[expr], expr];
+PutIndexScope[ETensor[expr_, inds_]] := ETensor[PutIndexScope[expr, DeleteCases[inds, Null]], inds];
+PutIndexScope[0] = 0;
+PutIndexScope[expr_?ArrayQ] := Map[PutIndexScope, expr, {ArrayDepth@expr}];
+PutIndexScope[frees_][expr_] := PutIndexScope[expr, frees];
+SyntaxInformation@PutIndexScope = {"ArgumentsPattern" -> {_, _.}};
+
+FindIndicesSlots[IndexWrapper[_, innerInds_List, inds_List]] ^:= MapIndexed[Prepend[#2, 3] -> #1[[2]] &, innerInds];
+SyntaxInformation@IndexWrapper = {"ArgumentsPattern" -> {_, _, _}};
+
+PutIndexWrapper[expr_] := With[{
+    inds = Normal[Extract[{1, 2}] /@ FindAllIndicesNames@expr]
+}, IndexWrapper[expr, inds, inds[[All, 1]]]];
+SyntaxInformation@PutIndexWrapper = {"ArgumentsPattern" -> {_}};
+
+ReleaseIndexWrapper[expr_] := expr //. {
+    IndexWrapper[expr2_, inner_, outer_] :> ReplacePart[expr2, ReplaceIndicesRules[Map@Delete[2] /@ FindAllIndicesNames@expr2, Thread[inner[[All, 1]] -> outer]]]
+};
+SyntaxInformation@ReleaseIndexWrapper = {"ArgumentsPattern" -> {_}};
+
+IndexedSum[expr_] := expr;
+IndexedSum[expr_, inds__List] := With[{inds2 = SortBy[{inds}, First]}, IndexedSum[expr, ##] & @@ inds2 /; inds2 =!= {inds}];
+IndexedSum[expr_Plus, inds__] := IndexedSum[#, inds] & /@ expr;
+IndexedSum[IndexedSum[expr_, inds1__List], inds2__List] := IndexedSum[expr, inds1, inds2];
+IndexedSum[expr_Times, inds__List] := With[{
+    ret = TrySplitIndexScopeFactors[List @@ expr, "Not"@{inds}[[All, 1]]],
+    indToType = Association[Rule @@@ {inds}]
+}, ret[[1]] Times @@ IndexedSum @@@ (MapAt[Sequence @@ ({#, indToType@#} & /@ #) &, #, 2] & /@ ret[[2]]) /; ret =!= $Failed];
+ISort[IndexedSum[expr_, inds__]] ^:= IndexedSum[ISort@expr, inds];
+RemoveIndexNamesFromSlotList[expr_, e : (pos_ -> _), indsToRemove_] := If[indsToRemove@Extract[expr, pos], Nothing, e];
+RemoveIndexNamesFromSlotList[expr_, SummedIndices@inds_, indsToRemove_] := With[{ret = RemoveIndexNamesFromSlotList[expr, #, indsToRemove] & /@ inds}, If[Length@ret > 0, SummedIndices@ret, Nothing]];
+FindIndicesSlots[IndexedSum[expr_, inds__]] ^:= With[{
+    poses = FindIndicesSlots[expr, {1}]
+}, RemoveIndexNamesFromSlotList[Hold@expr, #, MatchQ[Alternatives @@ {inds}[[All, 1]]]] & /@ poses];
+SyntaxInformation@IndexedSum = {"ArgumentsPattern" -> {_, ___}};
+
+CollectIndexedSumTerm[expr_] := CollectIndexedSumTerm[expr, True];
+CollectIndexedSumTerm[IndexedSum[expr_, inds__], skipScalars_] := With[{
+    ret = CollectIndexedSumTerm@expr
+}, If[!skipScalars || Length@Complement[Keys@FindAllIndicesNames@ret[[1]], Join[ret[[2, All, 1]], {inds}[[All, 1]]]] > 0,
+    With[{
+        newInds = {GetUniqueIndexOfSlotType@#2, #2} & @@@ {inds}
+    }, {
+        ReplaceIndexNames[ret[[1]], Thread[{inds}[[All, 1]] -> newInds[[All, 1]]]],
+        Join[ret[[2]], newInds]
+    }]
+,
+    {IndexedSum[ret[[1]], ##] & @@ Join[ret[[2]], {inds}], {}}
+]];
+CollectIndexedSumTerm[prod_?ProductQ[args__], _] := With[{
+    ret = CollectIndexedSumTerm /@ {args}
+}, {
+    prod @@ ret[[All, 1]],
+    Join @@ ret[[All, 2]]
+}];
+CollectIndexedSumTerm[expr_, _] := {expr, {}};
+
+NormalizeIndexedSumExprHelper[terms_, {ind_, type_}] := With[{
+    sel = Select[MapIndexed[Join, terms], MemberQ[#[[2]], ind] &]
+}, Join[{{IndexedSum[Times @@ sel[[All, 1]], {ind, type}], DeleteCases[Union @@ sel[[All, 2]], ind]}}, Delete[terms, Transpose@{sel[[All, 3]]}]]];
+NormalizeIndexedSumExpr[terms_, inds_] := Fold[NormalizeIndexedSumExprHelper, {#, Keys@FindAllIndicesNames@#} & /@ terms, inds];
+
+NormalizeOneIndexedSum[IndexedSum[expr_Times, inds__]] := Times @@ NormalizeIndexedSumExpr[List @@ expr, {inds}][[All, 1]];
+SyntaxInformation@NormalizeOneIndexedSum = {"ArgumentsPattern" -> {_}};
+
+MoveIndexedSumToOutermost[expr_] := expr //. prod_?ProductQ[l___, IndexedSum[expr2_, inds__], r___] :> With[{
+    newInds = {GetUniqueIndexOfSlotType@#2, #2} & @@@ {inds}
+}, IndexedSum[
+    prod[l, ReplaceIndexNames[expr2, Thread[{inds}[[All, 1]] -> newInds[[All, 1]]]], r],
+    ##
+] & @@ newInds];
+SyntaxInformation@MoveIndexedSumToOutermost = {"ArgumentsPattern" -> {_}};
+
+MoveIndexedSumToInnermost[expr_] := expr //. {
+    IndexedSum[expr2_Times, inds__] :> With[{
+        ret = TrySplitIndexScopeFactors[List @@ expr2, "Not"@{inds}[[All, 1]]],
+        indNameToSlot = First /@ GroupBy[{inds}, First -> Extract[2]]
+    }, ret[[1]] * Times @@ ((IndexedSum @@ Join[{#1}, {#, indNameToSlot@#} & /@ #2]) & @@@ ret[[2]]) /; ret =!= $Failed]
+};
+SyntaxInformation@MoveIndexedSumToInnermost = {"ArgumentsPattern" -> {_}};
+
+ScalarIndexedSumQ[expr_IndexedSum] := Length@FindIndicesSlots@expr === 0;
+SyntaxInformation@ScalarIndexedSumQ = {"ArgumentsPattern" -> {_}};
+
+IndexedSumTimes[{}, factors___] := Times[factors];
+SyntaxInformation@IndexedSumTimes = {"ArgumentsPattern" -> {_, ___}};
+
+PopulateIndexedSumTimes[expr_] := expr //. {
+    IndexedSum[HoldPattern@Times[args__], inds2__] :> IndexedSumTimes[{inds2}, args]
+} //. IndexedSumTimes[{inds__}, factors__] :> IndexedSum[Times[factors], inds];
+SyntaxInformation@PopulateIndexedSumTimes = {"ArgumentsPattern" -> {_}};
 
 SignOfUpSlot[_DI] = -1;
 SignOfUpSlot[_] = 1;
@@ -1124,12 +1304,7 @@ ETensor::wrongtransposeperm = "Invalid permutation `1` to transpose ETensor with
 ETensor::nonmatchfrees = "Encountered free indices of different structures `1` and `2` in sum.";
 ETensor[0, _] = 0;
 ETensor[expr_, {}] := IndexScope@expr;
-ETensor[expr_, frees_][inds__] := With[{
-    indNameToPos = FindAllIndicesNames@expr
-}, ReplacePart[expr, Join[
-    Join @@ MapThread[Thread[(Delete[1] /@ indNameToPos[#1]) -> #2] &, {frees, {inds}}],
-    Join @@ Thread[(Delete[1] /@ #) -> GetUniqueIndexOfSlotType[#[[1, 1]]]] & /@ Values@Delete[indNameToPos, {Key@#} & /@ frees]
-]]] /; If[Length@frees === Length@{inds}, True, Message[ETensor::wrongindlen, HoldForm@{inds}, HoldForm@frees]; False];
+ETensor[expr_, frees_][inds__] := ToIndexedExprFunction[expr, frees][inds];
 
 ReplaceIndicesRules[indPos_, reps_] := Join @@ (With[{
     newInd = #2,
@@ -1256,7 +1431,7 @@ ETensorProduct[prod_, ETensor[expr1_, frees1_], ETensor[expr2_, frees2_]] := Wit
     newIndsReps = Thread[inds2ToBeReplaced -> newInds]
 },
     ETensor[
-        prod[expr1, ReplacePart[expr2, ReplaceIndicesRules[Map[Delete[2]] /@ indPos2,newIndsReps]]],
+        prod[expr1, ReplacePart[expr2, ReplaceIndicesRules[Map[Delete[2]] /@ indPos2, newIndsReps]]],
         Join[frees1, ReconstructETensorIndices@MapAt[
             ReplaceAll[newIndsReps],
             StructureOfETensorIndices@frees2,
@@ -1363,12 +1538,22 @@ ITensorOuter[_, 0, _, _] = 0;
 ITensorOuter[_, _, 0, _] = 0;
 SyntaxInformation@ITensorOuter = {"ArgumentsPattern" -> {_, _, _, _}};
 
+SumIndexofSlot[slot_, ind_, expr_] := expr;
+SyntaxInformation@SumIndexofSlot = {"ArgumentsPattern" -> {_, _, _}};
+
 ITensorSum[expr_, {}] := expr;
 ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
     Transpose[Map[If[TensorValueQ@#, ITensorSum[#, dims], #] &, s, {ArrayDepth@s}], PermutationOfMovingToFirst@dims],
     Length@dims - 1
 ];
-ITensorSum[ETensor[expr_, frees_], dims_] := ETensor[expr, Delete[frees, Transpose@{dims}]];
+(* ITensorSum[ETensor[expr_, frees_], dims_] := ETensor[expr, Delete[frees, Transpose@{dims}]]; *)
+ITensorSum[ETensor[expr_, frees_], dims_] := With[{
+    allInds = Extract[{1, 2}] /@ FindAllIndicesNames@expr
+}, ETensor[
+    Fold[SumIndexofSlot[#2[[1]], #2[[2]], #1] &, expr, If[KeyExistsQ[allInds, #], {allInds@#, #}, Nothing] & /@ frees],
+    Delete[frees, Transpose@{dims}]
+]];
+ITensorSum[0, _] = 0;
 SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
 
 ITensorScalarMultiply[prod_, tensor_?ArrayQ, scalar_] := Map[If[TensorValueQ@#, ITensorScalarMultiply[prod, #, scalar], prod[#, scalar]] &, tensor, {ArrayDepth@tensor}];

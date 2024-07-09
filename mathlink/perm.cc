@@ -966,9 +966,9 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solve(StrongG
         }
     }
 #ifdef PPERM_DEBUG
-        if (this->log) {
-            *this->log << "minNonFixedPointOfD = " << minNonFixedPointOfD << std::endl;
-        }
+    if (this->log) {
+        *this->log << "minNonFixedPointOfD = " << minNonFixedPointOfD << std::endl;
+    }
 #endif
 
     auto finishedPoints = this->boolSetPool.pushStacked(this->permLen);

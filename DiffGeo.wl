@@ -7,7 +7,8 @@ LeviCivitaChristoffel::usage = "LeviCivitaChristoffel[cd, metric] represents the
 RiemannDifferencePart1;
 RiemannDifferencePart2;
 RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the difference of the Riemann tensors of cd and cd1, where christoffel is the Christoffel tensor relation cd and cd1.";
-CovDDifference::usage = "CovDDifference[expr, chris, a] represents the difference ";
+CovDDifference::usage = "CovDDifference[expr, inds, chrisProvider, a] gives the difference ";
+CovDDifferenceDirect::usage = "CovDDifferenceDirect[expr, chrisProvider, a]";
 CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
 CovDCommutatorOfRiemann::usage = "CovDCommutator[riemann]";
 CovDDefaultIndexOrderedQ::usage = "CovDDefaultIndexOrderedQ[a, b]";
@@ -68,6 +69,7 @@ PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd
 PerturbationLeviCivitaRiemann::usage = "";
 ExpandMetricPerturbation::usage = "ExpandMetricPerturbation[expr, {pert, metric, metricPert}]";
 ExpandRiemannPerturbation::usage = "ExpandRiemannPerturbation[expr, {pert, metric, metricPert}, {cd, riemann, ricci, ricciScalar}]";
+ExpandCovDPerturbation::usage = "ExpandCovDPerturbation[expr, {cd, cdPert, metric, metricPert}]";
 
 Begin["`Private`"];
 
@@ -97,6 +99,23 @@ CovDDifferenceTerm[tensor_, inds_, chrisProvider_, a_ -> DI@slot0_, d_][ind_ -> 
 CovDDifference[tensor_, inds_, chrisProvider_, a_] := Total[MapIndexed[CovDDifferenceTerm[tensor, inds, chrisProvider, a, GetUniqueIndexOfSlotType@Null], inds]];
 SyntaxInformation@CovDDifference = {"ArgumentsPattern" -> {_, _, _, _}};
 
+DropDummiesFromIndPosList[list_] := With[{
+    dummies = With[{d = list[[All, 2, 1]]}, Intersection[d, DI /@ d]]
+},
+    Select[list, !MemberQ[dummies, #[[2, 1]]] &]
+];
+CovDDifferenceDirect[expr_, chrisProvider_, a_] := With[{
+    inds = DropDummiesFromIndPosList@FindIndicesSlotsAndNames@expr
+},
+    CovDDifference[
+        Function@@{ReplacePart[expr, MapIndexed[#1 -> Slot @@ #2 &, inds[[All, 1]]]]},
+        ToNITensorIndex @@@ inds[[All, 2]],
+        chrisProvider,
+        a
+    ]
+];
+SyntaxInformation@CovDDifferenceDirect = {"ArgumentsPattern" -> {_, _, _}};
+
 CovDCommutatorNoTorsionTerm[expr_, a_, b_, d_, riemann_][pos_ -> type_] := With[{
     ind = Extract[expr, {pos}][[1]]
 }, If[Head@ind === DI,
@@ -118,6 +137,7 @@ SyntaxInformation@SortCovD = {"ArgumentsPattern" -> {_, _, _, _.}};
 
 DerConstantQ[_?NumericQ] = True;
 DerConstantQ[symbol_Symbol] := MemberQ[Attributes@symbol, Constant];
+DerConstantQ[_?DerFunctionQ[args___]] := AllTrue[{args}, DerConstantQ];
 SyntaxInformation@DerConstantQ = {"ArgumentsPattern" -> {_}};
 
 DerFunctionQ[Times] = True;
@@ -226,15 +246,20 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
         sym /: ExpressionPassThroughQ[_sym, _, pos_] := pos[[1]] === 2
     ];
     With[{
-        name = OptionValue@DisplayName
-    },
-        sym /: MakeBoxes[expr : sym[expr2_, inds__], StandardForm] := With[{
-            box = RowBox@{
-                TensorGridBox[name, SeparateIndexName /@ {inds}],
-                If[expr2 =!= Null, MakeBoxes@expr2, Nothing]
-            }
-        }, InterpretationBox[box, expr, Editable -> False]]
-    ];
+        name = OptionValue@DisplayName,
+        fn = Function[{name},
+            sym /: MakeBoxes[expr : sym[expr2_, inds__], StandardForm] := With[{
+                box = RowBox@{
+                    TensorGridBox[name, SeparateIndexName /@ {inds}],
+                    If[expr2 =!= Null, MakeBoxes@expr2, Nothing]
+                }
+            }, InterpretationBox[box, expr, Editable -> False]]
+        , {HoldAll}]
+    }, Switch[name,
+        Automatic, fn@MakeBoxes@sym,
+        None, Null,
+        _, fn@name
+    ]];
     sym /: NITensorReduce[sym[expr_, inds__], frees_] := ReduceNITensorContractions[ReverseApplied@Construct, {expr, NITensor[sym, IndexName /@ {inds}]}, frees];
 );
 SyntaxInformation@DefTensorDerivativeOperator = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
@@ -516,11 +541,10 @@ PerturbShiftedMetric[PredefinedCovD[expr_, a_], n_] := PredefinedCovD[PerturbShi
 SyntaxInformation@PerturbShiftedMetric = {"ArgumentsPattern" -> {_, _.}};
 
 PerturbationLeviCivitaChristoffel[cd_, metric_, metricPert_, n_][a_, b_, c_] := PerturbShiftedMetric[
-    LeviCivitaChristoffel[cd, ShiftedMetric, ShiftedInverseMetric][a, b, c],
-    metricPert,
+    LeviCivitaChristoffel[PredefinedCovD, ShiftedMetric, ShiftedInverseMetric][a, b, c],
     n
-] /. {ShiftedMetric -> metric, ShiftedInverseMetric -> metric};
-SyntaxInformation@PerturbationLeviCivitaChristoffel = {"ArgumentsPattern" -> {_, _, _}};
+] // ExpandPerturbShiftedMetric // ReplaceAll@{PredefinedCovD -> cd, ShiftedMetric -> metricPert, PredefinedMetric -> metric};
+SyntaxInformation@PerturbationLeviCivitaChristoffel = {"ArgumentsPattern" -> {_, _, _, _}};
 
 WithUnprotected[symbol_, body_] := WithUnprotected[{symbol}, body];
 WithUnprotected[{symbols___}, body_] := (
@@ -528,6 +552,14 @@ WithUnprotected[{symbols___}, body_] := (
     With[{ret = body}, Protect[symbols]; ret]
 );
 SetAttributes[WithUnprotected, HoldAll];
+ExpandPerturbShiftedMetric[expr_] := expr /. {
+    PerturbShiftedMetric[ShiftedInverseMetric[a_, b_], n2_] :> VarInverseMatrix[ShiftedInverseMetric[a, b], ShiftedMetric, n2],
+    PerturbShiftedMetric[ShiftedMetric[a_, b_], n2_] :> ShiftedMetric[n2, a, b]
+} /. {
+    ShiftedMetric[a_, b_] :> PredefinedMetric[a, b],
+    ShiftedInverseMetric -> PredefinedMetric
+};
+
 PerturbationLeviCivitaRiemann[n_] := WithUnprotected[
     PerturbationLeviCivitaRiemann
 ,
@@ -563,6 +595,11 @@ ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
 };
 ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];
 SyntaxInformation@ExpandMetricPerturbation = {"ArgumentsPattern" -> {_, _.}};
+
+ExpandCovDPerturbation[expr_, {cd_, cdPert_, metric_, metricPert_}] := expr //. {
+    HoldPattern[cdPert[expr2_, DI@a_, n_]] :> CovDDifferenceDirect[expr2, {PerturbationLeviCivitaChristoffel[cd, metric, metricPert, n]}, a -> DI@Null]
+};
+SyntaxInformation@ExpandCovDPerturbation = {"ArgumentsPattern" -> {_, _}};
 
 ExpandRiemannPerturbation[expr_, metricPertArgs : {pert_, metric_, metricPert_}, {cd_, riemann_, ricci_, ricciScalar_}] := expr /. {
     HoldPattern@pert[ricciScalar, n_] :> With[{

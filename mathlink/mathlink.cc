@@ -21,7 +21,6 @@ static bool readPermutation(WSLINK link, PermutationView perm) {
     TRY(len2 >= 1 && len2 <= perm.len + 1);
     int sign;
     TRY(WSGetInteger32(link, &sign));
-    perm.identity();
     if (sign == -1) {
         perm.setNegative(true);
     } else {

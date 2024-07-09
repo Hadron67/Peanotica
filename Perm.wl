@@ -12,7 +12,7 @@ Images;
 ToImagesNotation;
 ToSCyclesNotation;
 MinPermutationLength;
-ShiftPermutation;
+ShiftPermutation::usage = "ShiftPermutation[perm, length]";
 ShiftAndJoinGenSets::usage = "ShiftAndJoinGenSets[gensets, lengths]";
 SignedInversePermutation;
 SeparatePermSign::usage = "SeparatePermSign[perm]";
@@ -26,6 +26,7 @@ RiemannMonomialGenSet;
 ScalarMonomialDummiesGenSet;
 DummiesGenSet;
 RubiksCubeGenSet;
+SymmetryOfSortedList::usage = "SymmetryOfSortedList[list]";
 
 (* Wolfram functions *)
 PermutePoint::usage = "PermutePoint[point, perm]";
@@ -70,7 +71,7 @@ SyntaxInformation@NotationOfPermutation = {"ArgumentsPattern" -> {_}};
 
 NonPermutationQ[a_] := With[{h = Head@a}, h =!= Images && h =!= SCycles];
 
-PPermPermutationProduct[l___, a_ * b_?NonPermutationQ, r___] := a * PPermPermutationProduct[l, b, r];
+PPermPermutationProduct[l___, a_ * b_?NonPermutationQ, r___] := b * PPermPermutationProduct[l, a, r];
 PPermPermutationProduct[l___, e1_Images, e2_Images, r___] := PPermPermutationProduct[l, Images @@ PermutationProduct[e1, e2], r];
 PPermPermutationProduct[l___, e1_SCycles, e2_Images, r___] := PPermPermutationProduct[l, SCycles @@ First@PermutationProduct[Cycles[List @@ e1], PermutationCycles[List @@ e2]], r];
 PPermPermutationProduct[l___, e1_Images, e2_SCycles, r___] := PPermPermutationProduct[l, SCycles @@ First@PermutationProduct[PermutationCycles[List @@ e1], Cycles[List @@ e2]], r];
@@ -93,8 +94,9 @@ SyntaxInformation@ToSCyclesNotation = {"ArgumentsPattern" -> {_}};
 MinPermutationLength[-a_] := MinPermutationLength@a;
 MinPermutationLength[SCycles[]] = 0;
 MinPermutationLength[SCycles[inds__]] := Max @@ Apply[Max, {inds}, {2}];
+MinPermutationLength[Images[]] = 0;
 MinPermutationLength[Images[inds__]] := Max[inds];
-MinPermutationLength[expr_List] := Max @@ Map[MinPermutationLength, expr];
+MinPermutationLength[expr_List] := Max @@ Append[Map[MinPermutationLength, expr], 0];
 SyntaxInformation@MinPermutationLength = {"ArgumentsPattern" -> {_}};
 
 ShiftPermutation[-a_, by_] := -ShiftPermutation[a, by];
@@ -133,6 +135,10 @@ DummiesGenSet[sign_, dummies_] := Join[If[sign =!= 0, sign * Join @@ (SymmetricG
 SyntaxInformation@DummiesGenSet = {"ArgumentsPattern" -> {_, _}};
 
 RubiksCubeGenSet[n_]
+
+SymmetryOfSortedList[list_] := SymmetryOfSortedList[list, SameQ];
+SymmetryOfSortedList[list_, eq_] := Join @@ MapThread[If[eq[#1, #2], {SCycles@{#3, #3 + 1}}, {}] &, {Delete[list, -1], Delete[list, 1], Range[Length@list - 1]}];
+SyntaxInformation@SymmetryOfSortedList = {"ArgumentsPattern" -> {_, _.}};
 
 PermutePoint[point_, img_Images * _.] := If[point <= Length@img, img[[point]], point];
 PermutePoint[point_, c_SCycles * _.] := PermutePoint[point, PermutationList[Cycles[List @@ c]]];

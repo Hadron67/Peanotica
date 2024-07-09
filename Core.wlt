@@ -131,3 +131,8 @@ VerificationTest[
     ITensorOuter[Times, SparseArray[{{1, 1} -> a, {2, 2} -> b}], {c, d}, {{2, 1}}],
     SparseArray[{{1, 1} -> a c, {2, 2} -> b d}]
 ];
+
+VerificationTest[
+    FindIndicesSlots[IndexedSum[(t1[i] + a) t1[j], {i, TangentMf}]],
+    {{1, 2, 1} -> TangentMf}
+];
