@@ -4,7 +4,7 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{"Peanotica`Core`*"}];
 
 PeanoticaGeneral;
 (* interface *)
-FindIndicesSlots;
+FindIndicesSlots::usage = "FindIndicesSlots[expr]";
 SummedIndices;
 FindIndicesSlotsAndNames;
 SymmetryOfExpression;
@@ -76,6 +76,7 @@ PermuteIndexList::usage = "PermuteIndexList[list, perm]";
 ApplyIndices::usage = "ApplyIndices[expr, indPos, indList]";
 ReplaceIndexNames::usage = "ReplaceIndexNames[expr, reps]";
 TryReplaceIndexNames::usage = "TryReplaceIndexNames[expr, reps]";
+MapIndicesSlots::usage = "MapIndicesSlots[fn, inds]";
 
 (* IndexedSum *)
 IndexedSum::usage = "IndexedSum[expr, {ind, type}, ...]";
@@ -84,6 +85,8 @@ MoveIndexedSumToOutermost::usage = "MoveIndexedSumToOutermost[expr]";
 MoveIndexedSumToInnermost::usage = "MoveIndexedSumToInnermost[expr]";
 IndexedSumTimes::usage = "IndexedSumTimes[{inds...}, factor1, factor2, ...]";
 PopulateIndexedSumTimes::usage = "PopulateIndexedSumTimes[expr]";
+ReplaceIndexedSumIndsToUnique::usage = "ReplaceIndexedSumIndsToUnique[expr]";
+ReplaceAllIndexedSumIndsToUnique::usage = "ReplaceAllIndexedSumIndsToUnique[expr]";
 
 (* metric related *)
 DimensionOfSlotType::usage = "DimensionOfSlotType[type] represents the dimension of the slot type.";
@@ -102,7 +105,8 @@ DefSimpleSlotType::usage = "DefSimpleSlotType[name, dimension, indices]";
 NoIndicesQ;
 NonTensorTermQ;
 GroupByTensors::usage = "GroupByTensors[expr] returns an association with key being tensors and values their coefficients.";
-UnionClosures::usage = "UnionClosures[{list1, list2, ...}]";
+UnionClosures::usage = "UnionClosures[{tag1 -> list1, tag2 -> list2, ...}]";
+UnionClosureValues::usage = "UnionClosureValues[{list1, list2, ...}}";
 ContractList::usage = "ContractList[list, a, b, slot]";
 IndexedExprFunction::usage = "IndexedExprFunction[expr, frees, dummies, dummyTypes]";
 ToIndexedExprFunction::usage = "ToIndexedExprFunction[expr, frees]";
@@ -119,6 +123,7 @@ ReleaseMetricBarrier::usage = "ReleaseMetricBarrier[expr]";
 (* canonicalization *)
 ISortedProduct;
 ISortedGeneral;
+ISortUnorderedArgs::usage = "ISortUnorderedArgs[expr, args]";
 CanonicalizationUnitQ;
 PreITensorReduce;
 PostITensorReduce;
@@ -160,6 +165,10 @@ ScalarValue::usage = "ScalarValue[expr] represents a scalar value expr.";
 ExtractNITensor::usage = "";
 ToNITensorIndex::usage = "ToNITensorIndex[ind, slot]";
 FromNITensorIndex::usage = "FromNITensorIndex[ind]";
+SumIndexOfSlot::usage = "SumIndexOfSlot[slot, ind, expr]";
+ETensorArray::usage = "ETensorArray[fn, {inds1, inds2, ...}]";
+
+$PThrowOnError = False;
 
 Begin["`Private`"];
 
@@ -272,17 +281,16 @@ PrependPosToSlotSpec[{vb_, pos__}, {l___}] := {vb, l, pos};
 PrependPosToSlotSpec[l_][expr_] := PrependPosToSlotSpec[expr, l];
 SyntaxInformation@PrependPosToSlotSpec = {"ArgumentsPattern" -> {_, _.}};
 
-JoinSlotPos[pos_][l_Integer] := Append[pos, l];
-
-AppendPosToIndicesSlot[pos_, l_List] := AppendPosToIndicesSlot[pos, #] & /@ l;
-AppendPosToIndicesSlot[pos_, l_SummedIndices] := AppendPosToIndicesSlot[pos, #] & /@ l;
-AppendPosToIndicesSlot[pos_, pos2_ -> type_] := Join[pos, pos2] -> type;
+MapIndicesSlots[fn_, l_List] := MapIndicesSlots[fn, #] & /@ l;
+MapIndicesSlots[fn_, l_SummedIndices] := MapIndicesSlots[fn, #] & /@ l;
+MapIndicesSlots[fn_, pos_ -> type_] := fn[pos, type];
+SyntaxInformation@MapIndicesSlots = {"ArgumentsPattern" -> {_, _}};
 
 SummedIndices[] = Nothing;
 
 WrapList[list_List] := list;
 WrapList[l_] := {l};
-FindIndicesSlots[expr_, pos_] := AppendPosToIndicesSlot[pos, FindIndicesSlots@expr];
+FindIndicesSlots[expr_, pos_] := MapIndicesSlots[Join[pos, #1] -> #2 &, FindIndicesSlots@expr];
 FindIndicesSlots[HoldPattern@Plus[args__]] := {DeleteCases[
     SummedIndices @@ MapIndexed[Function[{a, pos},
         FindIndicesSlots[a, pos],
@@ -363,6 +371,9 @@ UnionClosures[taggedList_] := NestWhile[With[{
     tmp = TakeOneUnionClosure@#[[1]]
 }, {tmp[[1]], Append[#[[2]], tmp[[2]]]}] &, {taggedList, {}}, Length@#[[1]] > 0 &][[2]];
 SyntaxInformation@UnionClosures = {"ArgumentsPattern" -> {_}};
+
+UnionClosureValues[lists_] := Union @@ Extract[lists, Transpose@{#}] & /@ UnionClosures@MapIndexed[#2[[1]] -> #1 &, lists];
+SyntaxInformation@UnionClosureValues = {"ArgumentsPattern" -> {_}};
 
 ContractList[list_, a_, b_, slot_] := With[{
     inds = Join[{a}, Array[GetUniqueIndexOfSlotType@slot &, Length@list - 1], {b}]
@@ -471,6 +482,7 @@ ConvertIndexStyle["AllUp"][{a_, _}] := {a, IndexNameSlot};
 ConvertIndexStyle["AllDown"][{a_, _}] := {a, DI@IndexNameSlot};
 IndexToGridRow[{a_, IndexNameSlot}] := {MakeBoxes@a, ""};
 IndexToGridRow[{a_, DI@IndexNameSlot}] := {"", MakeBoxes@a};
+TensorGridBox[t_, {}, ___] := t;
 TensorGridBox[t_, inds_List, opt : OptionsPattern[]] := With[{
     inds2 = ConvertIndexStyle[OptionValue@IndexStyle] /@ inds
 }, Which[
@@ -658,12 +670,19 @@ DefSimpleDeltaTensor[symbol_, type_, opt : OptionsPattern[]] := (
 
     If[OptionValue@DisplayName =!= None, DefTensorFormatings[symbol, opt]];
 
+    symbol[a_, a_] = 1;
     symbol /: _?TimesQ[l___, symbol[a_, b_], r___] := With[{
         newExpr = TryReplaceIndexNames[Times[l, r], {a -> b}]
     }, symbol[a, b] * newExpr /; a =!= b && newExpr =!= $Failed];
     symbol /: IndexedSumTimes[inds_, r1___, symbol[a_, b_], r2___] := With[{
-        otherInds = Intersection[{a, b}, Complement[inds[[All, 1]], Keys@FindAllIndicesNames@Times[r1, r2]]]
-    }, IndexedSumTimes[DeleteCases[inds, {otherInds[[1]], _}], r1, r2] /; Length@otherInds > 0];
+        summedInds = Intersection[{a, b}, inds[[All, 1]]]
+    }, With[{
+        summedInd = summedInds[[1]],
+        otherInd = First@DeleteCases[{a, b}, summedInds[[1]]]
+    },
+        IndexedSumTimes[DeleteCases[inds, {summedInd, _}], ##] & @@ (ReplaceIndexNames[#, {summedInd -> otherInd}] & /@ {r1, r2})] /; Length@summedInds > 0
+    ];
+    RenamingSymmetryOfExpression@symbol[a_, b_] := {{a, b}};
 );
 SyntaxInformation@DefSimpleDeltaTensor = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
@@ -711,12 +730,13 @@ MoveMetricContractSlotTo1[metric_[a_, b_]] := If[ContractionSlotOfMetric@metric[
 SeparateMetricOneIndex[pos_ -> type_, metric_, {indName_, IndexNameSlot}, -1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> DI@dummy, MoveMetricContractSlotTo1@metric[dummy, indName]}];
 SeparateMetricOneIndex[pos_ -> type_, metric_, {indName_, DI@IndexNameSlot}, 1] := With[{dummy = GetUniqueIndexOfSlotType@type}, {pos -> dummy, MoveMetricContractSlotTo1@metric[DI@dummy, DI@indName]}];
 SeparateMetricOneIndex[_, _, _, _] = Nothing;
+SeparateMetricOne[expr_, indsPat_] := SeparateMetricOne[expr, indsPat, MetricOfSlotType];
 SeparateMetricOne[expr_, indsPat_, metricProvider_] := With[{
     indPos = FindIndicesSlots@expr
 }, With[{
     reps = Transpose@MapThread[SeparateMetricOneIndex[#1, LookupListOrApply[metricProvider, #1[[2]]], SeparateIndexName@#2, #3] &, {indPos, Extract[expr, indPos[[All, 1]]], indsPat}]
 }, If[Length@reps =!= 0, ReplacePart[expr, reps[[1]]] * Times @@ reps[[2]], expr]]];
-SyntaxInformation@SeparateMetricOne = {"ArgumentsPattern" -> {_, _, _}};
+SyntaxInformation@SeparateMetricOne = {"ArgumentsPattern" -> {_, _, _.}};
 
 MapShiftedIndexed[f_, expr_] := MapThread[f, {Drop[expr, -1], Drop[expr, 1], Range[Length@expr - 1]}];
 
@@ -725,14 +745,17 @@ ISortArgToSortTag[arg_] := With[{
     indPos = FindIndicesSlots@arg
 }, {arg, -GroupOrderFromStrongGenSet@sym, -Length@indPos, ReplacePart[arg, Thread[indPos[[All, 1]] -> IndexSlot[1]]]}];
 
-(* TODO: products like Wedge could produce a negative sign *)
-ISort[fn_?UnorderedProductQ[args___]] := With[{
+ISortUnorderedArgs[head_, {args__}] := With[{
     sortedArgs = SortBy[ISortArgToSortTag /@ (List @@ (ISort /@ Hold@args)), Delete[1]]
 }, With[{
     symList = MapShiftedIndexed[If[#1 === #2, #3, Nothing] &, sortedArgs[[All, 4]]]
 },
-    Function[{arg}, ISortedProduct[fn, arg, symList]]@sortedArgs[[All, 1]]
+    Function[{arg}, ISortedProduct[head, arg, symList]]@sortedArgs[[All, 1]]
 ]];
+SyntaxInformation@ISortUnorderedArgs = {"ArgumentsPattern" -> {_, _}};
+
+(* TODO: products like Wedge could produce a negative sign *)
+ISort[fn_?UnorderedProductQ[args___]] := ISortUnorderedArgs[fn, {args}];
 ISort[expr_] := ISortedGeneral@expr;
 SetAttributes[ISort, {HoldAll}];
 
@@ -962,6 +985,7 @@ Options@ITensorReduceOneTerm = {
     FreeIndexNames -> Automatic,
     FreeIndicesSymmetry -> {},
     RenameDummies -> True,
+    PostprocessCanonicalIndicesList -> Identity,
     FixedPoint -> False
 };
 ITensorReduceOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
@@ -970,17 +994,25 @@ ITensorReduceOneTerm[expr_?ArrayQ, opt : OptionsPattern[]] := Map[ITensorReduceO
 ITensorReduceOneTerm[expr_List, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
 PutIndexWrapperIfNeeded[expr_Times] := PutIndexWrapperIfNeeded /@ expr;
 PutIndexWrapperIfNeeded[expr_] := If[!FreeQ[FindIndicesSlots@expr, SummedIndices], PutIndexWrapper@expr, expr];
+CollectIndexedSumTermAndPopulateIndexedSumTimes[expr_] := With[{
+    ret = CollectIndexedSumTerm[expr, False]
+}, CollectIndexedSumTerm[
+    IndexedSumTimes[ret[[2]], ret[[1]]] /. IndexedSumTimes[{inds__}, factors___] :> IndexedSum[Times@factors, inds],
+    False
+]];
 ITensorReduceOneTermInner[expr_, opt : OptionsPattern[]] := With[{
-    exprAndSummedInds = CollectIndexedSumTerm[expr, False]
+    exprAndSummedInds = CollectIndexedSumTermAndPopulateIndexedSumTimes@expr
 }, With[{
     ret = CanonicalizeOneSorted[
         With[{expr2 =
             PreITensorReduce[exprAndSummedInds[[1]], opt] //
                 PutIndexWrapperIfNeeded
         }, ISort@expr2],
-        If[Length@exprAndSummedInds > 0,
-            With[{summed = exprAndSummedInds[[2, All, 1]]}, Length@#1 === 1 && !MemberQ[summed, #2] &],
-            OptionValue[ITensorReduceOneTerm, opt, FreeIndexNames]
+        With[{frees = OptionValue[ITensorReduceOneTerm, opt, FreeIndexNames]},
+            If[Length@exprAndSummedInds[[2]] > 0 && frees === Automatic,
+                With[{summed = exprAndSummedInds[[2, All, 1]]}, Length@#1 === 1 && !MemberQ[summed, #2] &],
+                frees
+            ]
         ],
         OptionValue[ITensorReduceOneTerm, opt, FreeIndicesSymmetry],
         OptionValue[ITensorReduceOneTerm, opt, RenameDummies],
@@ -990,7 +1022,7 @@ ITensorReduceOneTermInner[expr_, opt : OptionsPattern[]] := With[{
     exprRet = ret[[1]] //
         ReleaseISort //
         PostITensorReduce //
-        ReleaseIndexWrapper // PopulateIndexedSumTimes,
+        ReleaseIndexWrapper,
     summedIndsRet = {Lookup[ret[[2]], #1, #1], #2} & @@@ exprAndSummedInds[[2]]
 },
     If[Length@summedIndsRet > 0,
@@ -1007,6 +1039,9 @@ ITensorReduceOneTerm[expr_, opt : OptionsPattern[]] := With[{
     If[ret === $Failed, Message[ITensorReduceOneTerm::nottensorterm, HoldForm@expr]; expr, ret]
 ];
 SyntaxInformation@ITensorReduceOneTerm = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+
+RenamingSymmetryOfExpression[_] = {};
+SyntaxInformation@RenamingSymmetryOfExpression = {"ArgumentsPattern" -> {_}};
 
 ExpandToTensorPolynomial[expr_] := expr //. {
     e_IndexScope :> e,
@@ -1165,18 +1200,29 @@ SyntaxInformation@ReleaseIndexWrapper = {"ArgumentsPattern" -> {_}};
 
 IndexedSum[expr_] := expr;
 IndexedSum[expr_, inds__List] := With[{inds2 = SortBy[{inds}, First]}, IndexedSum[expr, ##] & @@ inds2 /; inds2 =!= {inds}];
+IndexedSum[expr_, inds__List] := With[{
+    freeInds = Complement[{inds}[[All, 1]], Keys@FindAllIndicesNames@expr]
+},
+    With[{nameToType = Association[Rule @@@ {inds}]}, Times @@ (DimensionOfSlotType@nameToType@# & /@ freeInds)] IndexedSum[expr, ##] & @@ DeleteCases[{inds}, {Alternatives @@ freeInds, _}] /; Length@freeInds > 0
+];
+IndexedSum[expr_, inds__List] := expr Times @@ (DimensionOfSlotType@#2 & @@@ {inds}) /; Length@Intersection[Keys@FindAllIndicesNames@expr, {inds}[[All, 1]]] === 0;
 IndexedSum[expr_Plus, inds__] := IndexedSum[#, inds] & /@ expr;
 IndexedSum[IndexedSum[expr_, inds1__List], inds2__List] := IndexedSum[expr, inds1, inds2];
 IndexedSum[expr_Times, inds__List] := With[{
     ret = TrySplitIndexScopeFactors[List @@ expr, "Not"@{inds}[[All, 1]]],
     indToType = Association[Rule @@@ {inds}]
 }, ret[[1]] Times @@ IndexedSum @@@ (MapAt[Sequence @@ ({#, indToType@#} & /@ #) &, #, 2] & /@ ret[[2]]) /; ret =!= $Failed];
-ISort[IndexedSum[expr_, inds__]] ^:= IndexedSum[ISort@expr, inds];
 RemoveIndexNamesFromSlotList[expr_, e : (pos_ -> _), indsToRemove_] := If[indsToRemove@Extract[expr, pos], Nothing, e];
-RemoveIndexNamesFromSlotList[expr_, SummedIndices@inds_, indsToRemove_] := With[{ret = RemoveIndexNamesFromSlotList[expr, #, indsToRemove] & /@ inds}, If[Length@ret > 0, SummedIndices@ret, Nothing]];
+RemoveIndexNamesFromSlotList[expr_, e_List, indsToRemove_] := RemoveIndexNamesFromSlotList[expr, #, indsToRemove] & /@ e;
+RemoveIndexNamesFromSlotList[expr_, e_SummedIndices, indsToRemove_] := With[{ret = DeleteCases[RemoveIndexNamesFromSlotList[expr, #, indsToRemove] & /@ List @@ e, {}]}, If[Length@ret > 0, SummedIndices @@ ret, Nothing]];
+expr_RemoveIndexNamesFromSlotList := Throw@Hold@expr /; $PThrowOnError;
 FindIndicesSlots[IndexedSum[expr_, inds__]] ^:= With[{
     poses = FindIndicesSlots[expr, {1}]
-}, RemoveIndexNamesFromSlotList[Hold@expr, #, MatchQ[Alternatives @@ {inds}[[All, 1]]]] & /@ poses];
+}, RemoveIndexNamesFromSlotList[Hold@expr, poses, MatchQ[Alternatives @@ {inds}[[All, 1]]]]];
+ListBoxNoBrace[list_] := If[Length@list === 1, ToBoxes@list[[1]], RowBox@Riffle[ToBoxes /@ list, ","]];
+IndexedSum /: MakeBoxes[expr : IndexedSum[expr2_, inds__List], StandardForm] := With[{
+    box = RowBox@{UnderscriptBox["\[Sum]", ListBoxNoBrace@{inds}[[All, 1]]], MakeBoxes@expr2}
+}, InterpretationBox[box, expr]];
 SyntaxInformation@IndexedSum = {"ArgumentsPattern" -> {_, ___}};
 
 CollectIndexedSumTerm[expr_] := CollectIndexedSumTerm[expr, True];
@@ -1228,12 +1274,24 @@ ScalarIndexedSumQ[expr_IndexedSum] := Length@FindIndicesSlots@expr === 0;
 SyntaxInformation@ScalarIndexedSumQ = {"ArgumentsPattern" -> {_}};
 
 IndexedSumTimes[{}, factors___] := Times[factors];
+IndexedSumTimes[inds_, r1___, HoldPattern@Times[args__], r2___] := IndexedSumTimes[inds, r1, args, r2];
 SyntaxInformation@IndexedSumTimes = {"ArgumentsPattern" -> {_, ___}};
 
 PopulateIndexedSumTimes[expr_] := expr //. {
-    IndexedSum[HoldPattern@Times[args__], inds2__] :> IndexedSumTimes[{inds2}, args]
-} //. IndexedSumTimes[{inds__}, factors__] :> IndexedSum[Times[factors], inds];
+    IndexedSum[expr2_, inds2__] :> IndexedSumTimes[{inds2}, expr2]
+} //. IndexedSumTimes[{inds__}, factors___] :> IndexedSum[Times[factors], inds];
 SyntaxInformation@PopulateIndexedSumTimes = {"ArgumentsPattern" -> {_}};
+
+ReplaceIndexedSumIndsToUnique[expr_] := ReplaceIndexedSumIndsToUnique[expr, Identity];
+ReplaceIndexedSumIndsToUnique[IndexedSum[expr_, inds__], fn_] := With[{
+    newInds = {GetUniqueIndexOfSlotType@#2, #2} & @@@ {inds}
+}, With[{
+    expr2 = fn@ReplaceIndexNames[expr, Thread[{inds}[[All, 1]] -> newInds[[All, 1]]]]
+}, IndexedSum[expr2, ##] & @@ newInds]];
+SyntaxInformation@ReplaceIndexedSumIndsToUnique = {"ArgumentsPattern" -> {_, _.}};
+
+ReplaceAllIndexedSumIndsToUnique[expr_] := expr /. expr2_IndexedSum :> ReplaceIndexedSumIndsToUnique[expr2, ReplaceAllIndexedSumIndsToUnique];
+SyntaxInformation@ReplaceAllIndexedSumIndsToUnique = {"ArgumentsPattern" -> {_}};
 
 SignOfUpSlot[_DI] = -1;
 SignOfUpSlot[_] = 1;
@@ -1344,7 +1402,7 @@ ETensor /: FindIndicesSlots[_ETensor] = {};
 ETensor /: PreITensorReduce[ETensor[expr_, frees_], opt : OptionsPattern[]] := With[{
     freesObj = StructureOfETensorIndices@frees
 }, With[{
-    newExprAndFrees = ReplaceFrees[expr, freesObj[[1]], Automatic]
+    newExprAndFrees = ReplaceFrees[ReplaceAllIndexedSumIndsToUnique@expr, freesObj[[1]], Automatic]
 }, ETensor[
     ITensorReduce[newExprAndFrees[[1]], FreeIndexNames -> newExprAndFrees[[2]], FilterRules[{opt}, DeleteCases[Options@ITensorReduce, FreeIndexNames -> _]]],
     ReconstructETensorIndices[ReplacePart[freesObj, 1 -> newExprAndFrees[[2]]]]
@@ -1413,7 +1471,7 @@ UncatchedETensorPlusNonNullInds[head_, exprs_] := With[{
     combinedFrees
 ]]];
 PlusQ[a_] := a === Plus;
-ETensor /: _?PlusQ[e1__ETensor] := With[{ret = Catch@UncatchedETensorPlus[Plus, {e1}]}, ret /; ret =!= Err];
+ETensor /: _?PlusQ[e1__ETensor] := With[{ret = Catch@UncatchedETensorPlus[Plus, ReplaceAllIndexedSumIndsToUnique /@ {e1}]}, ret /; ret =!= Err];
 ETensor /: prod_?ProductQ[l___, ETensor[expr_, arg__], r___] := ETensor[prod[l, expr, r], arg];
 ETensor /: D[ETensor[expr_, frees_], args__] := ETensor[D[expr, args], frees];
 
@@ -1472,10 +1530,10 @@ UncatchedETensorTranspose[ETensor[expr_, frees_], perm_List] := With[{
         First /@ indsBySlots
     ]
 ]]];
+ITensorTranspose[expr_, perm_] := expr /; perm === Range[Length@perm];
 ITensorTranspose[e1_ETensor, perm_] := With[{ret = UncatchedETensorTranspose[e1, perm]}, ret /; ret =!= Err];
 ITensorTranspose[Plus[l___, ITensorTranspose[t2_, perm2_], r___], perm_] := ITensorTranspose[Plus[l, r], perm] + ITensorTranspose[t2, GeneralizedPermutationProduct[perm2, perm]];
 ITensorTranspose[ITensorTranspose[t_, perm1_], perm2_] := ITensorTranspose[t, GeneralizedPermutationProduct[perm1, perm2]];
-ITensorTranspose[expr_, perm_] := expr /; perm === Range[Length@perm];
 SyntaxInformation@ITensorTranspose = {"ArgumentsPattern" -> {_, _}};
 
 ITensorOuter[prod_, s1_, s2_] := ITensorOuter[prod, s1, s2, {}];
@@ -1538,8 +1596,8 @@ ITensorOuter[_, 0, _, _] = 0;
 ITensorOuter[_, _, 0, _] = 0;
 SyntaxInformation@ITensorOuter = {"ArgumentsPattern" -> {_, _, _, _}};
 
-SumIndexofSlot[slot_, ind_, expr_] := expr;
-SyntaxInformation@SumIndexofSlot = {"ArgumentsPattern" -> {_, _, _}};
+SumIndexOfSlot[slot_, ind_, expr_] := expr;
+SyntaxInformation@SumIndexOfSlot = {"ArgumentsPattern" -> {_, _, _}};
 
 ITensorSum[expr_, {}] := expr;
 ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
@@ -1550,7 +1608,7 @@ ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
 ITensorSum[ETensor[expr_, frees_], dims_] := With[{
     allInds = Extract[{1, 2}] /@ FindAllIndicesNames@expr
 }, ETensor[
-    Fold[SumIndexofSlot[#2[[1]], #2[[2]], #1] &, expr, If[KeyExistsQ[allInds, #], {allInds@#, #}, Nothing] & /@ frees],
+    Fold[SumIndexOfSlot[#2[[1]], #2[[2]], #1] &, expr, If[KeyExistsQ[allInds, #], {allInds@#, #}, Nothing] & /@ Extract[frees, Transpose@{dims}]],
     Delete[frees, Transpose@{dims}]
 ]];
 ITensorSum[0, _] = 0;
@@ -1772,6 +1830,12 @@ SyntaxInformation@ToNITensorIndex = {"ArgumentsPattern" -> {_, _}};
 FromNITensorIndex[a_List] := FromNITensorIndex /@ a;
 FromNITensorIndex[name_ -> slot_] := SeparateIndexName[slot][[2]] /. IndexNameSlot -> name;
 SyntaxInformation@FromNITensorIndex = {"ArgumentsPattern" -> {_}};
+
+GetIndexForETensor[type_, inds_] := With[{ind = GetIndexOfSlotType[type, inds]}, {ind, ind}];
+GetIndexForETensor[t_LabelI, _] := {t, Null};
+GetIndicesForETensor[indSpecs_, inds_] := Transpose@Fold[Append[#1, GetIndexForETensor[#2, DeleteCases[Join[inds, #1[[All, 1]]], _LabelI]]] &, {}, indSpecs];
+ETensorArray[fn_, inds_] := Outer[With[{inds2 = GetIndicesForETensor[{##}, {}]}, ETensor[fn @@ inds2[[1]], inds2[[2]]]] &, ##] & @@ inds;
+SyntaxInformation@ETensorArray = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 
