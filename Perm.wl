@@ -9,22 +9,22 @@ NotationOfPermutation::usage = "NotationOfPermutation[perm]";
 ConvertPermutationNotation::usage = "ConvertPermutationNotation[perm, notation]";
 SCycles;
 Images;
-ToImagesNotation;
-ToSCyclesNotation;
-MinPermutationLength;
+ToImagesNotation::usage = "ToImagesNotation[perm]";
+ToSCyclesNotation::usage = "ToSCyclesNotation[perm]";
+MinPermutationLength::usage = "MinPermutationLength[perm]";
 ShiftPermutation::usage = "ShiftPermutation[perm, length]";
 ShiftAndJoinGenSets::usage = "ShiftAndJoinGenSets[gensets, lengths]";
-SignedInversePermutation;
+SignedInversePermutation::usage = "SignedInversePermutation[perm]";
 SeparatePermSign::usage = "SeparatePermSign[perm]";
 PPermPermutationProduct::usage = "PPermPermutationProduct[perm1, perm2, ...]";
 
 (* predefined symmetry groups *)
-SymmetricGenSet;
-RiemannSymmetricGenSet;
-BlockSymmetricGenSet;
-RiemannMonomialGenSet;
-ScalarMonomialDummiesGenSet;
-DummiesGenSet;
+SymmetricGenSet::usage = "SymmetricGenSet[n1, n2, ...]";
+RiemannSymmetricGenSet::usage = "RiemannSymmetricGenSet[n1, n2, n3, n4]";
+BlockSymmetricGenSet::usage = "BlockSymmetricGenSet[list1, list2, ...]";
+RiemannMonomialGenSet::usage = "RiemannMonomialGenSet[n]";
+ScalarMonomialDummiesGenSet::usage = "ScalarMonomialDummiesGenSet[n]";
+DummiesGenSet::usage = "DummiesGenSet[sign, {{u1, d1}, ...}]";
 RubiksCubeGenSet;
 SymmetryOfSortedList::usage = "SymmetryOfSortedList[list]";
 
@@ -42,6 +42,7 @@ PPermGroupElements::usage = "PPermGroupElements[g] gives all the group elements 
 PPermStabilizer::usage = "PPermStabilizer[genset, p] gives a list of generators of the stabilizer.";
 PPermOpenLogFile::usage = "PPermOpenLogFile[path] opens a log file for the logs to be printed.";
 PPermCloseLogFile::usage = "PPermCloseLogFile[] closes the current log file."; (* defined in mathlink directly *)
+DoubleTransversalInSymmetricGroup::usage = "DoubleTransversalInSymmetricGroup[S, D]";
 
 UseTwoStep::usage = "UseTwoStep is a boolean option for DoubleCosetRepresentative specifying whether to use the two-step method described by Portugal: apply the right coset representative algorithm on the stable points of \[LeftAngleBracket]D\[RightAngleBracket] first, and then apply Butler's algorithm on the result. It's claimed that such method is more efficient, while profiling result shows otherwise. The default is False.";
 PPermVerbose::usage = "PPermVerbose is a boolean option for various PPerm functions specifying whether to print messages to log file. This option is maining for debug purpose, and the messages are only enabled in debug builds. The default is False.";
@@ -61,6 +62,7 @@ MathLinkGroupOrderFromStrongGenSet;
 MathLinkPPermGroupElements;
 MathLinkPPermStabilizer;
 MathLinkMoveBasePoint;
+MathLinkDoubleTransversalInSymmetricGroup;
 MathLinkOpenLogFile;
 
 FormatOneCycle[cyc_List] := RowBox@Join[{"("}, Riffle[MakeBoxes /@ cyc, ","], {")"}];
@@ -141,10 +143,15 @@ SymmetryOfSortedList[list_, eq_] := Join @@ MapThread[If[eq[#1, #2], {SCycles@{#
 SyntaxInformation@SymmetryOfSortedList = {"ArgumentsPattern" -> {_, _.}};
 
 PermutePoint[point_, img_Images * _.] := If[point <= Length@img, img[[point]], point];
-PermutePoint[point_, c_SCycles * _.] := PermutePoint[point, PermutationList[Cycles[List @@ c]]];
+PermutePoint[point_, c_SCycles * _.] := PermutePoint[point, Images @@ PermutationList[Cycles[List @@ c]]];
+PermutePoint[point_, genset_List] := PermutePoint[point, #] & /@ genset;
 SyntaxInformation@PermutePoint = {"ArgumentsPattern" -> {_, _}};
 
-(* OneOrbit[genset_, point_] := ; *)
+OneOrbitStep[genset_][{points_, step_}] := With[{nextStep = Complement[Union @@ (PermutePoint[#, genset] & /@ step), points]}, {Join[points, nextStep], nextStep}];
+OneOrbit[genset_, point_Integer] := NestWhile[OneOrbitStep[genset], {{}, {point}}, Length@#[[2]] > 0 &][[1]];
+AllOrbitStep[genset_][{}, nextPoint_];
+OneOrbit[genset_, points_List] := Fold[];
+SyntaxInformation@OneOrbit = {"ArgumentsPattern" -> {_, _}};
 
 PermToMLPerm[Images[inds__]] := {1, inds};
 PermToMLPerm[-Images[inds__]] := {-1, inds};
@@ -176,6 +183,14 @@ DoubleCosetRepresentative[s_, g_, d_, opt : OptionsPattern[]] := With[{
     MLPermToPerm@MathLinkDoubleCosetRepresentative[PermToMLPerm@s, PermToMLPerm@g, PermToMLPerm@d, n, Boole[OptionValue[UseTwoStep]], Boole[OptionValue[PPermVerbose]]]
 ];
 SyntaxInformation@DoubleCosetRepresentative = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
+
+DoubleTransversalInSymmetricGroup[s_, d_] := With[{
+    n = Max[MinPermutationLength@s, MinPermutationLength@d]
+},
+    PPermEnsureLink[];
+    MLPermToPerm /@ MathLinkDoubleTransversalInSymmetricGroup[n, PermToMLPerm@s, PermToMLPerm@d]
+];
+SyntaxInformation@DoubleTransversalInSymmetricGroup = {"ArgumentsPattern" -> {_, _}};
 
 GroupOrderFromStrongGenSet[gs_] := (
     PPermEnsureLink[];

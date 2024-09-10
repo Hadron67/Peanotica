@@ -15,14 +15,14 @@ inline bool bitSetGet(const T *data, std::size_t wordBits, std::size_t i) {
 }
 
 template<typename T>
-void copyArray(T *dest, const T *src, std::size_t len) {
+inline void copyArray(T *dest, const T *src, std::size_t len) {
     for (std::size_t i = 0; i < len; i++) {
         *dest++ = *src++;
     }
 }
 
 template<typename T, typename T2>
-void arraySet(T *dest, std::size_t len, T2 &&val) {
+inline void arraySet(T *dest, std::size_t len, T2 &&val) {
     for (std::size_t i = 0; i < len; i++) {
         *dest++ = val;
     }
@@ -30,6 +30,14 @@ void arraySet(T *dest, std::size_t len, T2 &&val) {
 
 struct SlicePtr {
     std::size_t ptr, len;
+};
+
+// TODO: use a better hasher
+struct DefaultHasher {
+    std::size_t value = 5381;
+    void update(std::size_t p) {
+        this->value = this->value * 33 + p;
+    }
 };
 
 template<typename T>

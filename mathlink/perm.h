@@ -221,7 +221,8 @@ struct PermutationList {
         return this->data.getSize();
     }
     std::size_t getPermutationLength() const {
-        return this->data.getElementSize() - 1;
+        auto len = this->data.getElementSize();
+        return len > 0 ? len - 1 : 0;
     }
     PermutationView get(std::size_t i) {
         return PermutationView{this->data[i], this->getPermutationLength()};
@@ -260,6 +261,18 @@ struct PermutationList {
         this->addAll(set.begin(), set.end());
     }
     void print(std::ostream &os, PermutationFormatter &formatter);
+    template<typename Fn>
+    void collectNonStablePoints(Fn consumer) {
+        auto permLen = this->getPermutationLength();
+        for (auto perm : *this) {
+            auto images = perm.images();
+            for (upoint_type p = 0; p < permLen; p++, images++) {
+                if (p != *images) {
+                    consumer(p);
+                }
+            }
+        }
+    }
     private:
     ArrayVector<upoint_type> data;
 };
@@ -439,6 +452,7 @@ struct SchreierOrbit {
             this->appendOrbit(p, genset, queue);
         }
     }
+    upoint_type leastOrbitPoint(upoint_type orbitId);
 
     template<typename Iter1, typename Iter2>
     void appendOrbits(Iter1 begin, Iter2 end, PermutationList &genset, std::deque<upoint_type> &queue) {
@@ -641,6 +655,65 @@ inline void schreierGenerators(Consumer ret, PermutationStack &stack, Permutatio
     }
 }
 
+struct SimsFilter {
+    struct TableEntry {
+        std::size_t permLen;
+
+        bool isPresent() const {
+            return static_cast<upoint_type>(this->data[0]);
+        }
+        void setIsPresent(bool value) {
+            this->data[0] = static_cast<upoint_type>(value);
+        }
+        PermutationView getPermutation() const {
+            return PermutationView{this->data + 1, this->permLen};
+        }
+        static std::size_t storageSize(std::size_t permLen) {
+            return PermutationView::storageSize(permLen) + 1;
+        }
+        private:
+        TableEntry(std::size_t permLen, upoint_type *data): permLen(permLen), data(data) {}
+        upoint_type *data;
+        friend SimsFilter;
+    };
+    TableEntry getEntry(upoint_type i, upoint_type j) {
+        return TableEntry(this->permLen, this->data.get() + (i * this->permLen + j) * TableEntry::storageSize(this->permLen));
+    }
+    template<typename Fn>
+    void collectEntry(Fn consumer) {
+        for (upoint_type i = 0; i < this->permLen; i++) {
+            for (upoint_type j = 0; j < this->permLen; j++) {
+                auto entry = this->getEntry(i, j);
+                if (entry.isPresent()) {
+                    consumer(entry.getPermutation());
+                }
+            }
+        }
+    }
+    void sift(PermutationStack &stack, PermutationView perm);
+    void reset(std::size_t permLen);
+    SimsFilter() = default;
+    SimsFilter(std::size_t permLen) {
+        this->reset(permLen);
+    }
+    private:
+    std::size_t permLen;
+    std::unique_ptr<upoint_type[]> data;
+};
+
+struct Stabilizer {
+    PermutationStack *permStack = nullptr;
+    PermutationSet genset;
+    void stabilizeOnePoint(upoint_type p);
+    void reset(PermutationList &perm);
+    private:
+    std::deque<upoint_type> queue;
+    SchreierOrbit orbit;
+    SimsFilter filter;
+    std::unique_ptr<upoint_type[]> stablePoints;
+    void updateStablePoints();
+};
+
 struct BaseChanger {
     PermutationSet genset;
     void setSGS(PermutationList &genset);
@@ -688,11 +761,11 @@ struct BaseChangingStrongGenSetProvider : StrongGenSetProvider {
 struct DoubleCosetRepresentativeSolver {
     std::ostream *log = nullptr;
     bool useTwoStep = false;
+    PermutationStack *permStack = nullptr;
     PermutationFormatter permFormatter;
     std::optional<StackedPermutation> solve(StrongGenSetProvider &gensetS, StrongGenSetProvider &gensetD, PermutationView perm);
     private:
     std::size_t permLen;
-    PermutationStack permStack;
     SchreierOrbit orbitS, orbitD;
     BaseChanger baseChanger;
     OBStack<bool> boolSetPool;
@@ -707,7 +780,6 @@ struct DoubleCosetRepresentativeSolver {
     void setPermutationLength(std::size_t permLen) {
         this->permLen = permLen;
         this->boolSetPool.blockSize = this->permLen * 16;
-        this->permStack.setBlockSize(this->permLen * 16);
         this->selectedSgD.setPermutationLength(permLen);
         this->sgdSet.setPermutationLength(permLen);
     }
@@ -731,93 +803,6 @@ struct GroupOrderCalculator {
     std::size_t stabilizer;
 };
 
-struct SymmetricBlock {
-    using InnerIterator = ArrayVector<upoint_type>::Iterator;
-    struct Iterator;
-    struct Block {
-        bool isNegative() const {
-            return bool(this->data[0]);
-        }
-        void setNegative(bool n) {
-            this->data[0] = upoint_type(n);
-        }
-        Slice<upoint_type> getData() const {
-            return makeSlice(this->data + 1, this->elemLen);
-        }
-        private:
-        Block(upoint_type *data, std::size_t elemLen): data(data), elemLen(elemLen) {}
-        upoint_type *data;
-        std::size_t elemLen;
-        friend SymmetricBlock;
-        friend Iterator;
-    };
-    struct Iterator {
-        bool operator == (Iterator other) const {
-            return this->inner == other.inner;
-        }
-        Iterator &operator ++ () {
-            ++this->inner;
-            return *this;
-        }
-        Block operator * () const {
-            return Block(*this->inner, this->inner.getElementSize() - 1);
-        }
-        Block operator -> () const {
-            return this->operator*();
-        }
-        private:
-        Iterator(InnerIterator inner): inner(inner) {}
-        InnerIterator inner;
-        friend SymmetricBlock;
-    };
-    SymmetricBlock() = default;
-    SymmetricBlock(std::size_t elemLen) {
-        this->setElementLength(elemLen);
-    }
-    SymmetricBlock(const SymmetricBlock &) = delete;
-    SymmetricBlock(SymmetricBlock &&) = default;
-    SymmetricBlock &operator = (SymmetricBlock &&) = default;
-    void setElementLength(std::size_t elemLen) {
-        this->blocks.setElementLen(elemLen + 1);
-    }
-    std::size_t getElementLength() const {
-        return this->blocks.getElementSize() - 1;
-    }
-    Iterator begin() {
-        return Iterator(this->blocks.begin());
-    }
-    Iterator end() {
-        return Iterator(this->blocks.end());
-    }
-    void clear() {
-        this->blocks.clear();
-    }
-    Block pushBlock() {
-        return Block(this->blocks.push(), this->getElementLength());
-    }
-    Block get(std::size_t i) {
-        return Block(this->blocks.get(i), this->getElementLength());
-    }
-    Block getLast() {
-        return Block(this->blocks.get(this->blocks.getSize() - 1), this->getElementLength());
-    }
-    std::size_t getSize() const {
-        return this->blocks.getSize();
-    }
-    private:
-    ArrayVector<upoint_type> blocks;
-};
-
-inline std::ostream &operator << (std::ostream &os, SymmetricBlock::Block block) {
-    if (block.isNegative()) {
-        os << "-";
-    }
-    os << "{" << block.getData() << "}";
-    return os;
-}
-
-std::ostream &operator << (std::ostream &os, SymmetricBlock &block);
-
 template<typename Provider, typename Acceptor>
 inline void filterBasePoints(Acceptor acceptor, Provider provider, std::size_t baseLen, PermutationList &genset, PermutationList &tmp) {
     tmp.copy(genset);
@@ -834,6 +819,34 @@ struct GroupEnumerator {
     PermutationList generators;
     PermutationSet elements;
     void generate();
+};
+
+struct DoubleCosetEnumerator {
+    PermutationStack *stack = nullptr;
+    PermutationSet enumeratedPerms;
+    void solve(PermutationList &leftGenSet, PermutationList &rightGenSet);
+    private:
+    SchreierOrbit orbit;
+    std::deque<upoint_type> pointsQueue;
+
+    DoubleCosetRepresentativeSolver dcr;
+    BaseChangingStrongGenSetProvider gensetS, gensetD;
+    BaseChanger baseChanger;
+
+    Stabilizer stabilizer;
+    PermutationList stabilizedD;
+    JerrumBranchingBuilder jbuilder;
+
+    struct Element {
+        PermutationList left;
+        std::unique_ptr<OptionalUInt<upoint_type>[]> workingPoints;
+        Element(std::size_t permLen): left(permLen), workingPoints(new OptionalUInt<upoint_type>[permLen]) {}
+        upoint_type nextNullInd() const;
+    };
+
+    std::vector<Element> elements, nextElements;
+
+    bool createNewElement(OptionalUInt<upoint_type> *workingPoints, upoint_type maxInd, PermutationList &leftGenset, PermutationList &rightGenset);
 };
 
 namespace meta {

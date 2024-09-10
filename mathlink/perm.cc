@@ -59,14 +59,13 @@ upoint_type PermutationView::firstNonFixedPoint() const {
 }
 
 std::size_t PermutationView::hash(bool ignoreSign) const {
-    // TODO: use a better hasher
-    std::size_t ret = 5381;
+    DefaultHasher hasher;
     auto ptr = this->data, end = ptr + this->getStorageSize();
     if (ignoreSign) ptr++;
     while (ptr != end) {
-        ret = ret * 33 + *ptr++;
+        hasher.update(*ptr++);
     }
-    return ret;
+    return hasher.value;
 }
 
 PermutationView &PermutationView::identity() {
@@ -305,6 +304,16 @@ void SchreierOrbit::appendOrbit(upoint_type point, PermutationList &genset, std:
             }
         }
     }
+}
+
+upoint_type SchreierOrbit::leastOrbitPoint(upoint_type orbitId) {
+    auto ptr = this->pointToOrbitId.get();
+    for (upoint_type p = 0; p < this->permLen; p++, ptr++) {
+        if (*ptr == orbitId) {
+            return p;
+        }
+    }
+    return this->permLen + 1;
 }
 
 void SchreierOrbit::reset(std::size_t permLen) {
@@ -618,13 +627,82 @@ void JerrumBranchingBuilder::build(PermutationStack &permStack, PermutationList 
     }
 }
 
-static inline upoint_type findFirstPoint(const bool *points, std::size_t size) {
+void SimsFilter::reset(std::size_t permLen) {
+    auto storageSize = permLen * permLen * TableEntry::storageSize(permLen);
+    if (this->data.get() == nullptr || this->permLen < permLen) {
+        this->data = std::make_unique<upoint_type[]>(storageSize);
+    }
+    arraySet(this->data.get(), storageSize, 0);
+    this->permLen = permLen;
+}
+
+void SimsFilter::sift(PermutationStack &stack, PermutationView perm) {
+    auto images = perm.images();
+    auto tmp = stack.pushStacked(this->permLen);
+    tmp.copy(perm);
+    for (upoint_type p = 0; p < this->permLen; p++) {
+        auto img = images[p];
+        if (p != img) {
+            auto entry = this->getEntry(p, img);
+            if (entry.isPresent()) {
+                auto inv = stack.pushStacked(this->permLen);
+                inv.inverse(tmp);
+                // tmp.multiply(inv, entry.getPermutation());
+                tmp.multiply(entry.getPermutation(), inv);
+            } else {
+                entry.getPermutation().copy(tmp);
+                entry.setIsPresent(true);
+            }
+        }
+    }
+}
+
+void Stabilizer::stabilizeOnePoint(upoint_type p) {
+    auto permLen = this->genset.getPermutationLength();
+    auto stp = this->stablePoints.get();
+    if (!stp[p]) {
+        this->orbit.reset(permLen);
+        this->orbit.appendOrbit(p, this->genset.permutations, this->queue);
+        this->filter.reset(permLen);
+        schreierGenerators([&](PermutationView perm) {
+            this->filter.sift(*this->permStack, perm);
+        }, *this->permStack, this->genset.permutations, this->orbit);
+        this->genset.clear();
+        this->filter.collectEntry([&](PermutationView perm) {
+            this->genset.addPermutation(perm);
+        });
+        this->updateStablePoints();
+        if (!stp[p]) {
+            throw std::runtime_error("unexpected non-stable point");
+        }
+    }
+}
+
+void Stabilizer::reset(PermutationList &perm) {
+    if (perm.getPermutationLength() > this->genset.getPermutationLength()) {
+        this->stablePoints = std::make_unique<upoint_type[]>(perm.getPermutationLength());
+    }
+    this->genset.clear();
+    this->genset.copy(perm);
+    this->updateStablePoints();
+}
+
+void Stabilizer::updateStablePoints() {
+    auto permLen = this->genset.getPermutationLength();
+    auto points = this->stablePoints.get();
+    arraySet(points, permLen, true);
+    this->genset.permutations.collectNonStablePoints([&](upoint_type p) {
+        points[p] = false;
+    });
+}
+
+static inline OptionalUInt<upoint_type> findFirstPoint(const bool *points, std::size_t size) {
     for (upoint_type ret = 0; ret < size; ret++, points++) {
         if (*points) {
             return ret;
         }
     }
-    throw std::runtime_error("first point not found");
+    return None{};
 }
 
 static inline void boolListComplement(bool *dest, const bool *exclude, std::size_t len) {
@@ -692,7 +770,7 @@ void BaseChanger::interchange(Slice<upoint_type> partialBase, upoint_type b1, up
     gamma[b2] = false;
 
     while (std::count(deltai, deltai + permLen, true) < barDeltaj1Size) {
-        auto gamma0 = findFirstPoint(gamma, permLen);
+        auto gamma0 = findFirstPoint(gamma, permLen).get();
         auto g1 = traceSchreierVector(stack, gamma0, this->stabilizer, this->orbit1.vector.get());
         auto g1InvMapBp2 = g1.inverseMapPoint(b2);
         if (this->orbit2.pointToOrbitId[g1InvMapBp2].isPresent()) {
@@ -1012,9 +1090,9 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
     for (upoint_type i = 0; i < minNonFixedPointOfD; i++) {
         frees[i] = true;
     }
-    auto perm2 = this->permStack.pushStacked(this->permLen);
+    auto perm2 = this->permStack->pushStacked(this->permLen);
     perm2.copy(perm);
-    auto tmpPerm1 = this->permStack.pushStacked(this->permLen);
+    auto tmpPerm1 = this->permStack->pushStacked(this->permLen);
     tmpPerm1.inverse(perm);
     mapPointSet(frees2, frees, tmpPerm1);
     std::swap(frees, frees2);
@@ -1068,8 +1146,8 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
             *this->log << "(Delta_" << i << " int. frees)^g = " << PointSet{orbitBInFreesPerm.begin(), this->permLen} << std::endl;
         }
 #endif
-        auto pi = perm2.inverseMapPoint(findFirstPoint(orbitBInFreesPerm.begin(), this->permLen));
-        auto permOmega = traceSchreierVector(this->permStack, pi, gensetS, this->orbitS.vector.get());
+        auto pi = perm2.inverseMapPoint(findFirstPoint(orbitBInFreesPerm.begin(), this->permLen).get());
+        auto permOmega = traceSchreierVector(*this->permStack, pi, gensetS, this->orbitS.vector.get());
         tmpPerm1.multiply(permOmega, perm2);
         perm2.copy(tmpPerm1);
 
@@ -1084,7 +1162,7 @@ StackedPermutation DoubleCosetRepresentativeSolver::solveRightCosetRepresentativ
         }
 #endif
         this->baseChangeOfSTime += measureElapsed([&]() {
-            gensetSProvider.stabilizeOnePoint(this->permStack, i);
+            gensetSProvider.stabilizeOnePoint(*this->permStack, i);
         }).count();
 #ifdef PPERM_DEBUG
         if (this->log) {
@@ -1110,7 +1188,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
             << "finishedPoints = " << PointSet{finishedPoints, this->permLen} << std::endl;
     }
 #endif
-    auto ret = this->permStack.pushStacked(this->permLen);
+    auto ret = this->permStack->pushStacked(this->permLen);
 
     this->sgdSet.clear();
     this->sgdSet.setIgnoreSign(true);
@@ -1203,7 +1281,7 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
                 *this->log << "working on sgd = " << this->permFormatter.formatValue(sgd) << std::endl;
             }
 #endif
-            auto sgdInv = this->permStack.pushStacked(this->permLen);
+            auto sgdInv = this->permStack->pushStacked(this->permLen);
             sgdInv.inverse(sgd);
             auto next = this->boolSetPool.pushStacked(this->permLen);
             arraySet(next.begin(), this->permLen, false);
@@ -1221,12 +1299,12 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #endif
 
             for (upoint_type j = 0; j < this->permLen; j++) if (next[j]) {
-                auto s1 = traceSchreierVector(this->permStack, sgdInv.mapPoint(j), gensetS, this->orbitS.vector.get());
-                auto d2 = traceSchreierVector(this->permStack, j, gensetD, this->orbitD.vector.get());
+                auto s1 = traceSchreierVector(*this->permStack, sgdInv.mapPoint(j), gensetS, this->orbitS.vector.get());
+                auto d2 = traceSchreierVector(*this->permStack, j, gensetD, this->orbitD.vector.get());
                 // b_i^(s1 sgd) = p_i^(d2)
-                auto d1 = this->permStack.pushStacked(this->permLen);
+                auto d1 = this->permStack->pushStacked(this->permLen);
                 d1.inverse(d2);
-                auto newsgd = this->permStack.pushStacked(this->permLen);
+                auto newsgd = this->permStack->pushStacked(this->permLen);
                 newsgd.multiply(s1, sgd);
                 newsgd.multiply(newsgd, d1);
 
@@ -1257,8 +1335,8 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
 #endif
 
         this->baseChangeOfDTime += measureElapsed([&]() {
-            gensetSProvider.stabilizeOnePoint(this->permStack, i);
-            gensetDProvider.stabilizeOnePoint(this->permStack, pi);
+            gensetSProvider.stabilizeOnePoint(*this->permStack, i);
+            gensetDProvider.stabilizeOnePoint(*this->permStack, pi);
         }).count();
 
 #ifdef PPERM_DEBUG
@@ -1278,51 +1356,6 @@ std::optional<StackedPermutation> DoubleCosetRepresentativeSolver::solveDoubleCo
     }
 #endif
     return ret;
-}
-
-std::ostream &pperm::operator << (std::ostream &os, SymmetricBlock &block) {
-    os << "SymmetricBlock[";
-    bool first = true;
-    for (auto b : block) {
-        if (!first) os << ", ";
-        first = false;
-        os << b;
-    }
-    os << "]";
-    return os;
-}
-
-namespace {
-    struct SymmetricBlockFirstColumnHashContext {
-        std::vector<SymmetricBlock> *blocks;
-        std::size_t hash(std::size_t i) const {
-            return this->blocks->at(i).get(0).getData().hash();
-        }
-        std::size_t hash(Slice<upoint_type> d) const {
-            return d.hash();
-        }
-        int compare(std::size_t i, std::size_t j) const {
-            return this->blocks->at(i).get(0).getData().compare(this->blocks->at(j).get(0).getData());
-        }
-        int compare(Slice<upoint_type> d, std::size_t i) const {
-            return d.compare(this->blocks->at(i).get(0).getData());
-        }
-    };
-    struct SymmetricBlockLastColumnHashContext {
-        std::vector<SymmetricBlock> *blocks;
-        std::size_t hash(std::size_t i) const {
-            return this->blocks->at(i).getLast().getData().hash();
-        }
-        std::size_t hash(Slice<upoint_type> d) const {
-            return d.hash();
-        }
-        int compare(std::size_t i, std::size_t j) const {
-            return this->blocks->at(i).getLast().getData().compare(this->blocks->at(j).getLast().getData());
-        }
-        int compare(Slice<upoint_type> d, std::size_t i) const {
-            return d.compare(this->blocks->at(i).getLast().getData());
-        }
-    };
 }
 
 void GroupEnumerator::generate() {
@@ -1364,4 +1397,118 @@ void GroupEnumerator::generate() {
             }
         }
     }
+}
+
+void DoubleCosetEnumerator::solve(PermutationList &leftGenSet, PermutationList &rightGenSet) {
+    auto permLen = leftGenSet.getPermutationLength();
+    this->enumeratedPerms.setPermutationLength(permLen);
+    this->stabilizedD.setPermutationLength(permLen);
+    this->stabilizer.permStack = this->stack;
+
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
+
+    auto whichElements = false;
+    this->elements.emplace_back(permLen);
+    {
+        auto &elem = this->elements[0];
+        elem.left.copy(leftGenSet);
+    }
+
+    std::unique_ptr<OptionalUInt<upoint_type>[]> newElement(new OptionalUInt<upoint_type>[permLen]);
+    auto newElementPtr = newElement.get();
+
+    for (std::size_t i = 0; i < permLen; i++) {
+        auto &elems = whichElements ? this->nextElements : this->elements;
+        auto &nextElems = whichElements ? this->elements : this->nextElements;
+
+        nextElems.clear();
+        this->enumeratedPerms.clear();
+        this->enumeratedPerms.setIgnoreSign(true);
+
+        for (auto &elem : elems) {
+            this->orbit.reset(permLen);
+            auto points = elem.workingPoints.get();
+            for (upoint_type p = 0; p < permLen; p++) {
+                if (!points[p].isPresent()) {
+                    this->orbit.appendOrbit(p, elem.left, this->pointsQueue);
+                }
+            }
+            auto nextInd = elem.nextNullInd();
+            for (upoint_type id = 0; id < this->orbit.orbitCount; id++) {
+                auto chosenSlot = this->orbit.leastOrbitPoint(id);
+                copyArray(newElementPtr, points, permLen);
+                newElementPtr[chosenSlot] = nextInd;
+                if (this->createNewElement(newElementPtr, nextInd, leftGenSet, rightGenSet)) {
+                    this->stabilizer.reset(elem.left);
+                    for (upoint_type point = 0; point < permLen; point++) {
+                        if (newElementPtr[point].isPresent()) {
+                            this->stabilizer.stabilizeOnePoint(point);
+                        }
+                    }
+                    nextElems.emplace_back(permLen);
+                    auto &newElementsObj = nextElems[nextElems.size() - 1];
+                    newElementsObj.left.copy(this->stabilizer.genset);
+                    copyArray(newElementsObj.workingPoints.get(), newElementPtr, permLen);
+                }
+            }
+        }
+        whichElements = !whichElements;
+    }
+}
+
+bool DoubleCosetEnumerator::createNewElement(OptionalUInt<upoint_type> *workingPoints, upoint_type maxInd, PermutationList &leftGenset, PermutationList &rightGenset) {
+    auto permLen = this->orbit.permLen;
+    auto perm = this->stack->pushStacked(permLen);
+    perm.identity();
+    {
+        auto images = perm.images();
+        upoint_type filledInd = maxInd + 1;
+        for (upoint_type i = 0; i < permLen; i++) {
+            images[i] = workingPoints[i].isPresent() ? workingPoints[i].get() : filledInd++;
+        }
+    }
+
+    this->stabilizer.reset(rightGenset);
+    for (upoint_type p = maxInd + 1; p < permLen; p++) {
+        this->stabilizer.stabilizeOnePoint(p);
+    }
+    this->jbuilder.build(*this->stack, this->stabilizer.genset.permutations);
+    this->stabilizedD.clear();
+    this->jbuilder.branching.collectLabels([&](PermutationView perm) { this->stabilizedD.addPermutation(perm); });
+
+    this->gensetS.baseChanger = &this->baseChanger;
+    this->gensetD.baseChanger = &this->baseChanger;
+    this->gensetS.setSGS(leftGenset);
+    this->gensetD.setSGS(this->stabilizedD);
+    this->dcr.permStack = this->stack;
+    auto normalizedPerm0 = this->dcr.solve(this->gensetS, this->gensetD, perm);
+    if (normalizedPerm0.has_value()) {
+        auto normalizedPerm = std::move(normalizedPerm0.value());
+        if (this->enumeratedPerms.addPermutation(normalizedPerm)) {
+            auto images = normalizedPerm.images();
+            for (upoint_type i = 0; i < permLen; i++, images++) {
+                if (*images > maxInd) {
+                    workingPoints[i] = None{};
+                } else {
+                    workingPoints[i] = *images;
+                }
+            }
+            return true;
+        } else return false;
+    } else {
+        return false;
+    }
+}
+
+upoint_type DoubleCosetEnumerator::Element::nextNullInd() const {
+    auto permLen = this->left.getPermutationLength();
+    auto ptr = this->workingPoints.get();
+    upoint_type ret = 0;
+    for (upoint_type p = 0; p < permLen; p++, ptr++) {
+        if (ptr->isPresent() && ptr->get() >= ret) {
+            ret = ptr->get() + 1;
+        }
+    }
+    return ret;
 }

@@ -330,6 +330,7 @@ namespace {
             }
             this->solver.permFormatter.useCycles = true;
             this->solver.useTwoStep = this->twoStep;
+            this->solver.permStack = &this->stack;
             auto actual = this->solver.solve(this->gensetSProvider, this->gensetDProvider, input);
             if (expected != actual) {
                 auto &formatter = this->solver.permFormatter;
@@ -493,6 +494,72 @@ static bool testGroupElementEnumeration() {
     return ret;
 }
 
+template<unsigned int N, typename S, typename D, typename Expected>
+static bool doubleCosetEnumTestCase() {
+    PermutationFormatter formatter;
+    formatter.useCycles = false;
+    PermutationStack stack(16 * N);
+    auto gensetS = S::build(N);
+    auto gensetD = D::build(N);
+    auto expected = Expected::build(N);
+
+    DoubleCosetEnumerator enumerator;
+    enumerator.stack = &stack;
+    enumerator.solve(gensetS, gensetD);
+    auto report = [&]() {
+        std::cout << "Unexpected result on S = " << formatter.formatRef(gensetS) << ", D = " << formatter.formatRef(gensetD) << std::endl
+            << "    expected = " << formatter.formatRef(expected) << std::endl
+            << "    actual = " << formatter.formatRef(enumerator.enumeratedPerms) << std::endl;
+    };
+    if (expected.getSize() != enumerator.enumeratedPerms.getSize()) {
+        report();
+        return false;
+    }
+    for (auto perm : expected) {
+        if (!enumerator.enumeratedPerms.contains(perm)) {
+            report();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool testDoubleCosetEnum() {
+    bool ret = true;
+    if (!doubleCosetEnumTestCase<
+        4,
+        RiemannSymmetric<0, 1, 2, 3>,
+        GenSet<SCycles<List<0, 1>>, SCycles<List<2, 3>>, SCycles<List<0, 2>, List<1, 3>>>,
+        GenSet<Images<0, 2, 1, 3>>
+    >()) ret = false;
+    if (!doubleCosetEnumTestCase<
+        8,
+        Join<RiemannSymmetric<0, 1, 2, 3>, RiemannSymmetric<4, 5, 6, 7>, GenSet<SCycles<List<0, 4>, List<1, 5>, List<2, 6>, List<3, 7>>>>,
+        GenSet<SCycles<List<0, 1>>, SCycles<List<2, 3>>, SCycles<List<4, 5>>, SCycles<List<6, 7>>, SCycles<List<0, 2>, List<1, 3>>, SCycles<List<2, 4>, List<3, 5>>, SCycles<List<4, 6>, List<5, 7>>>,
+        GenSet<
+            Images<0, 2, 1, 3, 4, 6, 5, 7>,
+            Images<0, 2, 1, 4, 3, 6, 5, 7>,
+            Images<0, 2, 4, 6, 1, 3, 5, 7>,
+            Images<0, 2, 4, 6, 1, 5, 3, 7>
+        >
+    >()) ret = false;
+    return ret;
+}
+
+bool testStablizer() {
+    PermutationFormatter formatter;
+    formatter.useCycles = true;
+    PermutationStack permStack(4 * 16);
+    auto genset = GenSet<SCycles<List<0, 1>>, SCycles<List<2, 3>>, SCycles<List<0, 2>>, SCycles<List<1, 3>>>::build(4);
+    Stabilizer stb;
+    stb.permStack = &permStack;
+    stb.reset(genset);
+    stb.stabilizeOnePoint(3);
+    std::cout << formatter.formatRef(stb.genset) << std::endl;
+
+    return true;
+}
+
 int main(int argc, const char *args[]) {
     bool passed = true;
     TEST(testHashMap(9));
@@ -511,6 +578,8 @@ int main(int argc, const char *args[]) {
     TEST(testDoubleCosetRep(false));
     TEST(testDoubleCosetRep(true));
     TEST(testGroupElementEnumeration());
+    TEST(testDoubleCosetEnum());
+    // TEST(testStablizer());
     if (passed) {
         std::cout << "All tests passed" << std::endl;
         return 0;

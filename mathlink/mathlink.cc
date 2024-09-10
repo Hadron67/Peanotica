@@ -228,6 +228,7 @@ static void registerFunctions(WSTPEnv &env) {
             gensetDProvider.setSGS(gensetD);
 
             DoubleCosetRepresentativeSolver solver;
+            solver.permStack = &stack;
             if (verbose && env.logFile.is_open()) {
                 solver.log = &env.logFile;
                 solver.permFormatter.useCycles = true;
@@ -340,6 +341,26 @@ static void registerFunctions(WSTPEnv &env) {
 
             TRY(WSNewPacket(env.stdlink));
             TRY(writePermutationList(env.stdlink, output));
+            return true;
+        }
+    );
+    env.registerFunction(
+        P_PREFIX "MathLinkDoubleTransversalInSymmetricGroup[" P_PREFIX "n_Integer, " P_PREFIX "S_List, " P_PREFIX "D_List]",
+        "{" P_PREFIX "n, " P_PREFIX "S, " P_PREFIX "D}",
+        [](WSTPEnv &env) -> bool {
+            int permLen;
+            TRY(WSGetInteger32(env.stdlink, &permLen));
+            PermutationList gensetS(permLen), gensetD(permLen);
+            TRY(readPermutationList(env.stdlink, gensetS));
+            TRY(readPermutationList(env.stdlink, gensetD));
+
+            PermutationStack stack(permLen * 16);
+            DoubleCosetEnumerator enumerator;
+            enumerator.stack = &stack;
+            enumerator.solve(gensetS, gensetD);
+
+            TRY(WSNewPacket(env.stdlink));
+            TRY(writePermutationList(env.stdlink, enumerator.enumeratedPerms.permutations));
             return true;
         }
     );
