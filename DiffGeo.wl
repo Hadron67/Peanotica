@@ -12,6 +12,7 @@ CovDDifferenceDirect::usage = "CovDDifferenceDirect[expr, chrisProvider, a]";
 CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
 CovDCommutatorOfRiemann::usage = "CovDCommutator[riemann]";
 CovDDefaultIndexOrderedQ::usage = "CovDDefaultIndexOrderedQ[a, b]";
+SortCovDRules::usage = "SortCovDRules[cd, commutator, orderedQ]";
 SortCovD::usage = "SortCovD[expr, cd, commutator]";
 
 Cocurvature::usage = "";
@@ -54,6 +55,8 @@ DefRiemannCurvature::usage = "DefRiemannCurvature[slot, riemann, ricci, ricciSca
 RiemannScalars::usage = "RiemannScalars[riemann, slot, n]";
 RiemannScalarIndexPermutations::usage = "RiemannScalarIndexPermutations[n]";
 
+LovelockDensity::usage = "LovelockDensity[riemann, n]";
+
 (* perturbation *)
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
 VarInverseMatrix::usage = "VarInverseMatrix[invMat[a, b], varmat, order]";
@@ -67,6 +70,7 @@ PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd
 PerturbationLeviCivitaRiemann::usage = "PerturbationLeviCivitaRiemann[covd, metric, metricPert, n]";
 PerturbationCovD::usage = "PerturbationCovD[covd[expr, a], covdPert, metric, n]";
 ExpandMetricPerturbation::usage = "ExpandMetricPerturbation[expr, {pert, metric, metricPert}]";
+ExpandTensorDetPerturbation::usage = "ExpandTensorDetPerturbation[expr, {pert, tensor, det}]";
 ExpandRiemannPerturbation::usage = "ExpandRiemannPerturbation[expr, {pert, metric, metricPert}, {cd, riemann, ricci, ricciScalar}]";
 ExpandCovDPerturbation::usage = "ExpandCovDPerturbation[expr, {cd, cdPert, metric, metricPert}]";
 ExpandAllPerturbations::usage = "ExpandAllPerturbations[expr, pert, info]";
@@ -128,11 +132,19 @@ SyntaxInformation@CovDCommutatorNoTorsion = {"ArgumentsPattern" -> {_, _, _, _}}
 CovDCommutatorOfRiemann[riemann_][expr_, a_, b_] := CovDCommutatorNoTorsion[expr, a, b, riemann];
 SyntaxInformation@CovDCommutatorOfRiemann = {"ArgumentsPattern" -> {_}};
 
-CovDDefaultIndexOrderedQ[a_, b_] := OrderedQ@{SeparateIndexName@a, SeparateIndexName@b};
+CovDDefaultIndexOrderedQ[a_, b_, expr_] := With[{
+    inds = Keys@FindAllIndicesNames@expr,
+    aInd = SeparateIndexName@a,
+    bInd = SeparateIndexName@b
+}, OrderedQ@{Prepend[aInd, !MemberQ[inds, aInd[[1]]]], Prepend[bInd, !MemberQ[inds, bInd[[1]]]]}];
 SyntaxInformation@CovDDefaultIndexOrderedQ = {"ArgumentsPattern" -> {_, _, _}};
 
+SortCovDRules[cd_, commutator_] := SortCovDRules[cd, commutator, CovDDefaultIndexOrderedQ];
+SortCovDRules[cd_, commutator_, orderedQ_] := {cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; !orderedQ[a, b, expr2]};
+SyntaxInformation@SortCovDRules = {"ArgumentsPattern" -> {_, _, _.}};
+
 SortCovD[expr_, cd_, commutator_] := SortCovD[expr, cd, commutator, CovDDefaultIndexOrderedQ];
-SortCovD[expr_, cd_, commutator_, orderedQ_] := expr //. cd[cd[expr2_, a_], b_] :> cd[cd[expr2, b], a] + commutator[expr2, b, a] /; !orderedQ[a, b];
+SortCovD[expr_, cd_, commutator_, orderedQ_] := expr //. SortCovDRules[cd, commutator, orderedQ];
 SyntaxInformation@SortCovD = {"ArgumentsPattern" -> {_, _, _, _.}};
 
 DerConstantQ[_?NumericQ] = True;
@@ -404,7 +416,7 @@ ConvertChrisProvider[provider_?AssociationQ] := KeyValueMap[ConvertChrisProvider
 
 ITensorCovD[expr_, {ders_, _}, {}, newSlot_] := ITensorScalarMultiply[Construct, ders, expr];
 ITensorCovD[expr_, {ders_, 0}, slots_, newSlot_] := ITensorOuter[ReverseApplied@Construct, expr, ders, {}];
-ITensorCovD[expr_, {ders_, chrisProvider_}, slots_, newSlot_] := ITensorCovD[expr, {ders, 0}, slots, DI@newSlot] + With[{
+ITensorCovD[expr_, {ders_, chrisProvider_}, slots_, newSlot_] := ITensorCovD[expr, {ders, 0}, slots, newSlot] + With[{
     inds = Array[DefaultIndex, Length@slots + 1]
 },
     Block[{$TempIndexNumber = 1},
@@ -514,6 +526,10 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
     With[{
         displayName = OptionValue@DisplayName
     },
+        symbol /: MakeBoxes[expr : symbol[expr2_, _][n_, args___], StandardForm] := With[{
+            sub = MakeBoxes[expr2[args]],
+            del = If[n === 1, displayName, SuperscriptBox[displayName, MakeBoxes@n]]
+        }, InterpretationBox[RowBox@{del, sub}, expr]];
         symbol /: MakeBoxes[expr : symbol[expr2_, n_], StandardForm] := With[{
             sub = MakeBoxes@expr2,
             del = If[n === 1, displayName, SuperscriptBox[displayName, MakeBoxes@n]]
@@ -631,20 +647,26 @@ ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
 ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];
 SyntaxInformation@ExpandMetricPerturbation = {"ArgumentsPattern" -> {_, _.}};
 
-ExpandCovDPerturbation[expr_, {pert_, cd_, metric_, metricPert_}] := With[{
-    cdPert = pert@cd
-}, expr //. {
-    pert[cd[expr2_, DI@a_], n2_] := pert[
-        cd[pert@expr2, DI@a] + cdPert[expr2, DI@a, 1]
-    , n2 - 1] /; n2 > 0;
-    pert[cd[expr2_, a_?NonDIQ], n2_] := pert[With[{i = GetUniqueIndexOfSlotType@Null}, cd[expr2, DI@i]metric[a, i]], n2];
-    pert[cdPert[expr2_, DI@a_, n_], n2_] := pert[
-        cdPert[pert@expr2, DI@a, n] + cdPert[expr2, DI@a, n + 1]
-    , n2 - 1] /; n2 > 0;
-    pert[cdPert[expr2_, a_?NonDIQ, n_], n2_] := pert[With[{i = GetUniqueIndexOfSlotType@Null}, cdPert[expr2, DI@i, n]metric[a, i]], n2];
+ExpandTensorDetPerturbation[expr_, {pert_, tensor_, det_}] := expr //. {
+    HoldPattern@pert[det, n_] :> pert[det IndexScope[tensor[a, b]pert[tensor[DI@a, DI@b], 1]], n - 1] /; n > 0
+};
+ExpandTensorDetPerturbation[cd_][expr_] := ExpandTensorDetPerturbation[expr, cd];
+SyntaxInformation@ExpandTensorDetPerturbation = {"ArgumentsPattern" -> {_, _.}};
+
+PertCovD[];
+
+ExpandCovDPerturbation[expr_, {pert_, cd_, metric_, metricPert_}] := expr //. {
+    pert[cd[expr2_, DI@a_], n2_] :> pert[
+        cd[pert@expr2, DI@a] + PertCovD[cd, expr2, DI@a, 1]
+    , n2 - 1] /; n2 > 0,
+    pert[cd[expr2_, a_?NonDIQ], n2_] :> pert[With[{i = GetUniqueIndexOfSlotType@Null}, cd[expr2, DI@i]metric[a, i]], n2],
+    pert[PertCovD[cd, expr2_, DI@a_, n_], n2_] :> pert[
+        PertCovD[cd, pert@expr2, DI@a, n] + PertCovD[cd, expr2, DI@a, n + 1]
+    , n2 - 1] /; n2 > 0,
+    pert[PertCovD[cd, expr2_, a_?NonDIQ, n_], n2_] :> pert[With[{i = GetUniqueIndexOfSlotType@Null}, PertCovD[cd, expr2, DI@i, n]metric[a, i]], n2]
 } //. {
-    HoldPattern[cdPert[expr2_, DI@a_, n_]] :> CovDDifferenceDirect[expr2, {PerturbationLeviCivitaChristoffel[cd, metric, metricPert, n]}, a -> DI@Null]
-}];
+    HoldPattern[PertCovD[cd, expr2_, DI@a_, n_]] :> CovDDifferenceDirect[expr2, {PerturbationLeviCivitaChristoffel[cd, metric, metricPert, n]}, a -> DI@Null]
+};
 ExpandCovDPerturbation[cds_][expr_] := ExpandCovDPerturbation[expr, cds];
 SyntaxInformation@ExpandCovDPerturbation = {"ArgumentsPattern" -> {_, _.}};
 
@@ -666,22 +688,36 @@ SyntaxInformation@ExpandRiemannPerturbation = {"ArgumentsPattern" -> {_, _, _.}}
 ApplyIfNotMissing[fn_, arg_, expr_] := If[Head@arg === Missing, expr, fn[arg, expr]];
 ApplyIfNotMissing[fn_, arg_][expr_] := ApplyIfNotMissing[fn, arg, expr];
 
-ExpandAllPerturbations[expr_, pert_, info_Association] := With[{
+ExpandAllPerturbations[expr_, pert_, info_Association, action_] := With[{
     metric = info["Metric"],
+    metricDet = info["DetMetric"],
     cd = info["CovD"],
     riemann = info["Riemann"],
     ricci = info["Ricci"],
     ricciScalar = info["RicciScalar"]
-}, If[Head@metric =!= Missing && Head@cd =!= Missing && Head@riemann =!= Missing,
-    ExpandRiemannPerturbation[expr, {pert, metric, pert@metric}, {cd, riemann, ricci, ricciScalar}],
+}, If[Head@cd =!= Missing && Head@metric =!= Missing,
+    action@ExpandCovDPerturbation[expr, {pert, cd, metric, pert@metric}],
     expr
-] // If[Head@cd =!= Missing && Head@metric =!= Missing,
-    ExpandCovDPerturbation[#, {pert, cd, metric, cd@metric}],
+] // If[Head@metric =!= Missing && Head@cd =!= Missing && Head@riemann =!= Missing,
+    action@ExpandRiemannPerturbation[#, {pert, metric, pert@metric}, {cd, riemann, ricci, ricciScalar}],
+    #
+] & // If[Head@metric =!= Missing && Head@metricDet =!= Missing,
+    action@ExpandTensorDetPerturbation[#, {pert, metric, metricDet}],
     #
 ] & // If[Head@metric =!= Missing,
-    ExpandMetricPerturbation[#, {pert, metric, pert@metric}]
+    action@ExpandMetricPerturbation[#, {pert, metric, pert@metric}],
+    #
 ] &];
-SyntaxInformation@ExpandAllPerturbations = {"ArgumentsPattern" -> {_, _, _}};
+ExpandAllPerturbations[pert_, info_][expr_] := ExpandAllPerturbations[expr, pert, info, Identity];
+ExpandAllPerturbations[pert_, info_, action_][expr_] := ExpandAllPerturbations[expr, pert, info, action];
+SyntaxInformation@ExpandAllPerturbations = {"ArgumentsPattern" -> {_, _, _., _.}};
+
+LovelockDensity[riemann_, n_] := With[{
+    inds = TempIndex /@ Range[2n]
+}, Total[
+    (Signature[List @@ #] Times @@ (riemann @@@ MapThread[Join, {Partition[inds, 2], Partition[DI /@ Permute[inds, InversePermutation[List @@ #]], 2]}])) & /@ DoubleTransversalInSymmetricGroup[SCycles /@ Partition[Range[2n], 2], {}]
+]];
+SyntaxInformation@LovelockDensity = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 

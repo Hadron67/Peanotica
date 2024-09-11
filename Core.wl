@@ -1051,6 +1051,9 @@ ExpandToTensorPolynomial[expr_] := expr //. {
 SyntaxInformation@ExpandToTensorPolynomial = {"ArgumentsPattern" -> {_}};
 
 Options[ITensorReduce] = Options[ITensorReduceOneTerm];
+ITensorReduce[NITensor[expr_, inds_], opt : OptionsPattern[]] := NITensor[ITensorReduce[expr, opt], inds];
+ITensorReduce[expr_Rule, opt___] := ITensorReduce[#, opt] & /@ expr;
+ITensorReduce[expr_List, opt___] := ITensorReduce[#, opt] & /@ expr;
 ITensorReduce[expr_, opt : OptionsPattern[]] := ITensorReduceOneTerm[ExpandToTensorPolynomial@expr, FilterRules[{opt}, Options@ITensorReduceOneTerm]];
 SyntaxInformation@ITensorReduce = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
@@ -1237,6 +1240,17 @@ CollectIndexedSumTerm[IndexedSum[expr_, inds__], skipScalars_] := With[{
     }]
 ,
     {IndexedSum[ret[[1]], ##] & @@ Join[ret[[2]], {inds}], {}}
+]];
+CollectIndexedSumTerm[expr_IndexedSum ^ power_Integer, skipScalars_] := With[{
+    ret1 = CollectIndexedSumTerm@expr
+}, If[Length@ret1[[2]] > 0,
+    With[{
+        rest = Prepend[Table[CollectIndexedSumTerm[expr], power - 1], ret1]
+    }, {
+        Times @@ rest[[All, 1]],
+        Join @@ rest[[All, 2]]
+    }],
+    MapAt[# ^ power &, ret1, 1]
 ]];
 CollectIndexedSumTerm[prod_?ProductQ[args__], _] := With[{
     ret = CollectIndexedSumTerm /@ {args}
@@ -1473,6 +1487,7 @@ UncatchedETensorPlusNonNullInds[head_, exprs_] := With[{
 PlusQ[a_] := a === Plus;
 ETensor /: _?PlusQ[e1__ETensor] := With[{ret = Catch@UncatchedETensorPlus[Plus, ReplaceAllIndexedSumIndsToUnique /@ {e1}]}, ret /; ret =!= Err];
 ETensor /: prod_?ProductQ[l___, ETensor[expr_, arg__], r___] := ETensor[prod[l, expr, r], arg];
+ETensor /: (head_ /; head === TensorProduct)[l___, e1_ETensor, e2_ETensor, r___] := TensorProduct[l, ITensorOuter[Times, e1, e2, {}], r];
 ETensor /: D[ETensor[expr_, frees_], args__] := ETensor[D[expr, args], frees];
 
 SyntaxInformation@ETensor = {"ArgumentsPattern" -> {_, _}};
@@ -1608,7 +1623,7 @@ ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
 ITensorSum[ETensor[expr_, frees_], dims_] := With[{
     allInds = Extract[{1, 2}] /@ FindAllIndicesNames@expr
 }, ETensor[
-    Fold[SumIndexOfSlot[#2[[1]], #2[[2]], #1] &, expr, If[KeyExistsQ[allInds, #], {allInds@#, #}, Nothing] & /@ Extract[frees, Transpose@{dims}]],
+    Fold[SumIndexOfSlot[#2[[1]], #2[[2]], #1] &, expr, If[KeyExistsQ[allInds, #], {allInds@#, #}, Nothing] & /@ StructureOfETensorIndices[Extract[frees, Transpose@{dims}]][[1]]],
     Delete[frees, Transpose@{dims}]
 ]];
 ITensorSum[0, _] = 0;

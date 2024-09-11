@@ -1485,6 +1485,9 @@ bool DoubleCosetEnumerator::createNewElement(OptionalUInt<upoint_type> *workingP
     auto normalizedPerm0 = this->dcr.solve(this->gensetS, this->gensetD, perm);
     if (normalizedPerm0.has_value()) {
         auto normalizedPerm = std::move(normalizedPerm0.value());
+        if (normalizedPerm.isNegative()) {
+            normalizedPerm.setNegative(false);
+        }
         if (this->enumeratedPerms.addPermutation(normalizedPerm)) {
             auto images = normalizedPerm.images();
             for (upoint_type i = 0; i < permLen; i++, images++) {
