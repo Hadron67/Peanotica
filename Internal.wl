@@ -13,6 +13,9 @@ $xToolsDebugPrint;
 
 ArraySimplify;
 
+RelationClosureTable::usage = "RelationClosureTable[initial, relationFn, collector]";
+RelationClosureTableToArray::usage = "";
+
 Begin["`Private`"];
 
 If[Hold@$xToolsDebugPrint === Hold@Evaluate@$xToolsDebugPrint, $xToolsDebugPrint = Print];
@@ -42,6 +45,17 @@ SyntaxInformation@ArraySimplify = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 ExpandThreadableRules[lhs :> rhs] := With[{
     exprPatName = Cases[lhs, Verbatim[PatternTest][Verbatim[Pattern][p_, Blank[]], ThreadableQ] :> p, {0, Infinity}][[1]]
 }];
+
+RelationClosureTableStep[relationFn_, collector_][{current_, newTerms_}] := With[{
+    newTermRels = AssociationMap[relationFn, newTerms]
+}, With[{
+    newCurrent = Join[current, newTermRels]
+}, {
+    newCurrent,
+    Complement[Union @@ (collector /@ Values@newTermRels), Keys@newCurrent]
+}]];
+RelationClosureTable[initial_, relationFn_, collector_] := First@NestWhile[RelationClosureTableStep[relationFn, collector], {<||>, initial}, Length@#[[2]] > 0 &];
+SyntaxInformation@RelationClosureTable = {"ArgumentsPattern" -> {_, _, _}};
 
 End[];
 

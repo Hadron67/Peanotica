@@ -27,11 +27,7 @@ ScalarMonomialDummiesGenSet::usage = "ScalarMonomialDummiesGenSet[n]";
 DummiesGenSet::usage = "DummiesGenSet[sign, {{u1, d1}, ...}]";
 RubiksCubeGenSet;
 SymmetryOfSortedList::usage = "SymmetryOfSortedList[list]";
-
-(* Wolfram functions *)
-PermutePoint::usage = "PermutePoint[point, perm]";
-OneOrbit::usage = "OneOrbit[genset, point]";
-AllOrbits::usage = "";
+SortedPartitions::usage = "SortedPartitions[n]";
 
 (* WSTP functions *)
 ConstructStrongGenSet::usage = "ConstructStrongGenSet[G] returns a strong generating set relative to the base [1, 2, ..., n] of the group \[LeftAngleBracket]G\[RightAngleBracket], using Jerrum's variant of Schreier-Sims algorithm.";
@@ -142,16 +138,9 @@ SymmetryOfSortedList[list_] := SymmetryOfSortedList[list, SameQ];
 SymmetryOfSortedList[list_, eq_] := Join @@ MapThread[If[eq[#1, #2], {SCycles@{#3, #3 + 1}}, {}] &, {Delete[list, -1], Delete[list, 1], Range[Length@list - 1]}];
 SyntaxInformation@SymmetryOfSortedList = {"ArgumentsPattern" -> {_, _.}};
 
-PermutePoint[point_, img_Images * _.] := If[point <= Length@img, img[[point]], point];
-PermutePoint[point_, c_SCycles * _.] := PermutePoint[point, Images @@ PermutationList[Cycles[List @@ c]]];
-PermutePoint[point_, genset_List] := PermutePoint[point, #] & /@ genset;
-SyntaxInformation@PermutePoint = {"ArgumentsPattern" -> {_, _}};
-
-OneOrbitStep[genset_][{points_, step_}] := With[{nextStep = Complement[Union @@ (PermutePoint[#, genset] & /@ step), points]}, {Join[points, nextStep], nextStep}];
-OneOrbit[genset_, point_Integer] := NestWhile[OneOrbitStep[genset], {{}, {point}}, Length@#[[2]] > 0 &][[1]];
-AllOrbitStep[genset_][{}, nextPoint_];
-OneOrbit[genset_, points_List] := Fold[];
-SyntaxInformation@OneOrbit = {"ArgumentsPattern" -> {_, _}};
+SortedPartitions[n_] := Union[Join @@ (With[{list = #}, Append[list + # & /@ IdentityMatrix@Length@list, Append[list, 1]]] & /@ SortedPartitions[n - 1])];
+SortedPartitions[1] = {{1}};
+SyntaxInformation@SortedPartitions = {"ArgumentsPattern" -> {_}};
 
 PermToMLPerm[Images[inds__]] := {1, inds};
 PermToMLPerm[-Images[inds__]] := {-1, inds};
