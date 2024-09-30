@@ -119,7 +119,7 @@ RiemannSymmetricGenSet[n_] := RiemannSymmetricGenSet[n, n + 1, n + 2, n + 3];
 RiemannSymmetricGenSet[n1_, n2_, n3_, n4_] := {-SCycles@{n1, n2}, -SCycles@{n3, n4}, SCycles[{n1, n3}, {n2, n4}]};
 SyntaxInformation@RiemannSymmetricGenSet = {"ArgumentsPattern" -> {_, _., _., _.}};
 
-BlockSymmetricGenSet[blocks__] := MapThread[SCycles @@ Thread[{#1, #2}] &, {Drop[{blocks}, -1], Drop[{blocks}, 1]}];
+BlockSymmetricGenSet[blocks__] := MapThread[If[Length@#1 > 0, SCycles @@ Thread[{#1, #2}], Nothing] &, {Drop[{blocks}, -1], Drop[{blocks}, 1]}];
 BlockSymmetricGenSet[] = {};
 SyntaxInformation@BlockSymmetricGenSet = {"ArgumentsPattern" -> {__}};
 
@@ -181,6 +181,9 @@ DoubleTransversalInSymmetricGroup[s_, d_] := With[{
 ];
 SyntaxInformation@DoubleTransversalInSymmetricGroup = {"ArgumentsPattern" -> {_, _}};
 
+GroupOrderFromStrongGenSet[{}] = 1;
+GroupOrderFromStrongGenSet[{SCycles@{_, _}}] = 2;
+GroupOrderFromStrongGenSet[{-SCycles@{_, _}}] = 2;
 GroupOrderFromStrongGenSet[gs_] := (
     PPermEnsureLink[];
     MathLinkGroupOrderFromStrongGenSet[PermToMLPerm@gs, MinPermutationLength@gs]

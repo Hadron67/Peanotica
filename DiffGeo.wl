@@ -56,7 +56,8 @@ RiemannScalars::usage = "RiemannScalars[riemann, slot, n]";
 RiemannScalarIndexPermutations::usage = "RiemannScalarIndexPermutations[n]";
 
 LovelockDensity::usage = "LovelockDensity[riemann, n]";
-WeylToRiemann::usage = "WeylToRiemann[riemann]";
+WeylToRiemann::usage = "WeylToRiemann[riemann, metric, {a, b, c, d}]";
+WeylToRiemannSchouten::usage = "WeylToRiemann[riemann, metric, schouten, {a, b, c, d}]";
 RiemannBianchiRelations::usage = "RiemannBianchiRelations[expr, covd, riemann]";
 CovDCommutatorRelations::usage = "CovDCommutatorRelations[expr, covd, commu]";
 
@@ -223,10 +224,10 @@ SyntaxInformation@ExpandDerivativeWithRest = {"ArgumentsPattern" -> {_, _}};
 
 Options[DefTensorDerivativeOperator] = Join[Options[ExpandDerivativeRules], {
     DisplayName -> "\[PartialD]",
-    SymmetriedDer -> None,
+    SymmetriedDer -> False,
     AllowPassThrough -> True (* any usecase for setting this to False ? *)
 }];
-SymmetryOfSymmetrizedDer[sym_[expr_, inds__], singleSym_, predicate_] := With[{
+SymmetryOfSymmetrizedDer[sym_[expr_, inds__], singleSym_] := With[{
     subExprAndInd = NestWhile[{
         Extract[#[[1]], {1, 1}, Hold],
         #[[2]] + 1
@@ -234,13 +235,9 @@ SymmetryOfSymmetrizedDer[sym_[expr_, inds__], singleSym_, predicate_] := With[{
 },
     Join[
         Extract[subExprAndInd[[1]], 1, SymmetryOfExpression],
-        If[Extract[subExprAndInd[[1]], 1, predicate],
-            Join[
-                Join @@ Array[ShiftPermutation[singleSym, (# - 1) * Length@{inds}] &, subExprAndInd[[2]]],
-                ShiftPermutation[BlockSymmetricGenSet @@ Partition[Range[Length@{inds} * subExprAndInd[[2]]], Length@{inds}], With[{sub = subExprAndInd[[1]]}, Length@FindIndicesSlots@sub]]
-            ]
-        ,
-            {}
+        Join[
+            Join @@ Array[ShiftPermutation[singleSym, (# - 1) * Length@{inds}] &, subExprAndInd[[2]]],
+            ShiftPermutation[BlockSymmetricGenSet @@ Partition[Range[Length@{inds} * subExprAndInd[[2]]], Length@{inds}], With[{sub = subExprAndInd[[1]]}, Length@FindIndicesSlots@sub]]
         ]
     ]
 ];
@@ -253,16 +250,14 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
     With[{
         slotsAndPos = MapIndexed[#2 + 1 -> #1 &, slots]
     }, sym /: FindIndicesSlots[sym[expr_, ##]] := Join[FindIndicesSlots[expr, {1}], slotsAndPos]] & @@ ConstantArray[_, Length@slots];
-    With[{
-        symDer = OptionValue@SymmetriedDer
-    },
-        If[symDer =!= None,
-            sym /: SymmetryOfExpression[s_sym] := SymmetryOfSymmetrizedDer[s, symmetry, symDer]
-        , If[Length@symmetry > 0,
-            sym /: SymmetryOfExpression[sym[expr_, ___]] := Join[SymmetryOfExpression@expr, ShiftPermutation[symmetry, Length@FindIndicesSlots@expr]]
+    If[OptionValue@SymmetriedDer,
+        sym /: SymmetryOfExpression[s_sym] := SymmetryOfSymmetrizedDer[s, symmetry];
+    ,
+        If[Length@symmetry > 0,
+            SymmetryOfExpression[sym[expr_, ___]] ^:= Join[SymmetryOfExpression@expr, ShiftPermutation[symmetry, Length@FindIndicesSlots@expr]]
         ,
-            sym /: SymmetryOfExpression[sym[expr_, ___]] := SymmetryOfExpression@expr
-        ]];
+            SymmetryOfExpression[sym[expr_, ___]] ^:= SymmetryOfExpression@expr
+        ]
     ];
     sym /: SumPassThroughQ[sym[expr_, inds___], pos_] := If[pos[[1]] >= 2, True, SumPassThroughQ[expr, Delete[pos, 1]]];
     If[OptionValue@AllowPassThrough,
@@ -519,8 +514,8 @@ RiemannDifferenceValue[slot_, cd_, chris_] := RiemannDifference[
 ][DI@a, DI@b, DI@c, d] // NITensorReduce[#, {a, b, c, d}] & // ExtractNITensor@{a, b, c, d};
 SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};
 
-SymmetricRiemann[metric_, a_, b_, c_, d_] := metric[a, c]metric[b, d] - metric[a, d]metric[b, c];
-SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _, _, _, _}};
+SymmetricRiemann[metric_, {a_, b_, c_, d_}] := metric[a, c]metric[b, d] - metric[a, d]metric[b, c];
+SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _}};
 
 CBTensor::unmatchedSlots = "";
 
@@ -740,6 +735,13 @@ WeylToRiemann[riemann_, metric_, {a_, b_, c_, d_}] := With[{
 ];
 SyntaxInformation@WeylToRiemann = {"ArgumentsPattern" -> {_, _, _}};
 
+WeylToRiemannSchouten[riemann_, metric_, schouten_, {a_, b_, c_, d_}] := With[{
+    dim = IndexScope@metric[a, DI@a]
+},
+    riemann[a, b, c, d] + metric[a, b] schouten[c, d] - metric[b, c] schouten[a, d] - metric[a, d] schouten[b, c] + metric[b, d] schouten[a, c]
+];
+SyntaxInformation@WeylToRiemannSchouten = {"ArgumentsPattern" -> {_, _, _, _}};
+
 RiemannBianchiRelations[expr_List, covd_, riemann_] := Join @@ (RiemannBianchiRelations[#, covd, riemann] & /@ expr);
 RiemannBianchiRelations[expr_Times, covd_, riemann_] := Join @@ MapIndexed[ReplacePart[expr, #2 -> RiemannBianchiRelations[#1, covd, riemann]] &, List @@ expr];
 RiemannBianchiRelations[covd_[inner : riemann_[a_, b_, c_, d_], e_], covd_, riemann_] := Prepend[
@@ -755,8 +757,8 @@ SyntaxInformation@RiemannBianchiRelations = {"ArgumentsPattern" -> {_, _, _}};
 
 CovDCommutatorRelations[expr_List, covd_, commu_] := Join @@ (CovDCommutatorRelations[#, covd, commu] & /@ expr);
 CovDCommutatorRelations[expr_Times, covd_, commu_] := Join @@ MapIndexed[ReplacePart[expr, #2 -> CovDCommutatorRelations[#1, covd, commu]] &, List @@ expr];
-CovDCommutatorRelations[expr0 : covd_[covd_[expr_, a_], b_], covd_, commu_] := Prepend[
-    covd[covd[CovDCommutatorRelations[expr, covd, commu], a], b],
+CovDCommutatorRelations[expr0 : covd_[inner : covd_[expr_, a_], b_], covd_, commu_] := Prepend[
+    covd[CovDCommutatorRelations[inner, covd, commu], b],
     expr0 - covd[covd[expr, b], a] - commu[expr, b, a]
 ];
 CovDCommutatorRelations[_, _, _] = {};

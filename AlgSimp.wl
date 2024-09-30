@@ -5,7 +5,7 @@ Scan[Unprotect@#; ClearAll@#; &, Names@{$Context <> "*"}];
 SlotsOfAlgTensor::usage = "SlotsOfAlgTensor[tensor]";
 SymmetryOfAlgTensor::usage = "SymmetryOfAlgTensor[tensor]";
 
-OrderedAlgTensorQ::usage = "OrderedAlgTensorQ[t1, t2]";
+AlgTensorOrder::usage = "AlgTensorOrder[t1, t2]";
 AlgTensorTerm::usage = "AlgTensorTerm[type, frees, perm]";
 AlgTensorTermReduce::usage = "AlgTensorTermReduce[expr]";
 AlgRelations::usage = "AlgRelations[tensor, frees, perm]";
@@ -14,6 +14,8 @@ AlgTensorReduceRules::usage = "AlgTensorReduceRules[allTerms, relations]";
 AlgTensorSimplifyData::usage = "AlgTensorSimplifyData[tensor, frees]";
 
 AlgDRiemann::usage = "AlgDRiemann[n]";
+AlgDRiemannList::usage = "AlgDRiemann[list]";
+AlgDRicci::usage = "AlgDRicci[n]";
 AlgEpsilon::usage = "AlgEpsilon[n]";
 
 ToAlgTensor::usage = "ToAlgTensor[expr, frees]";
@@ -53,14 +55,16 @@ SyntaxInformation@AlgTensorTerm = {"ArgumentsPattern" -> {_, _, _}};
 SplitAlgTensor[expr_List, frees_, perm_] := MapThread[AlgTensorTerm[#1, frees, #2] &, {expr, TakeList[perm, Length@SlotsOfAlgTensor@# & /@ expr]}];
 
 SortAlgTensor[AlgTensorTerm[tensor_, frees_, perm_]] := SortAlgTensor[tensor, frees, perm];
-SortAlgTensor[expr_TensorProduct] := TensorProduct @@ Sort[SortAlgTensor /@ List @@ expr, OrderedAlgTensorQ];
+SortAlgTensor[expr_TensorProduct] := TensorProduct @@ Sort[SortAlgTensor /@ List @@ expr, AlgTensorOrder];
 SortAlgTensor[expr_] := expr;
-SortAlgTensor[expr_TensorProduct, frees_, perm_] := TensorProduct @@ SortBy[SortAlgTensor /@ SplitAlgTensor[List @@ expr, frees, perm], First, OrderedAlgTensorQ];
+SortAlgTensor[expr_TensorProduct, frees_, perm_] := TensorProduct @@ SortBy[SortAlgTensor /@ SplitAlgTensor[List @@ expr, frees, perm], First, AlgTensorOrder];
 SortAlgTensor[expr_, frees_, perm_] := AlgTensorTerm[expr, frees, perm];
 SyntaxInformation@SortAlgTensor = {"ArgumentsPattern" -> {_, _., _.}};
 
-OrderedAlgTensorQ[a_, b_] := OrderedQ@{a, b};
-SyntaxInformation@OrderedAlgTensorQ = {"ArgumentsPattern" -> {_, _}};
+AlgTensorOrder[a_, a_] = 0;
+AlgTensorOrder[a_, b_] := Order[a, b];
+AlgTensorOrder[e1_TensorProduct, e2_TensorProduct] := LexicographicOrder[AlgTensorOrder];
+SyntaxInformation@AlgTensorOrder = {"ArgumentsPattern" -> {_, _}};
 
 AlgTensorTermReduce[expr_Plus] := AlgTensorTermReduce /@ expr;
 AlgTensorTermReduce[expr_List] := AlgTensorTermReduce /@ expr;
@@ -98,8 +102,8 @@ AlgRelations[_, _, _, _] = {};
 SyntaxInformation@AlgRelations = {"ArgumentsPattern" -> {_, _, _, _.}};
 
 SlotsOfAlgTensor@AlgDRiemann[n_] ^:= ConstantArray[1, n + 4];
-SymmetryOfAlgTensor@AlgDRiemann[n_] ^= ShiftPermutation[RiemannSymmetricGenSet[1], n];
-OrderedAlgTensorQ[AlgDRiemann[n1_], AlgDRiemann[n2_]] ^:= OrderedQ@{n2, n1};
+SymmetryOfAlgTensor@AlgDRiemann[n_] ^= RiemannSymmetricGenSet[n + 1];
+AlgTensorOrder[AlgDRiemann[n1_], AlgDRiemann[n2_]] ^:= Order[n1, n2];
 AlgDRiemann /: MakeBoxes[expr : AlgDRiemann[n_], StandardForm] := With[{
     box = Switch[Hold@n, Hold@0, "R", Hold@1, "\[Del]R", _, RowBox@{SuperscriptBox["\[Del]", MakeBoxes@n], "R"}]
 }, InterpretationBox[box, expr]];
@@ -115,6 +119,19 @@ AlgRelationBianchi2[n_, frees_, {l___, e_, a_, b_, c_, d_}] := Total[
 AlgRelationBianchi2[_, _, _] = Nothing;
 
 SyntaxInformation@AlgDRiemann = {"ArgumentsPattern" -> {_}};
+
+AlgDRiemannList[list_] := TensorProduct @@ (AlgDRiemann /@ list);
+SyntaxInformation@AlgDRiemannList = {"ArgumentsPattern" -> {_}};
+
+SlotsOfAlgTensor@AlgDRicci[n_] ^:= ConstantArray[1, n + 2];
+SymmetryOfAlgTensor@AlgDRicci[n_] ^:= {SCycles@{n + 1, n + 2}};
+AlgDRicci /: AlgTensorOrder[_AlgDRicci, _AlgDRiemann] = 1;
+AlgDRicci /: AlgTensorOrder[_AlgDRiemann, _AlgDRicci] = -1;
+AlgTensorOrder[AlgDRicci[n1_], AlgDRicci[n2_]] ^:= Order[n1, n2];
+AlgDRicci /: MakeBoxes[expr : AlgDRicci[n_], StandardForm] := With[{
+    box = Switch[Hold@n, Hold@0, "Ric", Hold@1, "\[Del]Ric", _, RowBox@{SuperscriptBox["\[Del]", MakeBoxes@n], "Ric"}]
+}, InterpretationBox[box, expr]];
+SyntaxInformation@AlgDRicci = {"ArgumentsPattern" -> {_}};
 
 EnumerateAlgTensorTerms[tensor_, frees_] := With[{
     tensor2 = SortAlgTensor@tensor
@@ -157,7 +174,9 @@ IndexedAlgTensor /: (head_ /; head === Times)[l___, IndexedAlgTensor[expr1_, ind
 ];
 SyntaxInformation@IndexedAlgTensor = {"ArgumentsPattern" -> {_, _}};
 
-IndexedAlgTensorCovD[IndexedAlgTensor[AlgDRiemann[n_], inds_], ind_] := IndexedAlgTensor[AlgDRiemann[n + 1], Prepend[inds, ind]];
+IndexedAlgTensorCovD[IndexedAlgTensor[tensor_, inds_], ind_] := IndexedAlgTensorCovD[tensor, inds, ind];
+IndexedAlgTensorCovD[AlgDRiemann[n_], inds_, ind_] := IndexedAlgTensor[AlgDRiemann[n + 1], Prepend[inds, ind]];
+IndexedAlgTensorCovD[AlgDRicci[n_], inds_, ind_] := IndexedAlgTensor[AlgDRicci[n + 1], Prepend[inds, ind]];
 SyntaxInformation@IndexedAlgTensorCovD = {"ArgumentsPattern" -> {_, _}};
 
 ExtractAlgTensor[IndexedAlgTensor[tensor_, inds_], frees_] := AlgTensorTerm[tensor, Length@frees,

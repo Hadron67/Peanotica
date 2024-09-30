@@ -7,13 +7,14 @@ FilterExprList::usage = "FilterExprList[filter, expr] returns true if expr is no
 ThreadableQ;
 ExpandThreadableRules::usage = "ExpandThreadableRules[lhs :> rhs]";
 NestWith;
+OrderOr::usage = "OrderOr[terms, ...]";
+SymmetryList::usage = "SymmetryList[elems, comp]";
 
 $xToolsDebugFilter;
 $xToolsDebugPrint;
 
 ArraySimplify;
 
-RelationClosureTable::usage = "RelationClosureTable[initial, relationFn, collector]";
 RelationClosureTableToArray::usage = "";
 
 Begin["`Private`"];
@@ -46,16 +47,15 @@ ExpandThreadableRules[lhs :> rhs] := With[{
     exprPatName = Cases[lhs, Verbatim[PatternTest][Verbatim[Pattern][p_, Blank[]], ThreadableQ] :> p, {0, Infinity}][[1]]
 }];
 
-RelationClosureTableStep[relationFn_, collector_][{current_, newTerms_}] := With[{
-    newTermRels = AssociationMap[relationFn, newTerms]
-}, With[{
-    newCurrent = Join[current, newTermRels]
-}, {
-    newCurrent,
-    Complement[Union @@ (collector /@ Values@newTermRels), Keys@newCurrent]
-}]];
-RelationClosureTable[initial_, relationFn_, collector_] := First@NestWhile[RelationClosureTableStep[relationFn, collector], {<||>, initial}, Length@#[[2]] > 0 &];
-SyntaxInformation@RelationClosureTable = {"ArgumentsPattern" -> {_, _, _}};
+OrderOr[0, rest__] := OrderOr[rest];
+OrderOr[1, ___] = 1;
+OrderOr[-1, ___] = -1;
+OrderOr[a_] := a;
+SetAttributes[OrderOr, HoldRest];
+SyntaxInformation@OrderOr = {"ArgumentsPattern" -> {__}};
+
+SymmetryList[list_, comp_] := MapThread[If[comp[#1, #2], #3, Nothing] &, {Drop[list, -1], Drop[list, 1], Range[Length@list - 1]}];
+SyntaxInformation@SymmetryList = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 

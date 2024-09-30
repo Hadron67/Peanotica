@@ -28,12 +28,14 @@ DefaultIndex::usage = "DefaultIndex[n] is returned by the default definition of 
 TempIndex::usage = "TempIndex[n] is a temporary index generated during internal ";
 $TempIndexNumber::usage = "$TempIndexNumber is a global variable giving the next global unique id of TempIndex to be used.";
 IndexNameSlot;
+ToUpIndex::usage = "ToUpIndex[ind]";
 SeparateIndexName::usage = "SeparateIndexName[index] returns {name, pattern} where name is the name of the index, pattern is it's pattern. An index is determined by its name and pattern.";
 IndexName::usage = "";
 GetIndexOfSlotType::usage = "GetIndexOfSlotType[type, inds] returns a new index that is not in inds.";
 GetIndicesOfSlotType::usage = "GetIndicesOfSlotType[types, inds] returns a list of index for each type.";
 IndicesCandidateOfSlotType::usage = "IndicesCandidateOfSlotType[type] returns a list, .";
 GetUniqueIndexOfSlotType::usage = "GetUniqueIndexOfSlotType[type] returns a globally unique index using the given slot type as a hint. the default definition returns TempIndex[++$TempIndexNumber].";
+GetUniqueIndicesOfSlotType::usage = "GetUniqueIndicesOfSlotType[type, n]";
 IndexList::usage = "IndexList[i1, i2, ...] represents a list of indices, similar to List. The purpose of this head is that it may have an overall negative sign.";
 DefaultRenamingGroup::usage = "DefaultRenamingGroup is the default renaming group of index name.";
 RenamableIndicesQ::usage = "RenamableIndicesQ[a, b] returns true if index names a and b can be interchanged.";
@@ -77,6 +79,7 @@ ApplyIndices::usage = "ApplyIndices[expr, indPos, indList]";
 ReplaceIndexNames::usage = "ReplaceIndexNames[expr, reps]";
 TryReplaceIndexNames::usage = "TryReplaceIndexNames[expr, reps]";
 MapIndicesSlots::usage = "MapIndicesSlots[fn, inds]";
+ReplaceIndicesToSame::usage = "ReplaceIndicesToSame[expr, ind]";
 
 (* IndexedSum *)
 IndexedSum::usage = "IndexedSum[expr, {ind, type}, ...]";
@@ -119,15 +122,18 @@ MapScalarIndexScopes::usage = "MapScalarIndexScopes[fn, expr] or MapScalarIndexS
 DeepContractMetric::usage = "DeepContractMetric[expr, metrics]";
 MetricBarrier::usage = "MetricBarrier[expr]";
 ReleaseMetricBarrier::usage = "ReleaseMetricBarrier[expr]";
+SymmetryListGenSet::usage = "SymmetryListGenSet[slotCounts, predicate]";
+HeldTimes::usage = "HeldTimes[terms...]";
 
 (* canonicalization *)
-ISortedProduct;
-ISortedGeneral;
+ISortedProduct::usage = "ISortedProduct[head, args, symList]";
+ISortedGeneral::usage = "ISortedGeneral[expr]";
 ISortUnorderedArgs::usage = "ISortUnorderedArgs[expr, args]";
 CanonicalizationUnitQ;
 PreITensorReduce;
 PostITensorReduce;
-ITensorReduceOneTerm;
+ITensorReduceOneTerm::usage = "ITensorReduceOneTerm[expr, options...]";
+ITensorReduceOneTermSorted::usage = "ITensorReduceOneTermSorted[expr, frees, options...]";
 RenameDummies;
 UseMetricOnSlots;
 FreeIndexNames;
@@ -167,6 +173,7 @@ ToNITensorIndex::usage = "ToNITensorIndex[ind, slot]";
 FromNITensorIndex::usage = "FromNITensorIndex[ind]";
 SumIndexOfSlot::usage = "SumIndexOfSlot[slot, ind, expr]";
 ETensorArray::usage = "ETensorArray[fn, {inds1, inds2, ...}]";
+WrapETensor::usage = "WrapETensor[ETensor[...], slots]";
 
 $PThrowOnError = False;
 
@@ -201,6 +208,10 @@ SyntaxInformation@SeparateIndexName = {"ArgumentsPattern" -> {_}};
 IndexName[a_] := SeparateIndexName[a][[1]];
 SyntaxInformation@IndexName = {"ArgumentsPattern" -> {_}};
 
+ToUpIndex[DI@a_] := a;
+ToUpIndex[a_] := a;
+SyntaxInformation@ToUpIndex = {"ArgumentsPattern" -> {_}};
+
 IndicesCandidateOfSlotType[_] = {{}, DefaultIndex};
 SyntaxInformation@IndicesCandidateOfSlotType = {"ArgumentsPattern" -> {_}};
 
@@ -228,6 +239,9 @@ SyntaxInformation@GetIndicesOfSlotType = {"ArgumentsPattern" -> {_, _., _.}};
 $TempIndexNumber = 1;
 GetUniqueIndexOfSlotType[type_] := TempIndex[$TempIndexNumber++];
 SyntaxInformation@GetUniqueIndexOfSlotType = {"ArgumentsPattern" -> {_}};
+
+GetUniqueIndicesOfSlotType[type_, n_] := Table[GetUniqueIndexOfSlotType@type, n];
+SyntaxInformation@GetUniqueIndicesOfSlotType = {"ArgumentsPattern" -> {_, _}};
 
 RenamingGroupOfIndexName[_Integer] = Null;
 RenamingGroupOfIndexName[_LabelI] = Null;
@@ -286,6 +300,11 @@ MapIndicesSlots[fn_, l_SummedIndices] := MapIndicesSlots[fn, #] & /@ l;
 MapIndicesSlots[fn_, pos_ -> type_] := fn[pos, type];
 SyntaxInformation@MapIndicesSlots = {"ArgumentsPattern" -> {_, _}};
 
+ReplaceIndicesToSame[expr_, ind_] := ReplacePart[expr, Thread[
+    (Join @@ Values@FindAllIndicesNames@expr)[[All, 3]] -> ind
+]];
+SyntaxInformation@ReplaceIndicesToSame = {"ArgumentsPattern" -> {_, _}};
+
 SummedIndices[] = Nothing;
 
 WrapList[list_List] := list;
@@ -327,9 +346,23 @@ SymmetryOfExpression@ISortedProduct[head_, args_, symList_] := With[{
     argSlotCounts = Length@FindIndicesSlots@# & /@ args
 }, Join[
     ShiftAndJoinGenSets[SymmetryOfExpression /@ args, argSlotCounts],
-    Join @@ With[{blocks = PartitionedRange@argSlotCounts}, BlockSymmetricGenSet[blocks[[#]], blocks[[# + 1]]] & /@ symList]
+    SymmetryListGenSet[argSlotCounts, symList]
 ]];
 SetAttributes[SymmetryOfExpression, HoldFirst];
+
+SymmetryListGenSet[slotCounts_, symList_] := Join @@ With[{blocks = PartitionedRange@slotCounts}, BlockSymmetricGenSet[blocks[[#]], blocks[[# + 1]]] & /@ symList];
+SyntaxInformation@SymmetryListGenSet = {"ArgumentsPattern" -> {_, _}};
+
+SymmetryOfExpression@expr_HeldTimes ^:= With[{
+    argSlotCounts = Length@FindIndicesSlots@# & /@ List @@ expr
+}, Join[
+    ShiftAndJoinGenSets[SymmetryOfExpression /@ List @@ expr, argSlotCounts],
+    SymmetryListGenSet[argSlotCounts, SymmetryList[ReplaceIndicesToSame[Hold@#, IndexSlot[1]] & /@ List @@ expr, SameQ]]
+]];
+HeldTimes /: SumPassThroughQ[HoldPattern@HeldTimes[args___], pos_] := Extract[Hold@args, pos[[1]], Function[{a}, SumPassThroughQ[a, Drop[pos, 1]], {HoldAll}]];
+HeldTimes /: ExpressionPassThroughQ[HoldPattern@HeldTimes[args___], tensor_, pos_] := Extract[Hold@{args}, {1, pos[[1]]}, Function[{a}, ExpressionPassThroughQ[a, tensor, Drop[pos, 1]], {HoldAll}]];
+SetAttributes[HeldTimes, {OneIdentity}];
+SyntaxInformation@HeldTimes = {"ArgumentsPattern" -> {___}};
 
 ITensor /: FindIndicesSlots[ITensor[expr_, inds_, ___]] := MapIndexed[Join[{2}, #2, 1] -> #1[[2]] &, inds];
 ITensor[expr_, inds_, {}] := ITensor[expr, inds];
@@ -411,6 +444,7 @@ RaiseOneFreeNameRule[name_, indsPos_] := With[{
     {}
 ]];
 RaiseFrees[expr_, frees_] := ReplacePart[expr, Join @@ With[{indsPos = FindAllIndicesNames@expr}, RaiseOneFreeNameRule[#, indsPos] & /@ frees]];
+RaiseFrees[ETensor[expr_, inds_]] := ETensor[RaiseFrees[expr, inds], inds];
 SyntaxInformation@RaiseFrees = {"ArgumentsPattern" -> {_, _}};
 
 WithTempIndex1[body_] := Block[{$TempIndexNumber = 1}, body];
@@ -581,7 +615,8 @@ MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotTyp
 MetricOfSlotType /: MetricOfSlotType[type_][b_?AbsIndexNameQ, a_]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
 MetricOfSlotType /: MetricOfSlotType[type_][a_, b_?AbsIndexNameQ]MetricOfSlotType[type_][c_, DI@b_] := MetricOfSlotType[type][a, c];
 
-ReplaceIndexNames[expr_, reps_] := ReplacePart[expr, ReplaceIndicesRules[Map@Delete[2] /@ FindAllIndicesNames@expr, reps]];
+ReplaceIndexNames[expr_, reps_Rule] := ReplaceIndexNames[expr, {reps}];
+ReplaceIndexNames[expr_, reps_List] := ReplacePart[expr, ReplaceIndicesRules[Map@Delete[2] /@ FindAllIndicesNames@expr, reps]];
 SyntaxInformation@ReplaceIndexNames = {"ArgumentsPattern" -> {_, _}};
 
 TryReplaceIndexNames[expr_, reps_] := With[{
@@ -740,13 +775,9 @@ SyntaxInformation@SeparateMetricOne = {"ArgumentsPattern" -> {_, _, _.}};
 
 MapShiftedIndexed[f_, expr_] := MapThread[f, {Drop[expr, -1], Drop[expr, 1], Range[Length@expr - 1]}];
 
-ISortArgToSortTag[arg_] := With[{
-    sym = SymmetryOfExpression@arg,
-    indPos = FindIndicesSlots@arg
-}, {arg, -GroupOrderFromStrongGenSet@sym, -Length@indPos, ReplacePart[arg, Thread[indPos[[All, 1]] -> IndexSlot[1]]]}];
 
-ISortUnorderedArgs[head_, {args__}] := With[{
-    sortedArgs = SortBy[ISortArgToSortTag /@ (List @@ (ISort /@ Hold@args)), Delete[1]]
+ISortUnorderedArgs[head_, {args__}, sorter_] := With[{
+    sortedArgs = SortBy[ISortArgToSortTag /@ (List @@ (Function[{a}, ISort[a, sorter], {HoldAll}] /@ Hold@args)), Delete[1]]
 }, With[{
     symList = MapShiftedIndexed[If[#1 === #2, #3, Nothing] &, sortedArgs[[All, 4]]]
 },
@@ -754,10 +785,27 @@ ISortUnorderedArgs[head_, {args__}] := With[{
 ]];
 SyntaxInformation@ISortUnorderedArgs = {"ArgumentsPattern" -> {_, _}};
 
+SortedArgsToISortedProduct[head_, args_] := With[{
+    symList = SymmetryList[ReplaceIndicesToSame[#, IndexSlot[1]] & /@ args, SameQ]
+}, ISortedProduct[head, args, symList]];
+
+ISortArgToSortTag[arg_] := With[{
+    sym = SymmetryOfExpression@arg,
+    indPos = FindIndicesSlots@arg
+}, {arg, GroupOrderFromStrongGenSet@sym, Length@indPos, ReplacePart[arg, Thread[indPos[[All, 1]] -> IndexSlot[1]]]}];
+
+ISortDefaultOrder[{arg1_, groupOrder1_, inds1_, noIndsExpr1_}, {arg2_, groupOrder2_, inds2_, noIndsExpr2_}] := OrderOr[
+    -Order[groupOrder1, groupOrder2],
+    -Order[inds1, inds2],
+    Order[noIndsExpr1, noIndsExpr2]
+];
+ISortDefaultArgSort[args_] := Sort[ISortArgToSortTag /@ args, ISortDefaultOrder][[All, 1]];
+
 (* TODO: products like Wedge could produce a negative sign *)
-ISort[fn_?UnorderedProductQ[args___]] := ISortUnorderedArgs[fn, {args}];
-ISort[expr_] := ISortedGeneral@expr;
-SetAttributes[ISort, {HoldAll}];
+ISort[fn_?UnorderedProductQ[args___], sorter_] := SortedArgsToISortedProduct[fn, sorter[List @@ (Function[{a}, ISort[a, sorter], {HoldAll}] /@ Hold@args)]];
+ISort[expr_, _] := ISortedGeneral@expr;
+ISort[expr_] := ISort[expr, ISortDefaultArgSort];
+SetAttributes[ISort, {HoldFirst}];
 
 ReleaseISort[expr_] := ReleaseHold[Hold@expr //. {ISortedGeneral[e_] :> e, ISortedProduct[head_, {args___}, _] :> head[args]}];
 SyntaxInformation@ReleaseISort = {"ArgumentsPattern" -> {_}};
@@ -925,7 +973,16 @@ ConvertFreeIndicesSym[{inds_, sym_}, frees_] := With[{
 ConvertFreeIndicesSym[sym_List, frees_] := sym;
 
 CheckNoSummedIndices[expr_] := If[FreeQ[expr, SummedIndices], expr, Throw@$Failed];
-CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSelector_] := With[{
+Options@ITensorReduceOneTermSorted = {
+    FreeIndicesSymmetry -> {},
+    RenameDummies -> True,
+    UseMetricOnSlots -> All
+};
+ITensorReduceOneTermSorted[expr_, frees_, opt : OptionsPattern[]] := With[{
+    freesSym = OptionValue@FreeIndicesSymmetry,
+    renameDummies = OptionValue@RenameDummies,
+    symDummyPairSelector = OptionValue@UseMetricOnSlots,
+
     indPos = FindIndicesSlots@expr,
     slotsSym = SymmetryOfExpression@expr
 }, With[{
@@ -956,38 +1013,36 @@ CanonicalizeOneSorted[expr_, frees_, freesSym_, renameDummies_, symDummyPairSele
         CollectGroupedIndices@renamedDummyGroup
     ][[All, 2]], canonInds]
 },
-    xToolsDebugPrint[CanonicalizeOneSorted, "input: ", HoldForm@expr];
-    xToolsDebugPrint[CanonicalizeOneSorted, "actual indices: ", actualInds];
-    xToolsDebugPrint[CanonicalizeOneSorted, "gropued indices: ", dummySymList];
-    xToolsDebugPrint[CanonicalizeOneSorted, "canonical indices: ", canonInds];
-    xToolsDebugPrint[CanonicalizeOneSorted, "renamed indices: ", renamedCanonInds];
-    xToolsDebugPrint[CanonicalizeOneSorted, "permutation: ", perm];
-    xToolsDebugPrint[CanonicalizeOneSorted, "symmetry of slots: ", slotsSym];
-    xToolsDebugPrint[CanonicalizeOneSorted, "symmetry of indices: ", indsSym];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "input: ", HoldForm@expr];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "actual indices: ", actualInds];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "gropued indices: ", dummySymList];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "canonical indices: ", canonInds];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "renamed indices: ", renamedCanonInds];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "permutation: ", perm];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "symmetry of slots: ", slotsSym];
+    xToolsDebugPrint[ITensorReduceOneTermSorted, "symmetry of indices: ", indsSym];
     If[Length@indPos > 0,
         With[{
-            canonPerm = Function[{arg}, xToolsDebugPrint[CanonicalizeOneSorted, "calling: ", HoldForm@arg]; arg, {HoldAll}][DoubleCosetRepresentative[slotsSym, #, indsSym]] &[Images @@ perm]
+            canonPerm = Function[{arg}, xToolsDebugPrint[ITensorReduceOneTermSorted, "calling: ", HoldForm@arg]; arg, {HoldAll}][DoubleCosetRepresentative[slotsSym, #, indsSym]] &[Images @@ perm]
         },
-            xToolsDebugPrint[CanonicalizeOneSorted, "canonical permutation: ", canonPerm];
+            xToolsDebugPrint[ITensorReduceOneTermSorted, "canonical permutation: ", canonPerm];
             With[{ret = ApplyIndices[expr, indPos[[All, 1]], PermuteIndexList[renamedCanonInds, SignedInversePermutation@canonPerm]]},
-                xToolsDebugPrint[CanonicalizeOneSorted, "result: ", ret];
+                xToolsDebugPrint[ITensorReduceOneTermSorted, "result: ", ret];
                 {ret, Association@Thread[CollectGroupedIndicesNames@groupedDummies -> CollectGroupedIndicesNames@renamedDummyGroup]}
             ]
         ]
     ,
-        xToolsDebugPrint[CanonicalizeOneSorted, "result: ", HoldForm@expr];
+        xToolsDebugPrint[ITensorReduceOneTermSorted, "result: ", HoldForm@expr];
         {expr, <||>}
     ]
 ]]]]]]]];
+SyntaxInformation@ITensorReduceOneTermSorted = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
-Options@ITensorReduceOneTerm = {
-    UseMetricOnSlots -> All,
+Options@ITensorReduceOneTerm = Join[Options@ITensorReduceOneTermSorted, {
     FreeIndexNames -> Automatic,
-    FreeIndicesSymmetry -> {},
-    RenameDummies -> True,
     PostprocessCanonicalIndicesList -> Identity,
     FixedPoint -> False
-};
+}];
 ITensorReduceOneTerm::nottensorterm = "`1` is not a tensor term, skipping.";
 ITensorReduceOneTerm[expr_Plus, opt : OptionsPattern[]] := ITensorReduceOneTerm[#, opt] & /@ expr;
 ITensorReduceOneTerm[expr_?ArrayQ, opt : OptionsPattern[]] := Map[ITensorReduceOneTerm[#, opt] &, expr, {ArrayDepth@expr}];
@@ -1003,7 +1058,7 @@ CollectIndexedSumTermAndPopulateIndexedSumTimes[expr_] := With[{
 ITensorReduceOneTermInner[expr_, opt : OptionsPattern[]] := With[{
     exprAndSummedInds = CollectIndexedSumTermAndPopulateIndexedSumTimes@expr
 }, With[{
-    ret = CanonicalizeOneSorted[
+    ret = ITensorReduceOneTermSorted[
         With[{expr2 =
             PreITensorReduce[exprAndSummedInds[[1]], opt] //
                 PutIndexWrapperIfNeeded
@@ -1014,9 +1069,7 @@ ITensorReduceOneTermInner[expr_, opt : OptionsPattern[]] := With[{
                 frees
             ]
         ],
-        OptionValue[ITensorReduceOneTerm, opt, FreeIndicesSymmetry],
-        OptionValue[ITensorReduceOneTerm, opt, RenameDummies],
-        OptionValue[ITensorReduceOneTerm, opt, UseMetricOnSlots]
+        FilterRules[{opt}, Options@ITensorReduceOneTermSorted]
     ]
 }, With[{
     exprRet = ret[[1]] //
