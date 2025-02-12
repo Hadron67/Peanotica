@@ -29,7 +29,8 @@ ExpandDerivativeRules;
 
 SymmetriedDer;
 AllowPassThrough;
-DefParametreDerivativeOperator::usage = "";
+DefParametreDerivativeOperator::usage = "DefParametreDerivativeOperator[optr]";
+DerParameters::usage = "DerParameters is an option for DefParametreDerivativeOperator";
 DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType, symmetry].";
 
 CBTensor::usage = "CBTensor[expr, slots]";
@@ -45,6 +46,7 @@ AdaptNITensorCovD::usage = "AdaptNITensorCovD[NITensor[...], ind, slot, covdValu
 
 LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric, metricInv]";
 RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
+CoRiemannValue::usage = "CoRiemannValue[]";
 SymmetricRiemann::usage = "SymmetricRiemann[metric, a, b, c, d]";
 
 RiemannToRicciRules::usage = "RiemannToRicciRules[riemann, ricci]";
@@ -270,19 +272,15 @@ DefTensorDerivativeOperator[sym_Symbol, slots_List, symmetry_List, opt : Options
         sym /: ExpressionPassThroughQ[_sym, _, pos_] := pos[[1]] === 2
     ];
     With[{
-        name = OptionValue@DisplayName,
-        fn = Function[{name},
-            sym /: MakeBoxes[expr : sym[expr2_, inds___], StandardForm] := With[{
-                box = RowBox@{
-                    TensorGridBox[name, SeparateIndexName /@ {inds}],
-                    If[expr2 =!= Null, MakeBoxes@expr2, Nothing]
-                }
-            }, InterpretationBox[box, expr, Editable -> False]]
-        , {HoldAll}]
-    }, Switch[name,
-        Automatic, fn@MakeBoxes@sym,
-        None, Null,
-        _, fn@name
+        name = OptionValue@DisplayName
+    }, If[name =!= None,
+        sym /: MakeBoxes[expr : sym[expr2_, inds___], StandardForm] := With[{
+            box = RowBox@{
+                TensorGridBox[DisplayNameOf@sym, IndexBoxForm /@ {inds}],
+                If[expr2 =!= Null, MakeBoxes@expr2, Nothing]
+            }
+        }, InterpretationBox[box, expr, Editable -> False]];
+        If[name =!= Automatic, DisplayNameOf@sym ^= name];
     ]];
     sym /: NITensorReduce[sym[expr_, inds__], frees_] := ReduceNITensorContractions[ReverseApplied@Construct, {expr, NITensor[sym, IndexName /@ {inds}]}, frees];
 );
@@ -290,13 +288,19 @@ SyntaxInformation@DefTensorDerivativeOperator = {"ArgumentsPattern" -> {_, _, Op
 
 Options[DefParametreDerivativeOperator] = Join[Options@ExpandDerivativeRules, {
     DisplayName -> "\[PartialD]",
+    DerParameters -> {},
     AllowPassThrough -> True
 }];
 DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
-    SetDelayed @@@ ExpandDerivativeRules[sym[expr_?DerivativeExpandableQ, v__] :> ExpandDerivative[sym[#, v] &, expr], FilterRules[{opt}, Options@ExpandDerivativeRules]];
+    SetDelayed @@@ ExpandDerivativeRules[sym[expr_?DerivativeExpandableQ, v_, rest___] :> sym[ExpandDerivative[sym[#, v] &, expr], rest], FilterRules[{opt}, Options@ExpandDerivativeRules]];
     sym[Null, vs__]@expr_ := sym[expr, vs];
     sym[expr_] := expr;
-    sym[r_, r_] := 1;
+    sym[r_, r_] = 1;
+    With[{
+        params = OptionValue@DerParameters
+    },
+        Outer[If[#1 =!= #2, sym[#1, #2] = 0] &, params, params];
+    ];
     sym[sym[expr_, v1__], v2__] := sym[expr, v1, v2];
     sym[ETensor[expr_, inds_], v__] := ETensor[sym[expr, v], inds];
     sym[NITensor[expr_, inds_], v__] := NITensor[sym[expr, v], inds];
@@ -324,6 +328,7 @@ DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     ];
     sym /: NITensorReduce[sym[expr_, vs__], frees_] := sym[NITensorReduce[expr, frees], vs];
 );
+SyntaxInformation@DefParametreDerivativeOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
 RiemannToRicciRules[riem_, ricci_] := {
     riem[a_, c_, b_, DI@c_] :> ricci[a, b],
@@ -524,17 +529,16 @@ Options@DefPerturbationOperator = Join[Options@ExpandDerivativeRules, {
 }];
 DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
     SetDelayed @@@ ExpandDerivativeRules[symbol[expr_?DerivativeExpandableQ, n_] :> symbol[ExpandDerivative[symbol[#, 1] &, expr], n - 1] /; n >= 1, FilterRules[{opt}, Options@ExpandDerivativeRules]];
-    symbol[expr_] := symbol[expr, 1];
     symbol[expr_, 0] := expr;
     symbol[symbol[expr_, n1_], n2_] := symbol[expr, n1 + n2];
     FindIndicesSlots[symbol[expr_, n_]] ^:= FindIndicesSlots[expr, {1}];
     SymmetryOfExpression[symbol[expr_, n_]] ^:= SymmetryOfExpression@expr;
-    FindIndicesSlots[symbol[head_, _][_, args___]] ^:= MapIndicesSlots[MapAt[# + 1 &, #1, 1] -> #2 &, FindIndicesSlots[head@args]];
-    SymmetryOfExpression[symbol[head_, _][_, args___]] ^:= SymmetryOfExpression[head@args];
+    FindIndicesSlots[symbol[head_][_, args___]] ^:= MapIndicesSlots[MapAt[# + 1 &, #1, 1] -> #2 &, FindIndicesSlots[head@args]];
+    SymmetryOfExpression[symbol[head_][_, args___]] ^:= SymmetryOfExpression[head@args];
     With[{
         displayName = OptionValue@DisplayName
     },
-        symbol /: MakeBoxes[expr : symbol[expr2_, _][n_, args___], StandardForm] := With[{
+        symbol /: MakeBoxes[expr : symbol[expr2_][n_, args___], StandardForm] := With[{
             sub = MakeBoxes[expr2[args]],
             del = If[n === 1, displayName, SuperscriptBox[displayName, MakeBoxes@n]]
         }, InterpretationBox[RowBox@{del, sub}, expr]];
@@ -551,11 +555,11 @@ DefCovdPerturbationRules[pert_, cd_, metric_] := With[{
     metricPert = pert@metric
 },
     pert[cd[expr_, DI@a_], n2_] := pert[
-        cd[pert@expr, DI@a] + covdPert[expr, DI@a, 1]
+        cd[pert[expr, 1], DI@a] + covdPert[expr, DI@a, 1]
     , n2 - 1] /; n2 > 0;
     pert[cd[expr_, a_?NonDIQ], n2_] := pert[With[{i = GetUniqueIndexOfSlotType@Null}, cd[expr, DI@i]metric[a, i]], n2];
     pert[covdPert[expr_, DI@a_, n_], n2_] := pert[
-        covdPert[pert@expr, DI@a, n] + covdPert[expr, DI@a, n + 1]
+        covdPert[pert[expr, 1], DI@a, n] + covdPert[expr, DI@a, n + 1]
     , n2 - 1] /; n2 > 0;
     pert[covdPert[expr_, a_?NonDIQ, n_], n2_] := pert[With[{i = GetUniqueIndexOfSlotType@Null}, covdPert[expr, DI@i, n]metric[a, i]], n2];
 ];
@@ -589,8 +593,8 @@ PredefinedCovD[_PredefinedMetric, _] = 0;
 FindIndicesSlots[ShiftedMetric[_, _]] ^= {{1} -> PredefinedSlotType, {2} -> PredefinedSlotType};
 FindIndicesSlots[ShiftedMetric[_, _, _]] ^= {{2} -> PredefinedSlotType, {3} -> PredefinedSlotType};
 SymmetryOfExpression[_ShiftedMetric] ^= {SCycles@{1, 2}};
-ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox["G", SeparateIndexName /@ {a, b}]];
-ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[n_, a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[If[n === 1, "\[Delta]G", RowBox@{SuperscriptBox["\[Delta]", MakeBoxes@n], "G"}], SeparateIndexName /@ {a, b}]];
+ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox["G", IndexBoxForm /@ {a, b}]];
+ShiftedMetric /: MakeBoxes[expr : ShiftedMetric[n_, a_, b_], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[If[n === 1, "\[Delta]G", RowBox@{SuperscriptBox["\[Delta]", MakeBoxes@n], "G"}], IndexBoxForm /@ {a, b}]];
 DefSimpleTensor[ShiftedInverseMetric, {PredefinedSlotType, PredefinedSlotType}, {SCycles@{1, 2}}, DisplayName -> "\!\(\*SuperscriptBox[\(G\), \(-1\)]\)"];
 
 DefPerturbationOperator[PerturbShiftedMetric];
@@ -663,11 +667,11 @@ PertCovD[];
 
 ExpandCovDPerturbation[expr_, {pert_, cd_, metric_, metricPert_}] := expr //. {
     pert[cd[expr2_, DI@a_], n2_] :> pert[
-        cd[pert@expr2, DI@a] + PertCovD[cd, expr2, DI@a, 1]
+        cd[pert[expr2, 1], DI@a] + PertCovD[cd, expr2, DI@a, 1]
     , n2 - 1] /; n2 > 0,
     pert[cd[expr2_, a_?NonDIQ], n2_] :> pert[With[{i = GetUniqueIndexOfSlotType@Null}, cd[expr2, DI@i]metric[a, i]], n2],
     pert[PertCovD[cd, expr2_, DI@a_, n_], n2_] :> pert[
-        PertCovD[cd, pert@expr2, DI@a, n] + PertCovD[cd, expr2, DI@a, n + 1]
+        PertCovD[cd, pert[expr2, 1], DI@a, n] + PertCovD[cd, expr2, DI@a, n + 1]
     , n2 - 1] /; n2 > 0,
     pert[PertCovD[cd, expr2_, a_?NonDIQ, n_], n2_] :> pert[With[{i = GetUniqueIndexOfSlotType@Null}, PertCovD[cd, expr2, DI@i, n]metric[a, i]], n2]
 } //. {
@@ -738,16 +742,17 @@ SyntaxInformation@WeylToRiemann = {"ArgumentsPattern" -> {_, _, _}};
 WeylToRiemannSchouten[riemann_, metric_, schouten_, {a_, b_, c_, d_}] := With[{
     dim = IndexScope@metric[a, DI@a]
 },
-    riemann[a, b, c, d] + metric[a, b] schouten[c, d] - metric[b, c] schouten[a, d] - metric[a, d] schouten[b, c] + metric[b, d] schouten[a, c]
+    riemann[a, b, c, d] - metric[a, c] schouten[b, d] + metric[b, c] schouten[a, d] + metric[a, d] schouten[b, c] - metric[b, d] schouten[a, c]
 ];
 SyntaxInformation@WeylToRiemannSchouten = {"ArgumentsPattern" -> {_, _, _, _}};
 
 RiemannBianchiRelations[expr_List, covd_, riemann_] := Join @@ (RiemannBianchiRelations[#, covd, riemann] & /@ expr);
 RiemannBianchiRelations[expr_Times, covd_, riemann_] := Join @@ MapIndexed[ReplacePart[expr, #2 -> RiemannBianchiRelations[#1, covd, riemann]] &, List @@ expr];
-RiemannBianchiRelations[covd_[inner : riemann_[a_, b_, c_, d_], e_], covd_, riemann_] := Prepend[
-    covd[RiemannBianchiRelations[inner, covd, riemann], e],
-    covd[riemann[a, b, c, d], e] + covd[riemann[a, b, d, e], c] + covd[riemann[a, b, e, c], d]
-];
+RiemannBianchiRelations[covd_[inner : riemann_[a_, b_, c_, d_], e_], covd_, riemann_] := Join[{
+    covd[riemann[c, d, a, b], e] + covd[riemann[d, e, a, b], c] + covd[riemann[e, c, a, b], d],
+    (* covd[riemann[a, b, c, d], e] + covd[riemann[a, b, d, e], c] + covd[riemann[a, b, e, c], d] *)
+    covd[riemann[a, b, c, d], e] + covd[riemann[e, a, c, d], b] + covd[riemann[b, e, c, d], a]
+}, covd[RiemannBianchiRelations[inner, covd, riemann], e]];
 RiemannBianchiRelations[riemann_[a_, b_, c_, d_], _, riemann_] := {
     riemann[a, b, c, d] + riemann[a, c, d, b] + riemann[a, d, b, c]
 };

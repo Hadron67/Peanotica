@@ -26,6 +26,7 @@ IndexedAlgTensor::usage = "IndexedAlgTensor[expr, inds]";
 IndexedAlgTensorCovD::usage = "IndexedAlgTensorCovD[expr, ind]";
 ExtractAlgTensor::usage = "ExtractAlgTensor[expr, frees]";
 ExtractAllAlgTensors::usage = "ExtractAllAlgTensors[expr, frees]";
+RiemannTensorOrder::usage = "RiemannTensorOrder[{cd, riemann, ricci, ricciScalar}, a, b]";
 
 Begin["`Private`"];
 
@@ -133,6 +134,7 @@ AlgDRicci /: MakeBoxes[expr : AlgDRicci[n_], StandardForm] := With[{
 }, InterpretationBox[box, expr]];
 SyntaxInformation@AlgDRicci = {"ArgumentsPattern" -> {_}};
 
+EnumerateAlgTensorTerms[tensors_List, frees_] := Union @@ (EnumerateAlgTensorTerms[#, frees] & /@ tensors);
 EnumerateAlgTensorTerms[tensor_, frees_] := With[{
     tensor2 = SortAlgTensor@tensor
 },
@@ -188,6 +190,26 @@ SyntaxInformation@ExtractAlgTensor = {"ArgumentsPattern" -> {_, _.}};
 ExtractAllAlgTensors[expr_, frees_] := expr /. expr2_IndexedAlgTensor :> ExtractAlgTensor[expr2, frees];
 ExtractAllAlgTensors[frees_][expr_] := ExtractAllAlgTensors[expr, frees];
 SyntaxInformation@ExtractAllAlgTensors = {"ArgumentsPattern" -> {_, _.}};
+
+RiemannTensorOrder[cds_, e1_HeldTimes, e2_HeldTimes] := OrderOr[
+    LexicographicOrder[Reverse[List @@ e1], Reverse[List @@ e2], RiemannTensorOrder[cds]],
+    LexicographicOrder[FindIndicesSlotsAndNames[e1][[All, 2, 1]],
+    FindIndicesSlotsAndNames[e2][[All, 2, 1]], IndexOrder]
+];
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, ricciScalar, ricciScalar] = 0;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _ricci, _ricci] = 0;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _riemann, _riemann] = 0;
+RiemannTensorOrder[cds : {cd_, riemann_, ricci_, ricciScalar_}, cd[expr1_, _], cd[expr2_, _]] := RiemannTensorOrder[cds, expr1, expr2];
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _, _cd] = 1;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _cd, _] = -1;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, ricciScalar, _] = 1;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _, ricciScalar] = -1;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _ricci, _] = 1;
+RiemannTensorOrder[{cd_, riemann_, ricci_, ricciScalar_}, _, _ricci] = -1;
+RiemannTensorOrder[cds_][expr1_, expr2_] := RiemannTensorOrder[cds, expr1, expr2];
+SyntaxInformation@RiemannTensorOrder = {"ArgumentsPattern" -> {_, _, _}};
+
+
 
 End[];
 

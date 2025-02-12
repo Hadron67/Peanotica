@@ -51,18 +51,18 @@ gsspd = {ETensor[paramd[Null, t], {Null}], ETensor[paramd[Null, r], {Null}], ETe
 
 gssChris = LeviCivitaChristoffelValue[mf, {gsspd, 0}, gssMetric, gssMetricInv] // ITensorReduce // Map[Simplify, #, {3}] &;
 
-VerificationTest[gssChris === SparseArray[{
+VerificationTest[gssChris == SparseArray[{
     {1, 1, 2} -> ETensor[h'[r]/(2 h[r]), {Null, Null, Null}],
     {1, 2, 1} -> ETensor[h'[r]/(2 h[r]), {Null, Null, Null}],
     {2, 1, 1} -> ETensor[1/2 f[r] h'[r], {Null, Null, Null}],
     {2, 2, 2} -> ETensor[-(f'[r]/(2 f[r])), {Null, Null, Null}],
     {2, 3, 3} -> ETensor[-r f[r] g1mx[DI[a], DI[b]], {Null, a, b}],
-    {3, 2, 3} -> ETensor[g1mx[DI[b], a]/r, {a, Null, b}],
-    {3, 3, 2} -> ETensor[g1mx[DI[b], a]/r, {a, b, Null}]
+    {3, 2, 3} -> ETensor[g1mx[a, DI[b]]/r, {a, Null, b}],
+    {3, 3, 2} -> ETensor[g1mx[a, DI[b]]/r, {a, b, Null}]
 }]];
 
 gssRiemann = RiemannDifferenceValue[mf, {gsspd, 0}, gssChris] + SparseArray[{
-    {3, 3, 3, 3} -> ETensor[k*SymmetricRiemann[g1mx, DI@a, DI@b, DI@c, d], {a, b, c, d}]
+    {3, 3, 3, 3} -> ETensor[k*SymmetricRiemann[g1mx, {DI@a, DI@b, DI@c, d}], {a, b, c, d}]
 }] // ITensorReduce // Map[Simplify, #, {4}] & // SparseArray;
 
 gssRicci = ITensorSum[ITensorTranspose[gssRiemann, {1, 3, 2, 3}], {3}] // ITensorReduce // Map[Simplify, #, {2}] & // SparseArray;
@@ -79,4 +79,9 @@ VerificationTest[
         2 f[r] (dimx h'[r] + r h''[r]))/(
         2 r h[r]
     )]
+];
+
+VerificationTest[
+    ITensorOuter[Times, ETensor[ricciMf[LabelI[1], LabelI[2]], {Null, Null}], ETensor[ricciMf[LabelI[1], LabelI[2]], {Null, Null}], {}],
+    ETensor[ricciMf[LabelI[1], LabelI[2]] ^ 2, {Null, Null, Null, Null}]
 ];

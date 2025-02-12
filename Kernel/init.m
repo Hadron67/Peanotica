@@ -3,3 +3,4 @@ Get["Peanotica`Perm`"];
 Get["Peanotica`Core`"];
 Get["Peanotica`DiffGeo`"];
 Get["Peanotica`AlgSimp`"];
+Get["Peanotica`Presets`"];
