@@ -48,6 +48,7 @@ LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric
 RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
 CoRiemannValue::usage = "CoRiemannValue[]";
 SymmetricRiemann::usage = "SymmetricRiemann[metric, a, b, c, d]";
+SymmetricRiemannETensor::usage = "SymmetricRiemannETensor[metric]";
 
 RiemannToRicciRules::usage = "RiemannToRicciRules[riemann, ricci]";
 RicciToRicciScalarRules::usage = "RicciToRicciScalarRules[ricci, ricciScalar]";
@@ -79,7 +80,6 @@ ExpandMetricPerturbation::usage = "ExpandMetricPerturbation[expr, {pert, metric,
 ExpandTensorDetPerturbation::usage = "ExpandTensorDetPerturbation[expr, {pert, tensor, det}]";
 ExpandRiemannPerturbation::usage = "ExpandRiemannPerturbation[expr, {pert, metric, metricPert}, {cd, riemann, ricci, ricciScalar}]";
 ExpandCovDPerturbation::usage = "ExpandCovDPerturbation[expr, {cd, cdPert, metric, metricPert}]";
-ExpandAllPerturbations::usage = "ExpandAllPerturbations[expr, pert, info]";
 VectorBasisCommutator::usage = "VectorBasisCommutator[mat, ders]";
 
 Begin["`Private`"];
@@ -523,6 +523,9 @@ SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};
 SymmetricRiemann[metric_, {a_, b_, c_, d_}] := metric[a, c]metric[b, d] - metric[a, d]metric[b, c];
 SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _}};
 
+SymmetricRiemannETensor[metric_] := ETensor[SymmetricRiemann[metric, {DI@a, DI@b, DI@c, d}], {a, b, c, d}];
+SyntaxInformation@SymmetricRiemannETensor = {"ArgumentsPattern" -> {_}};
+
 CBTensor::unmatchedSlots = "";
 
 Options@DefPerturbationOperator = Join[Options@ExpandDerivativeRules, {
@@ -700,30 +703,6 @@ SyntaxInformation@ExpandRiemannPerturbation = {"ArgumentsPattern" -> {_, _, _.}}
 
 ApplyIfNotMissing[fn_, arg_, expr_] := If[Head@arg === Missing, expr, fn[arg, expr]];
 ApplyIfNotMissing[fn_, arg_][expr_] := ApplyIfNotMissing[fn, arg, expr];
-
-ExpandAllPerturbations[expr_, pert_, info_Association, action_] := With[{
-    metric = info["Metric"],
-    metricDet = info["DetMetric"],
-    cd = info["CovD"],
-    riemann = info["Riemann"],
-    ricci = info["Ricci"],
-    ricciScalar = info["RicciScalar"]
-}, If[Head@cd =!= Missing && Head@metric =!= Missing,
-    action@ExpandCovDPerturbation[expr, {pert, cd, metric, pert@metric}],
-    expr
-] // If[Head@metric =!= Missing && Head@cd =!= Missing && Head@riemann =!= Missing,
-    action@ExpandRiemannPerturbation[#, {pert, metric, pert@metric}, {cd, riemann, ricci, ricciScalar}],
-    #
-] & // If[Head@metric =!= Missing && Head@metricDet =!= Missing,
-    action@ExpandTensorDetPerturbation[#, {pert, metric, metricDet}],
-    #
-] & // If[Head@metric =!= Missing,
-    action@ExpandMetricPerturbation[#, {pert, metric, pert@metric}],
-    #
-] &];
-ExpandAllPerturbations[pert_, info_][expr_] := ExpandAllPerturbations[expr, pert, info, Identity];
-ExpandAllPerturbations[pert_, info_, action_][expr_] := ExpandAllPerturbations[expr, pert, info, action];
-SyntaxInformation@ExpandAllPerturbations = {"ArgumentsPattern" -> {_, _, _., _.}};
 
 LovelockDensity[riemann_, n_] := With[{
     inds = TempIndex /@ Range[2n]
