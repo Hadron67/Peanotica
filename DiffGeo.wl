@@ -80,6 +80,7 @@ ExpandTensorDetPerturbation::usage = "ExpandTensorDetPerturbation[expr, {pert, t
 ExpandRiemannPerturbation::usage = "ExpandRiemannPerturbation[expr, {pert, metric, metricPert}, {cd, riemann, ricci, ricciScalar}]";
 ExpandCovDPerturbation::usage = "ExpandCovDPerturbation[expr, {cd, cdPert, metric, metricPert}]";
 ExpandAllPerturbations::usage = "ExpandAllPerturbations[expr, pert, info]";
+VectorBasisCommutator::usage = "VectorBasisCommutator[mat, ders]";
 
 Begin["`Private`"];
 
@@ -652,7 +653,9 @@ ExpandMetricPerturbation[expr_, {pert_, metric_, metricPert_}] := expr /. {
 } /. {
     HoldPattern@pert[metric[DI@a_, DI@b_], n_] :> metricPert[n, DI@a, DI@b],
     HoldPattern@pert[metricPert[n_, DI@a_, DI@b_], n2_] :> metricPert[n + n2, DI@a, DI@b],
-    HoldPattern@pert[metric[a_?NonDIQ, b_?NonDIQ], n_] :> VarInverseMatrix[{a, b}, metricPert, n]
+    HoldPattern@pert[metric[a_?NonDIQ, b_?NonDIQ], n_] :> VarInverseMatrix[{a, b}, metricPert, n],
+    HoldPattern@pert[metric[_DI, _?NonDIQ], _] -> 0,
+    HoldPattern@pert[metric[_?NonDIQ, _DI], _] -> 0
 };
 ExpandMetricPerturbation[a_][expr_] := ExpandMetricPerturbation[expr, a];
 SyntaxInformation@ExpandMetricPerturbation = {"ArgumentsPattern" -> {_, _.}};
@@ -768,6 +771,11 @@ CovDCommutatorRelations[expr0 : covd_[inner : covd_[expr_, a_], b_], covd_, comm
 ];
 CovDCommutatorRelations[_, _, _] = {};
 SyntaxInformation@CovDCommutatorRelations = {"ArgumentsPattern" -> {_, _, _}};
+
+VectorBasisCommutator[mat_, ders_] := With[{
+    mat2 = ITensorContractTwo[Times, mat, ITensorOuter[Construct, ders, mat, {}], {{2, 1}}]
+}, mat2 - ITensorTranspose[mat2, {2, 1, 3}]];
+SyntaxInformation@VectorBasisCommutator = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 

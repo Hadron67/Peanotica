@@ -172,6 +172,8 @@ ITensorOuter::usage = "ITensorOutter[prod, t1, t2, {{s11, s12}, ...}]";
 ITensorSum::usage = "ITensorSum[t, {a1, a2, ...}]";
 ITensorScalarMultiply::usage = "ITensorScalarMultiply[prod, tensor, scalar]";
 ITensorFixedContract::usage = "ITensorFixedContract[t1, t2, n1, n2]";
+ITensorContract::usage = "ITensorContract[t1, t2, {{s11, s12}, ...}]";
+ITensorContractTwo::usage = "ITensorContractTwo[prod, t1, t2, {{s11, s12}, ...}]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
 ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
 ScalarValue::usage = "ScalarValue[expr] represents a scalar value expr.";
@@ -181,6 +183,7 @@ FromNITensorIndex::usage = "FromNITensorIndex[ind]";
 SumIndexOfSlot::usage = "SumIndexOfSlot[slot, ind, expr]";
 ETensorArray::usage = "ETensorArray[fn, {inds1, inds2, ...}]";
 WrapETensor::usage = "WrapETensor[ETensor[...], slots]";
+ExpandedGDelta::usage = "ExpandedGDelta[metric, inds]";
 
 $PThrowOnError = False;
 
@@ -1708,11 +1711,13 @@ SyntaxInformation@ITensorOuter = {"ArgumentsPattern" -> {_, _, _, _}};
 SumIndexOfSlot[slot_, ind_, expr_] := expr;
 SyntaxInformation@SumIndexOfSlot = {"ArgumentsPattern" -> {_, _, _}};
 
+WraparoundNegativeInds[ind_List, length_] := WraparoundNegativeInds[#, length] & /@ ind;
+WraparoundNegativeInds[ind_, length_] := If[ind < 0, ind + length, ind];
 ITensorSum[expr_, {}] := expr;
-ITensorSum[s_?ArrayQ, dims_] := Total@Flatten[
-    Transpose[Map[If[TensorValueQ@#, ITensorSum[#, dims], #] &, s, {ArrayDepth@s}], PermutationOfMovingToFirst@dims],
+ITensorSum[s_?ArrayQ, dims_] := With[{depth = ArrayDepth@s}, Total@Flatten[
+    Transpose[Map[If[TensorValueQ@#, ITensorSum[#, dims], #] &, s, {depth}], PermutationOfMovingToFirst@dims],
     Length@dims - 1
-];
+]];
 (* ITensorSum[ETensor[expr_, frees_], dims_] := ETensor[expr, Delete[frees, Transpose@{dims}]]; *)
 ITensorSum[ETensor[expr_, frees_], dims_] := With[{
     allInds = Extract[{1, 2}] /@ FindAllIndicesNames@expr
@@ -1722,6 +1727,22 @@ ITensorSum[ETensor[expr_, frees_], dims_] := With[{
 ]];
 ITensorSum[0, _] = 0;
 SyntaxInformation@ITensorSum = {"ArgumentsPattern" -> {_, _}};
+
+WraparoundNegtiveIndices[ind_List, length_] := WraparoundNegtiveIndices[#, length] & /@ ind;
+WraparoundNegtiveIndices[ind_, length_] := If[ind < 0, ind + length, ind];
+ITensorContract[t1_?ArrayQ, slots_] := With[{
+    depth = ArrayDepth@t1,
+    contLength = Length@slots
+}, Fold[ITensorSum[#1, {#2}]&, ITensorTranspose[
+    t1,
+    With[{
+        range = Range@depth
+    }, If[# > depth - contLength, # - contLength, #] & /@ InversePermutation@Join[Delete[range, Transpose@{Join @@ slots}], range[[ Join @@ Transpose@slots ]]]]
+], Reverse@Range[depth - 2 * contLength + 1, depth - contLength]]];
+SyntaxInformation@ITensorContract = {"ArgumentsPattern" -> {_, _}};
+
+ITensorContractTwo[prod_, t1_, t2_, slots_] := Fold[ITensorSum[#1, {#2[[1]]}] &, ITensorOuter[prod, t1, t2, slots], ReverseSortBy[slots, First]];
+SyntaxInformation@ITensorContractTwo = {"ArgumentsPattern" -> {_, _, _, _}};
 
 ITensorScalarMultiply[prod_, tensor_?ArrayQ, scalar_] := Map[If[TensorValueQ@#, ITensorScalarMultiply[prod, #, scalar], prod[#, scalar]] &, tensor, {ArrayDepth@tensor}];
 ITensorScalarMultiply[prod_, ETensor[expr_, inds_], scalar_] := ETensor[prod[expr, scalar], inds];
@@ -1945,6 +1966,14 @@ GetIndexForETensor[t_LabelI, _] := {t, Null};
 GetIndicesForETensor[indSpecs_, inds_] := Transpose@Fold[Append[#1, GetIndexForETensor[#2, DeleteCases[Join[inds, #1[[All, 1]]], _LabelI]]] &, {}, indSpecs];
 ETensorArray[fn_, inds_] := Outer[With[{inds2 = GetIndicesForETensor[{##}, {}]}, ETensor[fn @@ inds2[[1]], inds2[[2]]]] &, ##] & @@ inds;
 SyntaxInformation@ETensorArray = {"ArgumentsPattern" -> {_, _}};
+
+ExpandedGDelta[metric_, inds_List] := With[{
+    inds1 = TakeDrop[inds, Length@inds / 2],
+    factor = Factorial[Length@inds / 2]
+},
+    Total[Signature@# / factor * Times @@ MapThread[metric, {inds1[[1]], Permute[inds1[[2]], #]}] & /@ Permutations@Range[Length@inds / 2]]
+];
+SyntaxInformation@ExpandedGDelta = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 
