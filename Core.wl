@@ -87,6 +87,9 @@ MapIndicesSlots::usage = "MapIndicesSlots[fn, inds]";
 ReplaceIndicesToSame::usage = "ReplaceIndicesToSame[expr, ind]";
 IndexOrder::usage = "IndexOrder[a, b]";
 IndexNamedOrder::usage = "IndexNamedOrder[a, b]";
+IndexedToFunction::usage = "IndexedToFunction[expr, frees]";
+MakeIndexRule::usage = "MakeIndexRule[lhs -> rhs, frees]";
+MakeIndexFunction::usage = "MakeIndexFunction[expr, frees]";
 
 (* IndexedSum *)
 IndexedSum::usage = "IndexedSum[expr, {ind, type}, ...]";
@@ -158,7 +161,10 @@ TensorGridBox::usage = "TensorGridBox[head, indices]";
 TensorInterpretationBox;
 AllowSubsuperscriptBox;
 IndexStyle;
-DefTensorFormatings::usage = "DefTensorFormatings[name, options...]";
+TFIndexSlot::usage = "";
+TFLabelSlot::usage = "LabelSlot can be used";
+TFFunctionSlot::usage = "";
+DefTensorFormatings::usage = "DefTensorFormatings[name, slots, options...]";
 
 (* ETensor *)
 ETensor::usage = "ETensor[expr, freeCount, dummyCount] represents an expression tensor.";
@@ -175,9 +181,10 @@ ITensorFixedContract::usage = "ITensorFixedContract[t1, t2, n1, n2]";
 ITensorContract::usage = "ITensorContract[t1, t2, {{s11, s12}, ...}]";
 ITensorContractTwo::usage = "ITensorContractTwo[prod, t1, t2, {{s11, s12}, ...}]";
 NITensorReduce::usage = "NITensorReduce[expr, frees]";
+ExtractNITensor::usage = "ExtractNITensor[expr, inds]";
+NITensorReduceExtract::usage = "NITensorReduceExtract[expr, frees]";
 ReduceNITensorContractions::usage = "ReduceNITensorContractions[prod, factors, frees]";
 ScalarValue::usage = "ScalarValue[expr] represents a scalar value expr.";
-ExtractNITensor::usage = "";
 ToNITensorIndex::usage = "ToNITensorIndex[ind, slot]";
 FromNITensorIndex::usage = "FromNITensorIndex[ind]";
 SumIndexOfSlot::usage = "SumIndexOfSlot[slot, ind, expr]";
@@ -468,7 +475,8 @@ SyntaxInformation@IndexedExprFunction = {"ArgumentsPattern" -> {_, _, _}};
 RaiseOneFreeNameRule[name_, indsPos_] := With[{
     pos = Lookup[indsPos, name, Null]
 }, If[pos =!= Null,
-    Thread[pos[[All, 3]] -> name],
+    Thread[pos[[All, 3]] -> name]
+,
     {}
 ]];
 RaiseFrees[expr_, frees_] := ReplacePart[expr, Join @@ With[{indsPos = FindAllIndicesNames@expr}, RaiseOneFreeNameRule[#, indsPos] & /@ frees]];
@@ -579,24 +587,51 @@ FindTermIndicesList[expr_] := FindIndicesSlotsAndNames[expr][[All, 2, 1]];
 SetAttributes[FindTermIndicesList, HoldAll];
 SyntaxInformation@FindTermIndicesList = {"ArgumentsPattern" -> {_}};
 
+With[{prefix = $Context <> "tmp"},
+    GetInternalSymbols[n_] := Array[Symbol[prefix <> ToString@#] &, n];
+];
+
 Options[DefTensorFormatings] = Union[Options[TensorGridBox], {
     DisplayName -> Automatic
 }];
-DefTensorFormatings[symbol_, opt : OptionsPattern[]] := With[{
+ConverTFLabelSlotFormatingRule[{TFLabelSlot, sym_}] := Hold@{{MakeBoxes@sym, IndexNameSlot}};
+ConverTFLabelSlotFormatingRule[{TFLabelSlot[left_, right_], sym_}] := Hold@{{RowBox@{left, MakeBoxes@sym, right}, IndexNameSlot}};
+ConverTFLabelSlotFormatingRule[{_, sym_}] := Hold@{IndexBoxForm@sym};
+ConverTFLabelSlotFormatingRule[{TFFunctionSlot, _}] = Nothing;
+DefineTensorFormating0[symbol_, {patterns___}, Hold@{inds___}, Hold@{fnArgs___}] := (
+    If[Hold@{fnArgs} =!= Hold@{},
+        symbol /: MakeBoxes[expr : symbol[patterns, restInds___], StandardForm] := TensorInterpretationBox[
+            expr,
+            RowBox@{TensorGridBox[DisplayNameOf@symbol, Join[{inds}, IndexBoxForm /@ {restInds}]], "[", fnArgs, "]"}
+        ];
+    ,
+        symbol /: MakeBoxes[expr : symbol[patterns, restInds___], StandardForm] := TensorInterpretationBox[
+            expr,
+            TensorGridBox[DisplayNameOf@symbol, Join[{inds}, IndexBoxForm /@ {restInds}]]
+        ];
+    ];
+);
+JoinHold2[list_] := If[Length@list > 0, Join @@ Append[list, 2], Hold@{}];
+DefTensorFormatings[symbol_, slots_List, opt : OptionsPattern[]] := With[{
     name = OptionValue@DisplayName
 }, If[name =!= None,
     With[{
-        opt2 = FilterRules[{opt}, Options@TensorGridBox]
-    },
-        symbol /: MakeBoxes[expr : symbol[inds___], StandardForm] := TensorInterpretationBox[expr, TensorGridBox[DisplayNameOf@symbol, IndexBoxForm /@ {inds}, opt2]];
-    ];
+        opt2 = FilterRules[{opt}, Options@TensorGridBox],
+        tmp = Thread@{slots, GetInternalSymbols@Length@slots}
+    }, DefineTensorFormating0[
+        symbol,
+        Pattern[#, Blank[]] & /@ tmp[[All, 2]],
+        JoinHold2[ConverTFLabelSlotFormatingRule /@ tmp],
+        JoinHold2[Riffle[Hold@{MakeBoxes@#} & /@ Cases[tmp, {TFFunctionSlot, sym_} :> sym], Hold@{","}]]
+    ]];
     If[name =!= Automatic, DisplayNameOf@symbol ^= name];
 ]];
-SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
 Options[DefSimpleTensor] = Options@DefTensorFormatings;
+NonIndexSlotQ[expr_] := MatchQ[expr, TFFunctionSlot | TFLabelSlot | _TFLabelSlot];
 DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
-    slotsAndPos = MapIndexed[#2 -> #1 &, slots]
+    slotsAndPos = MapIndexed[If[NonIndexSlotQ@#1, Nothing, #2 -> #1] &, slots]
 },
     (
         sym /: FindIndicesSlots[sym[##]] = slotsAndPos;
@@ -604,8 +639,7 @@ DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
             sym /: SymmetryOfExpression[sym[##]] = symmetry;
         ];
     ) & @@ ConstantArray[_, Length@slots];
-    DefTensorFormatings[sym, opt];
-    sym /: NITensorReduce[sym[inds__], frees_] := NITensorReduce[NITensor[sym, IndexName /@ {inds}], frees];
+    DefTensorFormatings[sym, slots, opt];
     SyntaxInformation@sym = {"ArgumentsPattern" -> ConstantArray[_, Length@slots]};
 ];
 SyntaxInformation@DefSimpleTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
@@ -747,7 +781,7 @@ DefSimpleDeltaTensor[symbol_, type_, opt : OptionsPattern[]] := (
     FindIndicesSlots[symbol[_, _]] ^= {{1} -> type, {2} -> type};
     SymmetryOfExpression[symbol[_, _]] ^= {SCycles@{1, 2}};
 
-    If[OptionValue@DisplayName =!= None, DefTensorFormatings[symbol, opt]];
+    If[OptionValue@DisplayName =!= None, DefTensorFormatings[symbol, {}, opt]];
 
     symbol[a_, a_] = 1;
     symbol /: _?TimesQ[l___, symbol[a_, b_], r___] := With[{
@@ -1416,6 +1450,59 @@ ReplaceDummiesToUnique[expr_, frees_List] := With[{
 ReplaceDummiesToUnique[expr_] := ReplaceDummiesToUnique[expr, {}];
 SyntaxInformation@ReplaceDummiesToUnique = {"ArgumentsPattern" -> {_, _.}};
 
+MakeIndexRule$ConstructRule[lhs_, Hold@withArgs_, Hold@rhs_] := If[Hold@withArgs === Hold@{},
+    lhs -> rhs
+,
+    lhs :> With[withArgs, rhs]
+];
+WrapHoldPattern[expr_] := If[Head@expr === HoldPattern, expr, HoldPattern@expr];
+MakeIndexRule[expr_List, frees_] := MakeIndexRule[#, frees] & /@ expr;
+MakeIndexRule[lhs_ -> rhs_, frees_] := MakeIndexRule[lhs :> rhs, frees];
+MakeIndexRule[lhs_ :> rhs_, frees_] := With[{
+    lhsInds = FindAllIndicesNames@lhs,
+    rhsInds = FindAllIndicesNames@rhs
+}, With[{
+    rhsDummies = Complement[Keys@rhsInds, frees]
+}, With[{
+    tmpSymbols = GetInternalSymbols[Length@rhsDummies + Length@frees]
+}, With[{
+    freeRenames = Association@Thread[frees -> Take[tmpSymbols, Length@frees]],
+    dummyRenames = Association@Thread[rhsDummies -> Drop[tmpSymbols, Length@frees]]
+}, MakeIndexRule$ConstructRule[
+    ReplacePart[WrapHoldPattern@lhs, Join @@ (Thread[(Prepend[1] /@ lhsInds[#][[All, 3]]) -> Pattern[Evaluate@freeRenames@#, Blank[]]] & /@ frees)],
+    JoinHold2[Hold@{# = UInd[]} & /@ Values@dummyRenames],
+    ReplacePart[Hold@rhs, Join @@ KeyValueMap[{key, value} |->
+        With[{
+            dummy = dummyRenames@key
+        }, If[Head@dummy === Missing,
+            Thread[(Prepend[1] /@ value[[All, 3]]) -> freeRenames@key]
+        ,
+            Prepend[#3, 1] -> (#1 /. IndexNameSlot -> dummy) & @@@ value
+        ]],
+        rhsInds
+    ]]
+]]]]];
+SyntaxInformation@MakeIndexRule = {"ArgumentsPattern" -> {_, _}};
+
+MakeIndexFunction$ConstructFunction[Hold@body_, Hold@withArgs_] := If[Hold@withArgs === Hold@{}, Function@body, Function@With[withArgs, body]];
+MakeIndexFunction[expr_, frees_] := With[{
+    inds = FindAllIndicesNames@expr
+}, With[{
+    freeRenames = Association@MapIndexed[#1 -> Slot @@ #2 &, frees],
+    dummyRenames = With[{d = Complement[Keys@inds, frees]}, Association@Thread[d -> GetInternalSymbols@Length@d]]
+}, MakeIndexFunction$ConstructFunction[
+    ReplacePart[Hold@expr, Join @@ KeyValueMap[{key, value} |-> With[{
+        dummy = dummyRenames@key
+    }, If[Head@dummy === Missing,
+        Thread[(Prepend[1] /@ value[[All, 3]]) -> freeRenames@key]
+    ,
+        Prepend[#3, 1] -> (#1 /. IndexNameSlot -> dummy) & @@@ value
+    ]], inds]]
+,
+    JoinHold2[Hold@{# = UInd[]} & /@ Values@dummyRenames]
+]]];
+SyntaxInformation@MakeIndexFunction = {"ArgumentsPattern" -> {_, _}};
+
 WrapIntoFunction[inner_, Hold@{args__}] := Function[inner[args]];
 ToIndexFunction[expr_, frees_] := With[{
     body = ToIndexFunction0[expr, frees, <||>]
@@ -1792,6 +1879,10 @@ NITensorReduce[expr_, _] := With[{
     NITensor[Hold@expr, Keys@inds]
 ]];
 SyntaxInformation@NITensorReduce = {"ArgumentsPattern" -> {_, _.}};
+
+NITensorReduceExtract[expr_, inds_] := ExtractNITensor[NITensorReduce[expr, inds], inds];
+NITensorReduceExtract[inds_][expr_] := NITensorReduceExtract[expr, inds];
+SyntaxInformation@NITensorReduceExtract = {"ArgumentsPattern" -> {_, _.}};
 
 PermutationOfMergeIndices[inds_, n_] := With[{
     firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)

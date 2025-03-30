@@ -11,8 +11,10 @@ ExpandAllPerturbations::usage = "ExpandAllPerturbations[expr, pert, info]";
 
 PostCurvatureCompute::usage = "PostCurvatureCompute is an option for ComputeCurvature";
 ComputeCurvature::usage = "ComputeCurvature[input]";
+MakeMetricAdapter::usage = "MakeMetricAdapter[symbols, values]";
 MakeCurvatureValueRules::usage = "MakeCurvatureValueRules[symbols, values]";
 MakeTensorValueRules::usage = "MakeTensorValueRules[symbols, values]";
+DefLabelledTensor::usage = "DefLabelledTensor[name, slots, symmetry]";
 
 Begin["`Private`"];
 
@@ -100,6 +102,9 @@ ComputeCurvature[input_, opt: OptionsPattern[]] := With[{
 |>]]]]]];
 SyntaxInformation@ComputeCurvature = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
+MakeMetricAdapter[syms_, values_] := MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}};
+SyntaxInformation@MakeMetricAdapter = {"ArgumentsPattern" -> {_, _}};
+
 MakeCurvatureValueRules[syms_, values_] := With[{
     slot = syms["Slot"],
     mat = MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}},
@@ -131,6 +136,10 @@ MakeTensorValueRules[syms_, values_, tensors_] := With[{
     mat = MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}}
 }, KeyValueMap[ConvertOneTensorRule[mat], tensors]];
 SyntaxInformation@MakeTensorValueRules = {"ArgumentsPattern" -> {_, _}};
+
+Options@DefLabelledTensor = Options@DefSimpleTensor;
+DefLabelledTensor[name_, slots_, sym_, opt : OptionsPattern[]] := DefSimpleTensor[name, Prepend[slots, TFLabelSlot["(", ")"]], sym, opt];
+SyntaxInformation@DefLabelledTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
 
 End[];
 

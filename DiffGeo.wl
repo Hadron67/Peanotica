@@ -66,6 +66,7 @@ CovDCommutatorRelations::usage = "CovDCommutatorRelations[expr, covd, commu]";
 
 (* perturbation *)
 DefPerturbationOperator::usage = "DefPerturbationOperator[symbol]";
+DefTensorPerturbation::usage = "DefTensorPerturbation[pert, name, slots]";
 VarInverseMatrix::usage = "VarInverseMatrix[invMat[a, b], varmat, order]";
 PredefinedSlotType;
 PredefinedCovD;
@@ -307,7 +308,7 @@ DefParametreDerivativeOperator[sym_, opt : OptionsPattern[]] := (
     sym[NITensor[expr_, inds_], v__] := NITensor[sym[expr, v], inds];
     sym /: FindIndicesSlots[sym[expr_, __]] := FindIndicesSlots[expr, {1}];
     sym /: SymmetryOfExpression[sym[expr_, __]] := SymmetryOfExpression@expr;
-    sym /: SumPassThroughQ[_sym, _] = True;
+    sym /: SumPassThroughQ[sym[expr_, __], pos_] := If[pos[[1]] === 1, SumPassThroughQ[expr, Delete[pos, 1]], True];
     If[OptionValue@AllowPassThrough,
         sym /: ExpressionPassThroughQ[sym[expr_, v__], tensor_, pos_] := Switch[pos[[1]],
             1, sym[tensor, v] === 0 && ExpressionPassThroughQ[expr, tensor, Delete[pos, 1]],
@@ -553,6 +554,10 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
     ];
 );
 SyntaxInformation@DefPerturbationOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+
+(* DefTensorPerturbation[pert_, name_, slots_] := (
+    pert[name[inds__], n_] := 
+); *)
 
 DefCovdPerturbationRules[pert_, cd_, metric_] := With[{
     covdPert = pert@cd,
