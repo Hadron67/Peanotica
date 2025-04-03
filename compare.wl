@@ -36,7 +36,6 @@ TestRiemannMonomialCanon[n_, freen_, testPerm_, opt : OptionsPattern[]] := Modul
     If[peanoticaResult[[1]] === $Failed, Abort[]];
     {peanoticaResult[[1]], xPermResult[[1]]}
 ];
-(* SetPPermVerbose[True]; *)
 (* TestRiemannMonomialCanon[2, 4, {1, 4, 2, 3, 7, 6, 8, 5}]; *)
 PPermOpenLogFile["hkm.txt"];
 SetOptions[Peanotica`Perm`DoubleCosetRepresentative, PPermVerbose -> True];

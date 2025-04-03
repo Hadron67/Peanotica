@@ -25,7 +25,7 @@ DerFunctions;
 DerivativeExpandableQ;
 ExpandDerivative;
 ExpandDerivativeWithRest;
-ExpandDerivativeRules;
+ExpandDerivativeRules::usage = "ExpandDerivativeRules[lhs :> rhs]";
 
 SymmetriedDer;
 AllowPassThrough;
@@ -33,7 +33,6 @@ DefParametreDerivativeOperator::usage = "DefParametreDerivativeOperator[optr]";
 DerParameters::usage = "DerParameters is an option for DefParametreDerivativeOperator";
 DefTensorDerivativeOperator::usage = "DefTensorDerivativeOperator[op, slotType, symmetry].";
 
-CBTensor::usage = "CBTensor[expr, slots]";
 NICovD::usage = "NICovD[expr, a, value]";
 NIChristoffel::usage = "NIChristoffel[value, slot1, slot2]";
 ITensorCovD::usage = "ITensorCovD[expr, value, inds, ind]";
@@ -49,6 +48,8 @@ RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
 CoRiemannValue::usage = "CoRiemannValue[]";
 SymmetricRiemann::usage = "SymmetricRiemann[metric, a, b, c, d]";
 SymmetricRiemannETensor::usage = "SymmetricRiemannETensor[metric]";
+RiemannPdFromPdSpec::usage = "RiemannPdFromPdSpec[pds]";
+PdArrayFromPdSpec::usage = "PdArrayFromPdSpec[pds]";
 
 RiemannToRicciRules::usage = "RiemannToRicciRules[riemann, ricci]";
 RicciToRicciScalarRules::usage = "RicciToRicciScalarRules[ricci, ricciScalar]";
@@ -491,7 +492,7 @@ AdaptNITensor[value_, slots_, inds_, adapter_] := With[{
 ]]];
 SyntaxInformation@AdaptNITensor = {"ArgumentsPattern" -> {_, _, _, _}};
 
-AdaptNITensorCovD[e_NITensor, covdInd_, slot_, covdValue_, metricProvider_] := AdaptNITensorCovD2[
+AdaptNITensorCovD[e_, covdInd_, slot_, covdValue_, metricProvider_] := AdaptNITensorCovD2[
     NITensorReduce@e, covdInd, slot, covdValue, metricProvider
 ];
 AdaptNITensorCovD2[NITensor[tensor_, inds_], covdInd_, slot_, covdValue_, metricProvider_] := With[{
@@ -522,12 +523,11 @@ RiemannDifferenceValue[slot_, cd_, chris_] := RiemannDifference[
 SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};
 
 SymmetricRiemann[metric_, {a_, b_, c_, d_}] := metric[a, c]metric[b, d] - metric[a, d]metric[b, c];
+SymmetricRiemann[metric][inds__] := SymmetricRiemann[metric, {inds}];
 SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _}};
 
 SymmetricRiemannETensor[metric_] := ETensor[SymmetricRiemann[metric, {DI@a, DI@b, DI@c, d}], {a, b, c, d}];
 SyntaxInformation@SymmetricRiemannETensor = {"ArgumentsPattern" -> {_}};
-
-CBTensor::unmatchedSlots = "";
 
 Options@DefPerturbationOperator = Join[Options@ExpandDerivativeRules, {
     DisplayName -> "\[Delta]"
@@ -555,9 +555,42 @@ DefPerturbationOperator[symbol_, opt : OptionsPattern[]] := (
 );
 SyntaxInformation@DefPerturbationOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
-(* DefTensorPerturbation[pert_, name_, slots_] := (
-    pert[name[inds__], n_] := 
-); *)
+RiemannPdFromPdSpec$One[length_, pos_, {"Pd", _}, {"Pd", _}] := ConstantArray[0, {length, length}];
+RiemannPdFromPdSpec$One[length_, pos_, {"Pd", pd_}, {"CovD", cd_, data_}] := With[{
+    metric = data["Metric"],
+    pos2 = pos[[2]]
+}, SparseArray[{
+    {pos2, pos2} -> If[Head@metric =!= Missing,
+        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {Null, a, b, c}]
+    ,
+        0
+    ]
+}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"Pd", pd_}] := With[{
+    metric = data["Metric"],
+    pos2 = pos[[1]]
+}, SparseArray[{
+    {pos2, pos2} -> If[Head@metric =!= Missing,
+        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {a, Null, b, c}]
+    ,
+        0
+    ]
+}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"CovD", cd_, __}] := With[{
+    riemann = data["Riemann"]
+}, SparseArray[{pos -> If[Head@riemann =!= Missing, ETensor[riemann[DI@a, DI@b, DI@c, d], {a, b, c, d}], 0]}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, _, _] := ConstantArray[0, {length, length}];
+RiemannPdFromPdSpec[pds_] := With[{
+    arr = MapIndexed[{#1, #2[[1]]} &, pds],
+    length = Length@pds
+}, Outer[RiemannPdFromPdSpec$One[length, {#1[[2]], #2[[2]]}, #1[[1]], #2[[1]]] &, arr, arr, 1]];
+SyntaxInformation@RiemannPdFromPdSpec = {"ArgumentsPattern" -> {_}};
+
+PdArrayFromPdSpec[pds_] := Replace@{
+    {"Pd", pd_} :> ETensor[pd, {Null}],
+    {"CovD", cd_, ___} :> ETensor[cd[Null, DI@a], {a}]
+} /@ pds;
+SyntaxInformation@PdArrayFromPdSpec = {"ArgumentsPattern" -> {_}};
 
 DefCovdPerturbationRules[pert_, cd_, metric_] := With[{
     covdPert = pert@cd,
@@ -693,8 +726,8 @@ SyntaxInformation@ExpandCovDPerturbation = {"ArgumentsPattern" -> {_, _.}};
 
 ExpandRiemannPerturbation[expr_, metricPertArgs : {pert_, metric_, metricPert_}, {cd_, riemann_, ricci_, ricciScalar_}] := expr /. {
     HoldPattern@pert[ricciScalar, n_] :> With[{
-        a = GetUniqueIndexOfSlotType@Null, b = GetUniqueIndexOfSlotType@Null
-    }, pert[metric[a, b] * ricci[DI@a, DI@b], n]],
+        a = UInd[], b = UInd[]
+    }, IndexScope[pert[metric[a, b] * ricci[DI@a, DI@b], n]]],
     HoldPattern@pert[e_riemann, n_] :> pert[SeparateMetricOne[e, {-1, -1, -1, 1}], n],
     HoldPattern@pert[e_ricci, n_] :> pert[SeparateMetricOne[e, {-1, -1}], n]
 } /. {

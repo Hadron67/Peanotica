@@ -85,3 +85,15 @@ VerificationTest[
     ITensorOuter[Times, ETensor[ricciMf[LabelI[1], LabelI[2]], {Null, Null}], ETensor[ricciMf[LabelI[1], LabelI[2]], {Null, Null}], {}],
     ETensor[ricciMf[LabelI[1], LabelI[2]] ^ 2, {Null, Null, Null, Null}]
 ];
+
+DefSimpleTensor[p, {mf}, {}];
+
+VerificationTest[
+    g1mf[DI@a, DI@b] /. MakeIndexRule[g1mf[a, b] -> p[a]p[b]p[c]p[DI@c], {a, b}] // ITensorReduce,
+    p[DI@a]p[DI@b]p[c]p[DI@c]
+];
+
+VerificationTest[
+    MakeIndexFunction[p[a]p[b]p[c]p[DI@c], {a, b}][DI@a, a] // ITensorReduce,
+    p[a]p[DI@a]p[b]p[DI@b]
+];

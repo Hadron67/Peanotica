@@ -192,6 +192,8 @@ ETensorArray::usage = "ETensorArray[fn, {inds1, inds2, ...}]";
 WrapETensor::usage = "WrapETensor[ETensor[...], slots]";
 ExpandedGDelta::usage = "ExpandedGDelta[metric, inds]";
 
+ITensorRowReduce::usage = "ITensorRowReduce[tensor]";
+
 $PThrowOnError = False;
 
 Begin["`Private`"];
@@ -224,6 +226,7 @@ SyntaxInformation@SeparateIndexName = {"ArgumentsPattern" -> {_}};
 
 IndexToBox[a_Symbol] := SymbolName@a;
 IndexToBox[a_] := MakeBoxes@a;
+IndexToBox[Verbatim[Pattern][symbol_Symbol, Blank[]]] := SymbolName@symbol <> "_";
 SetAttributes[IndexToBox, HoldAll];
 
 IndexBoxForm[a_] := MapAt[IndexToBox, SeparateIndexName[a], 1];
@@ -509,10 +512,13 @@ ImposeSymmetry[expr_, inds_, genset_] := With[{
 ];
 SyntaxInformation@ImposeSymmetry = {"ArgumentsPattern" -> {_, _, _}};
 
-ExpandScalarIndexScope[expr_] := expr //. {
-    HoldPattern@Power[IndexScope[expr2_], n_] :> Times @@ Table[ReplaceDummiesToUnique@expr2, n],
-    HoldPattern@IndexScope[expr2_] :> ReplaceDummiesToUnique@expr2
-};
+ExpandScalarIndexScope[expr_Plus] := ExpandScalarIndexScope /@ expr;
+ExpandScalarIndexScope[expr_Times] := ExpandScalarIndexScope /@ expr;
+ExpandScalarIndexScope[expr_List] := ExpandScalarIndexScope /@ expr;
+ExpandScalarIndexScope[Power[expr_, n_?IntegerQ]] := Times @@ Table[ExpandScalarIndexScope@expr, n] /; n > 0;
+ExpandScalarIndexScope[ETensor[expr_, inds_]] := ETensor[ExpandScalarIndexScope@expr, inds];
+ExpandScalarIndexScope[HoldPattern@IndexScope@expr_] := ExpandScalarIndexScope@ReplaceDummiesToUnique[expr];
+ExpandScalarIndexScope[expr_] := expr;
 SyntaxInformation@ExpandScalarIndexScope = {"ArgumentsPattern" -> {_}};
 
 MapScalarIndexScopes[fn_, expr_] := expr /. HoldPattern@IndexScope@expr2_ :> IndexScope@fn@expr2;
@@ -595,7 +601,9 @@ Options[DefTensorFormatings] = Union[Options[TensorGridBox], {
     DisplayName -> Automatic
 }];
 ConverTFLabelSlotFormatingRule[{TFLabelSlot, sym_}] := Hold@{{MakeBoxes@sym, IndexNameSlot}};
+ConverTFLabelSlotFormatingRule[{DI@TFLabelSlot, sym_}] := Hold@{{MakeBoxes@sym, DI@IndexNameSlot}};
 ConverTFLabelSlotFormatingRule[{TFLabelSlot[left_, right_], sym_}] := Hold@{{RowBox@{left, MakeBoxes@sym, right}, IndexNameSlot}};
+ConverTFLabelSlotFormatingRule[{DI@TFLabelSlot[left_, right_], sym_}] := Hold@{{RowBox@{left, MakeBoxes@sym, right}, DI@IndexNameSlot}};
 ConverTFLabelSlotFormatingRule[{_, sym_}] := Hold@{IndexBoxForm@sym};
 ConverTFLabelSlotFormatingRule[{TFFunctionSlot, _}] = Nothing;
 DefineTensorFormating0[symbol_, {patterns___}, Hold@{inds___}, Hold@{fnArgs___}] := (
@@ -629,6 +637,7 @@ DefTensorFormatings[symbol_, slots_List, opt : OptionsPattern[]] := With[{
 SyntaxInformation@DefTensorFormatings = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}};
 
 Options[DefSimpleTensor] = Options@DefTensorFormatings;
+NonIndexSlotQ[DI@expr_] := NonIndexSlotQ@expr;
 NonIndexSlotQ[expr_] := MatchQ[expr, TFFunctionSlot | TFLabelSlot | _TFLabelSlot];
 DefSimpleTensor[sym_, slots_, symmetry_, opt : OptionsPattern[]] := With[{
     slotsAndPos = MapIndexed[If[NonIndexSlotQ@#1, Nothing, #2 -> #1] &, slots]
@@ -674,7 +683,7 @@ MetricOfSlotType /: ContractableMetricQ@MetricOfSlotType[_][_, _] = True;
 MetricOfSlotType /: MakeBoxes[expr : MetricOfSlotType[type_], StandardForm] := Function[{arg}, InterpretationBox[arg, expr]]@MakeBoxes["g"[type]];
 MetricOfSlotType /: MakeBoxes[expr : MetricOfSlotType[type_][a_, b_], StandardForm] := TensorInterpretationBox[
     expr,
-    With[{n = SeparateIndexName /@ {a, b}},
+    With[{n = IndexBoxForm /@ {a, b}},
         TensorGridBox[
             MakeBoxes[#[type], StandardForm] &@If[Sort@n[[All, 2]] === $IndexPairPattern, "\[Delta]", "g"],
             n,
@@ -1450,58 +1459,52 @@ ReplaceDummiesToUnique[expr_, frees_List] := With[{
 ReplaceDummiesToUnique[expr_] := ReplaceDummiesToUnique[expr, {}];
 SyntaxInformation@ReplaceDummiesToUnique = {"ArgumentsPattern" -> {_, _.}};
 
+MakeIndexRule$UnwrapDoubleHoldPattern[Verbatim[HoldPattern]@expr_HoldPattern] := expr;
+MakeIndexRule$UnwrapDoubleHoldPattern[expr_HoldPattern] := expr;
 MakeIndexRule$ConstructRule[lhs_, Hold@withArgs_, Hold@rhs_] := If[Hold@withArgs === Hold@{},
-    lhs -> rhs
+    lhs :> rhs
 ,
     lhs :> With[withArgs, rhs]
 ];
-WrapHoldPattern[expr_] := If[Head@expr === HoldPattern, expr, HoldPattern@expr];
-MakeIndexRule[expr_List, frees_] := MakeIndexRule[#, frees] & /@ expr;
-MakeIndexRule[lhs_ -> rhs_, frees_] := MakeIndexRule[lhs :> rhs, frees];
-MakeIndexRule[lhs_ :> rhs_, frees_] := With[{
+MakeIndexRule[expr_, frees_] := MakeIndexRule[expr, frees, {}];
+MakeIndexRule[expr_List, args__] := MakeIndexRule[#, args] & /@ expr;
+MakeIndexRule[lhs_ -> rhs_, args__] := MakeIndexRule[lhs :> rhs, args];
+MakeIndexRule[lhs_ :> rhs_, frees_, others_] := With[{
     lhsInds = FindAllIndicesNames@lhs,
     rhsInds = FindAllIndicesNames@rhs
 }, With[{
-    rhsDummies = Complement[Keys@rhsInds, frees]
+    rhsDummies = Complement[Keys@rhsInds, Join[frees, others]]
 }, With[{
     tmpSymbols = GetInternalSymbols[Length@rhsDummies + Length@frees]
 }, With[{
     freeRenames = Association@Thread[frees -> Take[tmpSymbols, Length@frees]],
     dummyRenames = Association@Thread[rhsDummies -> Drop[tmpSymbols, Length@frees]]
 }, MakeIndexRule$ConstructRule[
-    ReplacePart[WrapHoldPattern@lhs, Join @@ (Thread[(Prepend[1] /@ lhsInds[#][[All, 3]]) -> Pattern[Evaluate@freeRenames@#, Blank[]]] & /@ frees)],
+    MakeIndexRule$UnwrapDoubleHoldPattern@ReplacePart[HoldPattern@lhs, Join @@ (Thread[(Prepend[1] /@ lhsInds[#][[All, 3]]) -> Pattern[Evaluate@freeRenames@#, Blank[]]] & /@ frees)],
     JoinHold2[Hold@{# = UInd[]} & /@ Values@dummyRenames],
-    ReplacePart[Hold@rhs, Join @@ KeyValueMap[{key, value} |->
-        With[{
-            dummy = dummyRenames@key
-        }, If[Head@dummy === Missing,
-            Thread[(Prepend[1] /@ value[[All, 3]]) -> freeRenames@key]
-        ,
-            Prepend[#3, 1] -> (#1 /. IndexNameSlot -> dummy) & @@@ value
-        ]],
-        rhsInds
+    ReplacePart[Hold@rhs, Join @@ Join[
+        KeyValueMap[{old, new} |-> Prepend[#3, 1] -> (#1 /. IndexNameSlot -> new) & @@@ rhsInds@old, dummyRenames],
+        KeyValueMap[{old, new} |-> Thread[(Prepend[1] /@ rhsInds[old][[All, 3]]) -> new], freeRenames]
     ]]
 ]]]]];
-SyntaxInformation@MakeIndexRule = {"ArgumentsPattern" -> {_, _}};
+SyntaxInformation@MakeIndexRule = {"ArgumentsPattern" -> {_, _, _.}};
 
 MakeIndexFunction$ConstructFunction[Hold@body_, Hold@withArgs_] := If[Hold@withArgs === Hold@{}, Function@body, Function@With[withArgs, body]];
-MakeIndexFunction[expr_, frees_] := With[{
+MakeIndexFunction[expr_, frees_] := MakeIndexFunction[expr, frees, {}];
+MakeIndexFunction[expr_, frees_, otherInds_] := With[{
     inds = FindAllIndicesNames@expr
 }, With[{
     freeRenames = Association@MapIndexed[#1 -> Slot @@ #2 &, frees],
-    dummyRenames = With[{d = Complement[Keys@inds, frees]}, Association@Thread[d -> GetInternalSymbols@Length@d]]
+    dummyRenames = With[{d = Complement[Keys@inds, Join[frees, otherInds]]}, Association@Thread[d -> GetInternalSymbols@Length@d]]
 }, MakeIndexFunction$ConstructFunction[
-    ReplacePart[Hold@expr, Join @@ KeyValueMap[{key, value} |-> With[{
-        dummy = dummyRenames@key
-    }, If[Head@dummy === Missing,
-        Thread[(Prepend[1] /@ value[[All, 3]]) -> freeRenames@key]
-    ,
-        Prepend[#3, 1] -> (#1 /. IndexNameSlot -> dummy) & @@@ value
-    ]], inds]]
+    ReplacePart[Hold@expr, Join @@ Join[
+        KeyValueMap[{old, new} |-> Prepend[#3, 1] -> (#1 /. IndexNameSlot -> new) & @@@ inds@old, dummyRenames],
+        KeyValueMap[{old, new} |-> Thread[(Prepend[1] /@ inds[old][[All, 3]]) -> new], freeRenames]
+    ]]
 ,
     JoinHold2[Hold@{# = UInd[]} & /@ Values@dummyRenames]
 ]]];
-SyntaxInformation@MakeIndexFunction = {"ArgumentsPattern" -> {_, _}};
+SyntaxInformation@MakeIndexFunction = {"ArgumentsPattern" -> {_, _, _.}};
 
 WrapIntoFunction[inner_, Hold@{args__}] := Function[inner[args]];
 ToIndexFunction[expr_, frees_] := With[{
@@ -1866,14 +1869,15 @@ NITensorReduce[expr_] := NITensorReduce[expr, Automatic];
 NITensorReduce[prod_?ProductQ[args__], frees_] := ReduceNITensorContractions[prod, {args}, frees];
 NITensorReduce[t_NITensor, frees_] := ContractOneNITensor[t, frees];
 NITensorReduce[expr_Plus, frees_] := With[{
-    ret = Catch@UncatchedCombineSummedNITensor[NITensorReduce[#, frees] & /@ expr]
+    ret = Catch@NITensorReduce$CombineSummedNITensor[NITensorReduce[#, frees] & /@ expr]
 }, ret /; ret =!= Err];
 NITensorReduce[HoldPattern@IndexScope@expr_, frees_] := IndexScope@NITensorReduce[expr, {}];
 NITensorReduce::unknown = "No rule to transform indexed expression `1`.";
+NITensorReduce[expr_?AtomQ, _] := NITensor[expr, {}];
 NITensorReduce[expr_, _] := With[{
     inds = FindAllIndicesNames@expr
 }, If[Length@inds === 0,
-    NITensor[expr, {}]
+    NITensor[NITensorReduceExtract[Head[expr], {}] @@ (NITensorReduceExtract[#, {}] & /@ List @@ expr), {}]
 ,
     Message[NITensorReduce::unknown, HoldForm@expr];
     NITensor[Hold@expr, Keys@inds]
@@ -2019,7 +2023,7 @@ ReduceNITensorContractions[prod_, factors_, frees_] := With[{
 },
     Nest[ReduceNITensorContractionsStep[prod, #, frees] &, factors2, Length@factors2 - 1][[1]]
 ]];
-UncatchedCombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := With[{
+NITensorReduce$CombineSummedNITensor[head_[NITensor[first_, firstInds_], rest__]] := With[{
     inds = OneIndexOfNITensor /@ firstInds
 }, NITensor[head @@ Prepend[
     With[{
@@ -2063,8 +2067,21 @@ ExpandedGDelta[metric_, inds_List] := With[{
     factor = Factorial[Length@inds / 2]
 },
     Total[Signature@# / factor * Times @@ MapThread[metric, {inds1[[1]], Permute[inds1[[2]], #]}] & /@ Permutations@Range[Length@inds / 2]]
-];
+] /; EvenQ[Length@inds];
 SyntaxInformation@ExpandedGDelta = {"ArgumentsPattern" -> {_, _}};
+
+ITensorRowReduce$OneRow[arr_, row_]
+ITensorRowReduce[]
+
+TermToList[expr_] := If[Head@expr === Times, List @@ expr, {expr}];
+
+ITensorInverse::failed = "Cannot invert tensor `1`.";
+ITensorInverse$FindStructure[expr_, a_, b_] := With[{
+    factors = TermToList@expr
+}, With[{
+    indsByFactor = GroupBy[Keys @* FindAllIndicesNames /@ factors, Length]
+}]];
+ITensorInverse[ETensor[expr_, {a_, b_}]];
 
 End[];
 

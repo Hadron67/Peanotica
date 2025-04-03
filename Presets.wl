@@ -1,4 +1,4 @@
-BeginPackage["Peanotica`Presets`", {"Peanotica`Core`", "Peanotica`DiffGeo`"}];
+BeginPackage["Peanotica`Presets`", {"Peanotica`Core`", "Peanotica`DiffGeo`", "Peanotica`Perm`"}];
 
 Scan[Unprotect@#; ClearAll@#; &, Names@{"Peanotica`Presets`*"}];
 
@@ -15,6 +15,10 @@ MakeMetricAdapter::usage = "MakeMetricAdapter[symbols, values]";
 MakeCurvatureValueRules::usage = "MakeCurvatureValueRules[symbols, values]";
 MakeTensorValueRules::usage = "MakeTensorValueRules[symbols, values]";
 DefLabelledTensor::usage = "DefLabelledTensor[name, slots, symmetry]";
+VarCovDs::usage = "VarCovDs is an option for DefTensorVariationOperator.";
+VarParamDs::usage = "VarParamDs is an option for DefTensorVariationOperator.";
+DefTensorVariationOperator::usage = "DefTensorVariationOperator[name]";
+DefScalarFunction::usage = "DefScalarFunction[name]";
 
 Begin["`Private`"];
 
@@ -83,9 +87,11 @@ Options@ComputeCurvature = {
 ComputeCurvature[input_, opt: OptionsPattern[]] := With[{
     metric = input["Metric"],
     metricInv = input["InverseMetric"],
-    pd = input["Pd"],
-    subRiemann = Lookup[input, "PdRiemann", 0],
+    pdSpec = input["PdSpec"],
     postCompute = OptionValue@PostCurvatureCompute
+}, With[{
+    pd = If[Head@pdSpec =!= Missing, PdArrayFromPdSpec@pdSpec, input["Pd"]],
+    subRiemann = If[Head@pdSpec =!= Missing, RiemannPdFromPdSpec@pdSpec, Lookup[input, "RiemannPd", 0]]
 }, With[{
     chris = postCompute@LeviCivitaChristoffelValue[Null, {pd, 0}, metric, metricInv]
 }, With[{
@@ -95,11 +101,13 @@ ComputeCurvature[input_, opt: OptionsPattern[]] := With[{
 }, With[{
     ricciScalar = postCompute@ITensorSum[ITensorTranspose[ITensorFixedContract[Times, metricInv, ricci, 1, 1], {1, 1}], {1}]
 }, Join[input, <|
+    "Pd" -> pd,
+    "RiemannPd" -> subRiemann,
     "Christoffel" -> chris,
     "Riemann" -> riemann,
     "Ricci" -> ricci,
     "RicciScalar" -> ricciScalar
-|>]]]]]];
+|>]]]]]]];
 SyntaxInformation@ComputeCurvature = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
 
 MakeMetricAdapter[syms_, values_] := MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}};
@@ -107,6 +115,7 @@ SyntaxInformation@MakeMetricAdapter = {"ArgumentsPattern" -> {_, _}};
 
 MakeCurvatureValueRules[syms_, values_] := With[{
     slot = syms["Slot"],
+    gpd = values["PdInfo"],
     mat = MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}},
     metric = syms["Metric"],
     covd = syms["CovD"],
@@ -130,16 +139,59 @@ MakeCurvatureValueRules[syms_, values_] := With[{
 }, MakeTensorValueRules[syms, values, KeySelect[values, Head@# === Symbol &]]]];
 SyntaxInformation@MakeCurvatureValueRules = {"ArgumentsPattern" -> {_, _}};
 
-ConvertOneTensorRule[mat_][name_, {value_, slots_}] := name[inds__] :> AdaptNITensor[value, slots, {inds}, mat];
+MakeTensorValueRules$OneRule[mat_][name_, {value_, slots_}] := name[inds__] :> AdaptNITensor[value, slots, {inds}, mat];
 MakeTensorValueRules[syms_, values_, tensors_] := With[{
     slot = syms["Slot"],
     mat = MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}}
-}, KeyValueMap[ConvertOneTensorRule[mat], tensors]];
+}, KeyValueMap[MakeTensorValueRules$OneRule[mat], tensors]];
 SyntaxInformation@MakeTensorValueRules = {"ArgumentsPattern" -> {_, _}};
 
 Options@DefLabelledTensor = Options@DefSimpleTensor;
 DefLabelledTensor[name_, slots_, sym_, opt : OptionsPattern[]] := DefSimpleTensor[name, Prepend[slots, TFLabelSlot["(", ")"]], sym, opt];
 SyntaxInformation@DefLabelledTensor = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}};
+
+Options@DefTensorVariationOperator = Join[Options@ExpandDerivativeRules, {
+    VarCovDs -> {},
+    VarParamDs -> {}
+}];
+DefTensorVariationOperator$TensorD[perms_List, args__] := Total[DefTensorVariationOperator$TensorD[#, args] & /@ perms] / Length@perms;
+DefTensorVariationOperator$TensorD[a_ * perm_Images, args__] := a * DefTensorVariationOperator$TensorD[perm, args];
+DefTensorVariationOperator$TensorD[Images[perm__], metrics_, inds1_, inds2_] := Times @@ MapThread[Construct, {metrics, inds1, Permute[inds2, {perm}]}];
+DefTensorVariationOperator[name_, opt : OptionsPattern[]] := (
+    SetDelayed @@@ ExpandDerivativeRules[name[expr_?DerivativeExpandableQ, var_, rest_] :> ExpandDerivativeWithRest[name[#1, var, #2 * rest] &, expr], FilterRules[{opt}, Options@ExpandDerivativeRules]];
+    name[expr_, var_] := name[expr, var, 1];
+    name[var_][expr_] := name[expr, var];
+    Scan[name[Pattern[cd, #1][expr_, a_], var_, rest_] := name[expr, var, -cd[rest, a]]; &, OptionValue@VarCovDs];
+    Scan[name[Pattern[paramd, #1][expr_, params__], var_, rest_] := name[expr, var, Power[-1, Length@{params}] * paramd[rest, params]]; &, OptionValue@VarParamDs];
+    name[var_, var_, rest_] := rest;
+    name[tensor_[inds1__], expr : tensor_[inds2__], rest_] := With[{
+        indPos = FindIndicesSlots@tensor@inds2,
+        symmetry = SymmetryOfExpression@tensor@inds2
+    }, With[{
+        restPos = Delete[Range@Length@{inds1}, indPos[[All, 1]]]
+    }, If[Extract[{inds1}, restPos] === Extract[{inds2}, restPos],
+        rest * DefTensorVariationOperator$TensorD[
+            PPermGroupElements@symmetry,
+            MetricOfSlotType /@ indPos[[All, 2]],
+            Extract[{inds1}, indPos[[All, 1]]],
+            Extract[{inds2}, indPos[[All, 1]]]
+        ]
+    ,
+        0
+    ]]] /; Length@{inds1} === Length@{inds2};
+    name[_, _, _] = 0;
+    SyntaxInformation@name = {"ArgumentsPattern" -> {_, _., _.}};
+);
+SyntaxInformation@DefTensorVariationOperator = {"ArgumentsPattern" -> {_, OptionsPattern[]}};
+
+DefScalarFunction[name_, displayName_] := (
+    DerFunctionQ[name] ^= True;
+    If[displayName =!= None, name /: MakeBoxes[name, StandardForm] = InterpretationBox[displayName, name]];
+);
+SetAttributes[DefScalarFunction, Listable];
+SyntaxInformation@DefScalarFunction = {"ArgumentsPattern" -> {_, _}};
+
+JoinSymbolName[str_, symbol_Symbol] := Context@symbol <> str <> SymbolName@symbol;
 
 End[];
 
