@@ -492,7 +492,7 @@ AdaptNITensor[value_, slots_, inds_, adapter_] := With[{
 ]]];
 SyntaxInformation@AdaptNITensor = {"ArgumentsPattern" -> {_, _, _, _}};
 
-AdaptNITensorCovD[e_, covdInd_, slot_, covdValue_, metricProvider_] := AdaptNITensorCovD2[
+AdaptNITensorCovD[e_NITensor, covdInd_, slot_, covdValue_, metricProvider_] := AdaptNITensorCovD2[
     NITensorReduce@e, covdInd, slot, covdValue, metricProvider
 ];
 AdaptNITensorCovD2[NITensor[tensor_, inds_], covdInd_, slot_, covdValue_, metricProvider_] := With[{

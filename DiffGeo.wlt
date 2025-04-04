@@ -32,9 +32,7 @@ DerFunctionQ[f] ^= True;
 cdmx[r, _] ^= 0;
 cdmx[t, _] ^= 0;
 
-DefParametreDerivativeOperator[paramd];
-paramd[r, v_] := Boole[r === v];
-paramd[t, v_] := Boole[t === v];
+DefParametreDerivativeOperator[paramd, DerParameters -> {t, r}];
 paramd[g1mx[_, _], _] = 0;
 
 gssMetric = SparseArray[{

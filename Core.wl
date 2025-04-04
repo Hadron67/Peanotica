@@ -1,6 +1,6 @@
 BeginPackage["Peanotica`Core`", {"Peanotica`Internal`", "Peanotica`Perm`"}];
 
-Scan[Unprotect@#; ClearAll@#; &, Names@{"Peanotica`Core`*"}];
+Quiet@Scan[Unprotect@#; ClearAll@#; &, DeleteCases[Names@{"Peanotica`Core`*"}, HoldPattern@$TempIndexNumber]];
 
 PeanoticaGeneral;
 (* interface *)
@@ -1866,27 +1866,29 @@ GetINTensorIndexNames[NITensor[_, inds_]] := OneIndexOfNITensor /@ inds;
 GetINTensorIndexNames[_] = {};
 NITensorReduce::incompatinds = "Cannot combine NITensors `1` and `2` with different indices.";
 NITensorReduce[expr_] := NITensorReduce[expr, Automatic];
-NITensorReduce[prod_?ProductQ[args__], frees_] := ReduceNITensorContractions[prod, {args}, frees];
-NITensorReduce[t_NITensor, frees_] := ContractOneNITensor[t, frees];
-NITensorReduce[expr_Plus, frees_] := With[{
-    ret = Catch@NITensorReduce$CombineSummedNITensor[NITensorReduce[#, frees] & /@ expr]
+NITensorReduce[expr_, frees_] := NITensorReduce[expr, frees, Null];
+(* we cannot call NITensorReduce recursively here since the free indices are different for each factor *)
+NITensorReduce[prod_?ProductQ[args__], frees_, reducer_] := ReduceNITensorContractions[prod, {args}, frees, reducer];
+NITensorReduce[t_NITensor, frees_, reducer_] := ContractOneNITensor[t, frees];
+NITensorReduce[expr_Plus, frees_, reducer_] := With[{
+    ret = Catch@NITensorReduce$CombineSummedNITensor[NITensorReduce[#, frees, reducer] & /@ expr]
 }, ret /; ret =!= Err];
-NITensorReduce[HoldPattern@IndexScope@expr_, frees_] := IndexScope@NITensorReduce[expr, {}];
+NITensorReduce[HoldPattern@IndexScope@expr_, frees_, reducer_] := IndexScope@NITensorReduce[expr, {}, reducer];
 NITensorReduce::unknown = "No rule to transform indexed expression `1`.";
-NITensorReduce[expr_?AtomQ, _] := NITensor[expr, {}];
-NITensorReduce[expr_, _] := With[{
+NITensorReduce[expr_?AtomQ, _, _] := NITensor[expr, {}];
+NITensorReduce[expr_, _, reducer_] := With[{
     inds = FindAllIndicesNames@expr
 }, If[Length@inds === 0,
-    NITensor[NITensorReduceExtract[Head[expr], {}] @@ (NITensorReduceExtract[#, {}] & /@ List @@ expr), {}]
+    NITensor[NITensorReduceExtract[Head[expr], {}, reducer] @@ (NITensorReduceExtract[#, {}, reducer] & /@ List @@ expr), {}]
 ,
     Message[NITensorReduce::unknown, HoldForm@expr];
     NITensor[Hold@expr, Keys@inds]
 ]];
-SyntaxInformation@NITensorReduce = {"ArgumentsPattern" -> {_, _.}};
+SyntaxInformation@NITensorReduce = {"ArgumentsPattern" -> {_, _., _.}};
 
-NITensorReduceExtract[expr_, inds_] := ExtractNITensor[NITensorReduce[expr, inds], inds];
-NITensorReduceExtract[inds_][expr_] := NITensorReduceExtract[expr, inds];
-SyntaxInformation@NITensorReduceExtract = {"ArgumentsPattern" -> {_, _.}};
+NITensorReduceExtract[expr_, inds_, reducer_] := ExtractNITensor[NITensorReduce[expr, inds, reducer], inds];
+NITensorReduceExtract[inds_, reducer_][expr_] := NITensorReduceExtract[expr, inds, reducer];
+SyntaxInformation@NITensorReduceExtract = {"ArgumentsPattern" -> {_, _, _.}};
 
 PermutationOfMergeIndices[inds_, n_] := With[{
     firstIndToIndGroup = Association @@ (Min @@ # -> # & /@ inds)
@@ -2011,12 +2013,12 @@ AbsorbNonNITensor[prod_, factors_] := NestWhile[
 ][[1]];
 WrapScalarInNITensor[e_NITensor] := e;
 WrapScalarInNITensor[e_] := NITensor[e, {}];
-ReduceNITensorContractions[prod_, factors_, frees_] := With[{
+ReduceNITensorContractions[prod_, factors_, frees_, reducer_] := With[{
     indsByArgs = Keys@FindAllIndicesNames@# & /@ factors
 }, With[{
     factors2 = AbsorbNonNITensor[
         prod, WrapScalarInNITensor /@ MapThread[
-            NITensorReduce,
+            NITensorReduce[#1, #2, reducer] &,
             {factors, If[frees === Automatic, ConstantArray[Automatic, Length@factors], FreesByArgs[frees, indsByArgs]]}
         ]
     ]

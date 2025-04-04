@@ -20,6 +20,10 @@ VarParamDs::usage = "VarParamDs is an option for DefTensorVariationOperator.";
 DefTensorVariationOperator::usage = "DefTensorVariationOperator[name]";
 DefScalarFunction::usage = "DefScalarFunction[name]";
 
+StoredTensorData::usage = "StoredTensorData[name, tags...]";
+PopulateCurvatureTReducerRules::usage = "PopulateCurvatureTReducerRules[name, manifoldInfo, values, slot]";
+MetricAdapterOfTReducer::usage = "MetricAdapterOfTReducer[name]";
+
 Begin["`Private`"];
 
 Options@SetupRiemannManifold = {
@@ -138,6 +142,63 @@ MakeCurvatureValueRules[syms_, values_] := With[{
     ricciScalar -> ricciScalarValue
 }, MakeTensorValueRules[syms, values, KeySelect[values, Head@# === Symbol &]]]];
 SyntaxInformation@MakeCurvatureValueRules = {"ArgumentsPattern" -> {_, _}};
+
+StoredTensorData[__] = Null;
+SyntaxInformation@StoredTensorData = {"ArgumentsPattern" -> {__}};
+
+MetricAdapterOfTReducer[name_] := MetricAdapter[Replace@{
+    HoldPattern[Verbatim[HoldPattern][StoredTensorData[name, "Metric", metric_]] :> {slot_, metricValue_, metricInvValue_}] :> (slot -> {metricValue, metricInvValue}),
+    _ -> Nothing
+} /@ UpValues[name]];
+SyntaxInformation@MetricAdapterOfTReducer = {"ArgumentsPattern" -> {_}};
+
+PopulateCurvatureTReducerRules[name_, syms_, values_] := PopulateCurvatureTReducerRules[name, syms, values, syms["Slot"]];
+PopulateCurvatureTReducerRules[name_Symbol, syms_, values_, slot_] := With[{
+    gpd = values["PdInfo"],
+    metric = syms["Metric"],
+    covd = syms["CovD"],
+    riemann = syms["Riemann"],
+    ricci = syms["Ricci"],
+    ricciScalar = syms["RicciScalar"],
+    metricValue = values["Metric"],
+    metricInvValue = values["InverseMetric"],
+    pdValue = values["Pd"],
+    chrisValue = values["Christoffel"],
+    riemannValue = values["Riemann"],
+    ricciValue = values["Ricci"],
+    ricciScalarValue = values["RicciScalar"]
+},
+    name /: StoredTensorData[name, "Metric", metric] = {slot, metricValue, metricInvValue};
+    name /: StoredTensorData[name, "CovD", covd] = {pdValue, {{slot, slot} -> chrisValue}};
+    name /: StoredTensorData[name, riemann] = {riemannValue, {DI@slot, DI@slot, DI@slot, slot}};
+    name /: StoredTensorData[name, ricci] = {ricciValue, DI /@ {slot, slot}};
+    name /: StoredTensorData[name, ricciScalar] = {ricciScalarValue, {}};
+    name /: NITensorReduce[metric[a_?NonDIQ, b_?NonDIQ], frees_, name] := NITensorReduce[NITensor[StoredTensorData[name, "Metric", metric][[3]], {a -> slot, b -> slot}], frees, name];
+    name /: NITensorReduce[metric[DI@a_, DI@b_], frees_, name] := NITensorReduce[NITensor[StoredTensorData[name, "Metric", metric][[2]], {a -> DI@slot, b -> DI@slot}]];
+    name /: NITensorReduce[covd[expr_, a_], frees_, name] := NITensorReduce[
+        AdaptNITensorCovD[
+            NITensorReduce[expr, Union[frees, {IndexName@a}], name],
+            a,
+            slot,
+            StoredTensorData[name, "CovD", covd],
+            MetricAdapterOfTReducer@name
+        ],
+        frees,
+        name
+    ];
+    name /: NITensorReduce[tensor_[inds__], frees_, name] := With[{
+        value = StoredTensorData[name, tensor]
+    }, NITensorReduce[AdaptNITensor[
+        value[[1]],
+        value[[2]],
+        {inds},
+        MetricAdapterOfTReducer@name
+    ], frees, name] /; value =!= Null];
+    name /: NITensorReduce[scalar_, frees_, name] := With[{
+        value = StoredTensorData[name, scalar]
+    }, NITensor[value[[1]], {}] /; value =!= Null && value[[2]] === {}];
+];
+SyntaxInformation@PopulateCurvatureTReducerRules = {"ArgumentsPattern" -> {_, _, _, _.}};
 
 MakeTensorValueRules$OneRule[mat_][name_, {value_, slots_}] := name[inds__] :> AdaptNITensor[value, slots, {inds}, mat];
 MakeTensorValueRules[syms_, values_, tensors_] := With[{
