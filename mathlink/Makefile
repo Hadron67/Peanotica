@@ -40,9 +40,12 @@ else
 	LDFLAGS += -fsanitize=address
 endif
 
-all: pperm-ml tests
+all: pperm pperm-ml tests
 
 pperm-ml: perm.cc.o mathlink.cc.o
+	$(CXX) -o $@ $(LDFLAGS) $^
+
+pperm: pperm.cc.0 main.cc.o
 	$(CXX) -o $@ $(LDFLAGS) $^
 
 tests: tests.cc.o perm.cc.o

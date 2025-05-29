@@ -1405,9 +1405,6 @@ void DoubleCosetEnumerator::solve(PermutationList &leftGenSet, PermutationList &
     this->stabilizedD.setPermutationLength(permLen);
     this->stabilizer.permStack = this->stack;
 
-    PermutationFormatter formatter;
-    formatter.useCycles = true;
-
     auto whichElements = false;
     this->elements.emplace_back(permLen);
     {
