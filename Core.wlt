@@ -136,3 +136,15 @@ VerificationTest[
     FindIndicesSlots[IndexedSum[(t1[i] + a) t1[j], {i, TangentMf}]],
     {{1, 2, 1} -> TangentMf}
 ];
+
+DefSimpleTensor[p, {TangentMf}, {}];
+
+VerificationTest[
+    g1[DI@a, DI@b] /. MakeIndexRule[g1[a, b] -> p[a]p[b]p[c]p[DI@c], {a, b}] // ITensorReduce,
+    p[DI@a]p[DI@b]p[c]p[DI@c]
+];
+
+VerificationTest[
+    MakeIndexFunction[p[a]p[b]p[c]p[DI@c], {a, b}][DI@a, a] // ITensorReduce,
+    p[a]p[DI@a]p[b]p[DI@b]
+];

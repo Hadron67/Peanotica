@@ -10,6 +10,9 @@ PPMetricPert::usage = "PPMetricPert is an option of SetupPerturbation.";
 ExpandAllPerturbations::usage = "ExpandAllPerturbations[expr, pert, info]";
 
 PostCurvatureCompute::usage = "PostCurvatureCompute is an option for ComputeCurvature";
+RiemannPdFromPdSpec::usage = "RiemannPdFromPdSpec[pds]";
+PdArrayFromPdSpec::usage = "PdArrayFromPdSpec[pds]";
+DeltaTensorFromPdSpec::usage = "DeltaTensorFromPdSpec[pds]";
 ComputeCurvature::usage = "ComputeCurvature[input]";
 MakeMetricAdapter::usage = "MakeMetricAdapter[symbols, values]";
 MakeCurvatureValueRules::usage = "MakeCurvatureValueRules[symbols, values]";
@@ -85,6 +88,49 @@ ExpandAllPerturbations[pert_, info_][expr_] := ExpandAllPerturbations[expr, pert
 ExpandAllPerturbations[pert_, info_, action_][expr_] := ExpandAllPerturbations[expr, pert, info, action];
 SyntaxInformation@ExpandAllPerturbations = {"ArgumentsPattern" -> {_, _, _., _.}};
 
+RiemannPdFromPdSpec$One[length_, pos_, {"Pd", _}, {"Pd", _}] := ConstantArray[0, {length, length}];
+RiemannPdFromPdSpec$One[length_, pos_, {"Pd", pd_}, {"CovD", cd_, data_}] := With[{
+    metric = data["Metric"],
+    pos2 = pos[[2]]
+}, SparseArray[{
+    {pos2, pos2} -> If[Head@metric =!= Missing,
+        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {Null, a, b, c}]
+    ,
+        0
+    ]
+}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"Pd", pd_}] := With[{
+    metric = data["Metric"],
+    pos2 = pos[[1]]
+}, SparseArray[{
+    {pos2, pos2} -> If[Head@metric =!= Missing,
+        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {a, Null, b, c}]
+    ,
+        0
+    ]
+}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"CovD", cd_, __}] := With[{
+    riemann = data["Riemann"]
+}, SparseArray[{pos -> If[Head@riemann =!= Missing, ETensor[riemann[DI@a, DI@b, DI@c, d], {a, b, c, d}], 0]}, {length, length}]];
+RiemannPdFromPdSpec$One[length_, pos_, _, _] := ConstantArray[0, {length, length}];
+RiemannPdFromPdSpec[pds_] := With[{
+    arr = MapIndexed[{#1, #2[[1]]} &, pds],
+    length = Length@pds
+}, Outer[RiemannPdFromPdSpec$One[length, {#1[[2]], #2[[2]]}, #1[[1]], #2[[1]]] &, arr, arr, 1]];
+SyntaxInformation@RiemannPdFromPdSpec = {"ArgumentsPattern" -> {_}};
+
+PdArrayFromPdSpec[pds_] := Replace@{
+    {"Pd", pd_} :> ETensor[pd, {Null}],
+    {"CovD", cd_, ___} :> ETensor[cd[Null, DI@a], {a}]
+} /@ pds;
+SyntaxInformation@PdArrayFromPdSpec = {"ArgumentsPattern" -> {_}};
+
+DeltaTensorFromPdSpec[pds_, sign_] := DiagonalMatrix[Replace@{
+    {"Pd", _} :> ETensor[1, {Null, Null}],
+    {"CovD", cd_, data_} :> ETensor[data["Metric"][a, DI@b], Switch[sign, 1, {a, b}, -1, {b, a}]]
+} /@ pds];
+SyntaxInformation@DeltaTensorFromPdSpec = {"ArgumentsPattern" -> {_}};
+
 Options@ComputeCurvature = {
     PostCurvatureCompute -> Simplify @* ITensorReduce @* ContractMetric
 };
@@ -119,7 +165,7 @@ SyntaxInformation@MakeMetricAdapter = {"ArgumentsPattern" -> {_, _}};
 
 MakeCurvatureValueRules[syms_, values_] := With[{
     slot = syms["Slot"],
-    gpd = values["PdInfo"],
+    gpd = values["PdSpec"],
     mat = MetricAdapter@{syms["Slot"] -> {values["Metric"], values["InverseMetric"]}},
     metric = syms["Metric"],
     covd = syms["CovD"],
@@ -154,7 +200,7 @@ SyntaxInformation@MetricAdapterOfTReducer = {"ArgumentsPattern" -> {_}};
 
 PopulateCurvatureTReducerRules[name_, syms_, values_] := PopulateCurvatureTReducerRules[name, syms, values, syms["Slot"]];
 PopulateCurvatureTReducerRules[name_Symbol, syms_, values_, slot_] := With[{
-    gpd = values["PdInfo"],
+    gpd = values["PdSpec"],
     metric = syms["Metric"],
     covd = syms["CovD"],
     riemann = syms["Riemann"],
@@ -175,9 +221,13 @@ PopulateCurvatureTReducerRules[name_Symbol, syms_, values_, slot_] := With[{
     name /: StoredTensorData[name, ricciScalar] = {ricciScalarValue, {}};
     name /: NITensorReduce[metric[a_?NonDIQ, b_?NonDIQ], frees_, name] := NITensorReduce[NITensor[StoredTensorData[name, "Metric", metric][[3]], {a -> slot, b -> slot}], frees, name];
     name /: NITensorReduce[metric[DI@a_, DI@b_], frees_, name] := NITensorReduce[NITensor[StoredTensorData[name, "Metric", metric][[2]], {a -> DI@slot, b -> DI@slot}]];
+    With[{delta1 = DeltaTensorFromPdSpec[gpd, 1], delta2 = DeltaTensorFromPdSpec[gpd, -1]},
+        name /: NITensorReduce[metric[a_?NonDIQ, DI@b_], _, name] := NITensor[delta1, {a -> slot, b -> DI@slot}];
+        name /: NITensorReduce[metric[DI@a_, b_?NonDIQ], _, name] := NITensor[delta2, {a -> DI@slot, b -> slot}];
+    ];
     name /: NITensorReduce[covd[expr_, a_], frees_, name] := NITensorReduce[
         AdaptNITensorCovD[
-            NITensorReduce[expr, Union[frees, {IndexName@a}], name],
+            NITensorReduce[expr, If[frees === Automatic, Automatic, Union[frees, {IndexName@a}]], name],
             a,
             slot,
             StoredTensorData[name, "CovD", covd],
@@ -229,7 +279,7 @@ DefTensorVariationOperator[name_, opt : OptionsPattern[]] := (
         indPos = FindIndicesSlots@tensor@inds2,
         symmetry = SymmetryOfExpression@tensor@inds2
     }, With[{
-        restPos = Delete[Range@Length@{inds1}, indPos[[All, 1]]]
+        restPos = Transpose@{Delete[Range@Length@{inds1}, indPos[[All, 1]]]}
     }, If[Extract[{inds1}, restPos] === Extract[{inds2}, restPos],
         rest * DefTensorVariationOperator$TensorD[
             PPermGroupElements@symmetry,

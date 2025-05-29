@@ -9,6 +9,7 @@ MakeThreadableRules::usage = "MakeThreadableRules[lhs :> rhs]";
 NestWith;
 OrderOr::usage = "OrderOr[terms, ...]";
 SymmetryList::usage = "SymmetryList[elems, comp]";
+DefDisplayAs::usage = "DefDisplayAs[symbol, displayName]";
 
 $xToolsDebugFilter;
 $xToolsDebugPrint;
@@ -50,6 +51,9 @@ SyntaxInformation@OrderOr = {"ArgumentsPattern" -> {__}};
 
 SymmetryList[list_, comp_] := MapThread[If[comp[#1, #2], #3, Nothing] &, {Drop[list, -1], Drop[list, 1], Range[Length@list - 1]}];
 SyntaxInformation@SymmetryList = {"ArgumentsPattern" -> {_, _}};
+
+DefDisplayAs[symbol_, displayName_] := symbol /: MakeBoxes[symbol, StandardForm] = InterpretationBox[displayName, symbol];
+SyntaxInformation@DefDisplayAs = {"ArgumentsPattern" -> {_, _}};
 
 End[];
 
