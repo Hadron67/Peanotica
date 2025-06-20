@@ -11,6 +11,8 @@ CovDDifference::usage = "CovDDifference[expr, inds, chrisProvider, a] gives the 
 CovDDifferenceDirect::usage = "CovDDifferenceDirect[expr, chrisProvider, a]";
 CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
 CovDCommutatorOfRiemann::usage = "CovDCommutator[riemann]";
+ParamDLCCovDCommutator::usage = "ParamDLCCovDCommutator[expr, paramd, cd, metric]";
+SortParamDLCCovDRule::usage = "SortParamDLCCovDRule[paramd, covd, metric]";
 CovDDefaultIndexOrderedQ::usage = "CovDDefaultIndexOrderedQ[a, b]";
 SortCovDRules::usage = "SortCovDRules[cd, commutator, orderedQ]";
 SortCovD::usage = "SortCovD[expr, cd, commutator]";
@@ -138,6 +140,15 @@ SyntaxInformation@CovDCommutatorNoTorsion = {"ArgumentsPattern" -> {_, _, _, _}}
 
 CovDCommutatorOfRiemann[riemann_][expr_, a_, b_] := CovDCommutatorNoTorsion[expr, a, b, riemann];
 SyntaxInformation@CovDCommutatorOfRiemann = {"ArgumentsPattern" -> {_}};
+
+SortParamDLCCovDRule[paramd_, covd_, metric_] := {
+    paramd[covd[expr_, DI@a_], p_, ders___] :> paramd[covd[paramd[expr, p], DI@a] + ParamDLCCovDCommutator[expr, DI@a, paramd[#, p] &, covd, metric], ders]
+};
+SyntaxInformation@SortParamDLCCovDRule = {"ArgumentsPattern" -> {_, _, _}};
+
+ParamDLCCovDCommutator[expr_, ind_, paramd_, cd_, metric_] := ParamDLCCovDCommutator[expr, ind, paramd, cd, metric, metric];
+ParamDLCCovDCommutator[expr_, DI@ind_, paramd_, cd_, metric_, metricInv_] := CovDCommutatorOfRiemann[-LeviCivitaChristoffelDer[cd, paramd, metric, metricInv][#4, #2, #3] &][expr, Null, DI@ind];
+SyntaxInformation@ParamDLCCovDCommutator = {"ArgumentsPattern" -> {_, _, _, _, _.}};
 
 CovDDefaultIndexOrderedQ[a_, b_, expr_] := With[{
     inds = Keys@FindAllIndicesNames@expr,

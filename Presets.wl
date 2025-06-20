@@ -94,7 +94,7 @@ RiemannPdFromPdSpec$One[length_, pos_, {"Pd", pd_}, {"CovD", cd_, data_}] := Wit
     pos2 = pos[[2]]
 }, SparseArray[{
     {pos2, pos2} -> If[Head@metric =!= Missing,
-        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {Null, a, b, c}]
+        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {Null, a, b, c}]
     ,
         0
     ]
@@ -104,7 +104,7 @@ RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"Pd", pd_}] := Wit
     pos2 = pos[[1]]
 }, SparseArray[{
     {pos2, pos2} -> If[Head@metric =!= Missing,
-        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {a, Null, b, c}]
+        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {a, Null, b, c}]
     ,
         0
     ]
