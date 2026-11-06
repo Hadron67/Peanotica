@@ -2,8 +2,17 @@
 
 Indexed expression package for Mathematica. Designed for simplicity and flexibility. Still experimental.
 
+## Documentation
+
+- [特性与用法](docs/features.md)：从安装到张量、分块张量、微分几何、AlgSimp、Presets 的使用指南。
+- [实现细节](docs/implementation.md)：规范化算法、表示层、置换后端、各子包的内部结构。
+- [API 参考](docs/api.md)：按模块列出的公开符号、签名、选项与状态。
+
+文档里的 Mathematica 代码块可以用 `python3 docs/run_examples.py` 执行；
+`docs/api.md` 由 `python3 docs/gen_api.py` 从源码中的 `::usage` 生成。
+
 ## Brief explanations
-This is an incomplete introduction of this package, explaining basic design ideas. A complete documentation of the package will be added in the future.
+下面是一份较早的简要介绍，说明基本设计思想；更完整的说明见上面的文档。
 
 Most existing symbolic tensor computation packages follow a top-down approach, which typically defines manifold, vector bundles, and then tensors, covariant derivatives, etc. Peanotica instead follows a bottom-up approach which focus on the behaviours of the tensor expressions, *i.e.*, what indices slots an expression has and what symmetry does these slots have. All objects, including tensors, can be defined on top of that.
 

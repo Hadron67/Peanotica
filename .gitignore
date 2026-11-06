@@ -3,3 +3,7 @@ hkm.txt
 xpermlog.txt
 ppermlog.txt
 xPerm.*
+
+# Added by cargo
+
+/target

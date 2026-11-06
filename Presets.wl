@@ -265,6 +265,7 @@ Options@DefTensorVariationOperator = Join[Options@ExpandDerivativeRules, {
     VarCovDs -> {},
     VarParamDs -> {}
 }];
+DefTensorVariationOperator$TensorD[{}, metrics_, inds1_, inds2_] := Times @@ MapThread[Construct, {metrics, inds1, inds2}];
 DefTensorVariationOperator$TensorD[perms_List, args__] := Total[DefTensorVariationOperator$TensorD[#, args] & /@ perms] / Length@perms;
 DefTensorVariationOperator$TensorD[a_ * perm_Images, args__] := a * DefTensorVariationOperator$TensorD[perm, args];
 DefTensorVariationOperator$TensorD[Images[perm__], metrics_, inds1_, inds2_] := Times @@ MapThread[Construct, {metrics, inds1, Permute[inds2, {perm}]}];

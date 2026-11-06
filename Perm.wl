@@ -195,6 +195,7 @@ MoveBasePoint[base_, gs_, pos_] := (
     ToSCyclesNotation /@ MLPermToPerm /@ MathLinkMoveBasePoint[base, PermToMLPerm@gs, pos, Max[MinPermutationLength@gs, Max @@ base]]
 );
 
+PPermGroupElements[{}] = {};
 PPermGroupElements[genset_List] := (
     PPermEnsureLink[];
     MLPermToPerm /@ MathLinkPPermGroupElements[PermToMLPerm@genset, MinPermutationLength@genset]
