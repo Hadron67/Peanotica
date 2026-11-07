@@ -4,6 +4,7 @@ Indexed expression package for Mathematica. Designed for simplicity and flexibil
 
 ## Documentation
 
+- [快速开始](docs/quick-start.md)：曲率、分块坐标、Gauss–Bonnet、变分、微扰和 Einstein–Gauss–Bonnet 球对称方程的可执行示例。
 - [特性与用法](docs/features.md)：从安装到张量、分块张量、微分几何、AlgSimp、Presets 的使用指南。
 - [实现细节](docs/implementation.md)：规范化算法、表示层、置换后端、各子包的内部结构。
 - [API 参考](docs/api.md)：按模块列出的公开符号、签名、选项与状态。

@@ -205,7 +205,8 @@ def build_script(block: Block, setup_code: str) -> str:
             f"  peanoticaDocSetup = ToExpression[{quote(setup_code)}, InputForm, Hold];\n"
             "  If[Head[peanoticaDocSetup] =!= Hold,\n"
             f"    Print[\"{PARSE_MARKER}\"]; Exit[2]];\n"
-            "  Do[peanoticaDocSetup[[i]], {i, Length[peanoticaDocSetup]}]\n"
+            "  Do[peanoticaDocSetup[[peanoticaDocIndex]],\n"
+            "    {peanoticaDocIndex, Length[peanoticaDocSetup]}]\n"
             "];\n"
         )
     parts.append(
@@ -214,9 +215,9 @@ def build_script(block: Block, setup_code: str) -> str:
         "  If[Head[peanoticaDocHeld] =!= Hold,\n"
         f"    Print[\"{PARSE_MARKER}\"]; Exit[2]];\n"
         "  Do[\n"
-        "    peanoticaDocRes = peanoticaDocHeld[[i]];\n"
+        "    peanoticaDocRes = peanoticaDocHeld[[peanoticaDocIndex]];\n"
         "    If[peanoticaDocRes =!= Null, Print[peanoticaDocRes]],\n"
-        "    {i, Length[peanoticaDocHeld]}\n"
+        "    {peanoticaDocIndex, Length[peanoticaDocHeld]}\n"
         "  ]\n"
         "];\n"
         f"Print[\"{END_MARKER}\"];\n"
