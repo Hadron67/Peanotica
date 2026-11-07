@@ -8,6 +8,8 @@ Peanotica 是 Mathematica 的张量指标表达式包。与 xAct 等包不同，
 
 ## 目录
 
+- [微分几何相关的前置说明](#微分几何相关的前置说明)
+
 1. [安装与加载](#1-安装与加载)
 2. [快速开始](#2-快速开始)
 3. [核心概念](#3-核心概念)
@@ -83,6 +85,32 @@ make RELEASE=true
 ### 1.3 版本
 
 文档示例在 Mathematica 13.2（macOS ARM64）上验证。
+
+## 微分几何相关的前置说明
+
+此说明仅适用于微分几何相关的部分，如 `DiffGeo.wl` 以及 `Presets.wl` 中的曲率计算。
+
+常用概念采用梁灿彬《微分几何入门与广义相对论》中的定义，一些关键点：
+* 张量 = 多重线性映射，而不是用坐标变换定义；
+* 张量采用抽象指标记法；
+* 普通导数算符也是协变导数算符，其挠率和曲率都为 0。
+
+任何两个协变导数算符（不一定是与度规适配的导数算符）都可以用一个张量 $\Gamma_{\mu\nu}{}^\rho(\nabla', \nabla)$ 来相互联系：
+$$
+    \nabla'_\mu v^\nu = \nabla_\mu v^\nu + \Gamma_{\mu\rho}{}^\nu(\nabla', \nabla) v^\rho ,
+    \qquad
+    \nabla'_\mu \omega_\nu = \nabla_\mu \omega_\nu - \Gamma_{\mu\nu}{}^\rho(\nabla', \nabla) \omega_\rho .
+$$
+任何协变导数算符 $\nabla$ 都有与之对应的曲率和挠率张量：
+$$
+    [\nabla_\mu, \nabla_\nu] f = -T_{\mu\nu}{}^\rho(\nabla) \nabla_\rho f ,
+    \qquad
+    ([\nabla_\mu, \nabla_\nu] + T_{\mu\nu}{}^\sigma(\nabla) \nabla_\sigma)\omega_\rho
+    = R_{\mu\nu\rho}{}^\sigma(\nabla) \omega_\sigma .
+$$
+Levi-Civita 联络指与度规适配且无挠的唯一导数算符。本包的曲率计算默认所涉及的参考导数算符无挠，此时上面的第二条交换子关系退化为 $[\nabla_\mu,\nabla_\nu]\omega_\rho = R_{\mu\nu\rho}{}^\sigma(\nabla)\omega_\sigma$。
+
+> 注意：本包提供的曲率/交换子工具默认导数算符无挠：`CovDCommutatorNoTorsion`、`CovDCommutatorOfRiemann` 只实现无挠交换子；`LeviCivitaChristoffel` 要求传入的 `cd` 无挠，`RiemannDifference` 要求作为参考的 `cd` 无挠。挠率目前只作为约定引入，`Cotorsion`、`Cocurvature` 尚未实现（见[已知限制](#11-已知限制)）。
 
 ## 2. 快速开始
 
@@ -415,7 +443,7 @@ pds = {
 - 块 `(1,1)`、`(2,2)` 是标量块，`frees = {Null, Null}` 表示这两个槽位没有剩余自由指标；
 - 块 `(3,3)` 是角度块，`frees = {a, b}` 表示这个分量还带两个角度指标；
 - 外层的 3×3 位置分别标记 $t$、$r$、角度三个方向；
-- `pds` 是 `"PdSpec"` 形式：每一项描述一个块方向的导数。`{"Pd", ∂}` 是纯（参数）导数；`{"CovD", ∇, R̂}` 是协变导数，第三个元素给出该协变导数的**内禀黎曼张量**（也可以写成带 `"Metric"`/`"Riemann"` 键的 Association，不写度规时回退到 `MetricOfSlotType`）。角度块的 `cdd` 在 `gd` 上是零联络，所以它自身的曲率只能由这个元素补上——$k$ 倍的 `SymmetricRiemann[gd, ...]` 正是常曲率空间的曲率张量 $\hat R_{abcd} = \hat g_{ac}\hat g_{bd} - \hat g_{ad}\hat g_{bc}$；$k$ 也可以换成半径 $R$ 时的 $1/R^2$。
+- `pds` 是 `"PdSpec"` 形式：每一项描述一个块方向的导数。`{"Pd", ∂}` 是纯（参数）导数；`{"CovD", ∇, R}` 是协变导数，第三个元素给出该协变导数的**曲率张量**（也可以写成带 `"Metric"`/`"Riemann"` 键的 Association，不写度规时回退到 `MetricOfSlotType`）。例子里的 `cdd` 是与 `gd` 适配的导数算符（`cdd[gd[_, _], _] = 0`，即 $\nabla\hat g = 0$），它的曲率张量就是常曲率张量——$k$ 倍的 `SymmetricRiemann[gd, ...]`，即 $\hat R_{abcd} = \hat g_{ac}\hat g_{bd} - \hat g_{ad}\hat g_{bc}$（半径 $R$ 时取 $k = 1/R^2$）。框架不像 xAct 那样把导数算符和它的曲率张量绑定起来，曲率不会自动从联络导出，所以这里要显式传入：略麻烦一点，但更灵活——同一个导数算符可以配不同的曲率张量，也可以只给出需要的部分。
 
 现在可以像普通度规一样计算曲率：
 
@@ -429,7 +457,7 @@ Simplify@ITensorReduce[res["Riemann"][[3, 3, 3, 3]][[1]] - (k - f[r]) SymmetricR
 (* => 0 *)
 ```
 
-角度块的分量因此带上了纤维的内禀曲率：$R_{abcd} = (k - f)\hat R_{abcd}$。例如 $k = 1$、$h = f = 1$ 时这个时空就是球坐标下的平坦 Minkowski 时空，校验行给出 0。注意 `"PdSpec"` 的第三个元素不能省：`RiemannDifferenceValue` 只看块坐标之间的导数，漏掉内禀曲率时角度分量会算成 $-f\hat R$ 而不是 $(k - f)\hat R$，`RicciScalar` 会少掉 $\dim_x(\dim_x-1)k/r^2$。也可以不用 `"PdSpec"`，而是传 `"Pd"` 数组并额外给出 `"RiemannPd" -> SparseArray[{{3, 3, 3, 3} -> ETensor[k*SymmetricRiemann[gd, {DI@a, DI@b, DI@c, d}], {a, b, c, d}]}]`，两者等价。
+角度块的分量因此带上了该导数算符的曲率：$R_{abcd} = (k - f)\hat R_{abcd}$。例如 $k = 1$、$h = f = 1$ 时这个时空就是球坐标下的平坦 Minkowski 时空，校验行给出 0。注意 `"PdSpec"` 的第三个元素不能省：框架是从度规的导数（Christoffel 部分）构造 Riemann 的，而 `cdd[gd[_, _], _] = 0` 让这一部分对角度块为零，`cdd` 自身的曲率不会自动出现；漏掉时角度分量会算成 $-f\hat R$ 而不是 $(k - f)\hat R$，`RicciScalar` 会少掉 $\dim_x(\dim_x-1)k/r^2$。也可以不用 `"PdSpec"`，而是传 `"Pd"` 数组并额外给出 `"RiemannPd" -> SparseArray[{{3, 3, 3, 3} -> ETensor[k*SymmetricRiemann[gd, {DI@a, DI@b, DI@c, d}], {a, b, c, d}]}]`，两者等价。
 
 注意 `[[2,3,3]]` 取到的是块分量，`[[1]]` 取到 `ETensor` 里的表达式。角度指标 `a, b` 原样保留在结果里，所以这一个分量仍然是一个二维张量。
 
@@ -446,7 +474,7 @@ ETensor[A[a], {a, Null}] + ETensor[A[b], {Null, b}]
 - 计算过程中不同块会自然产生不同的自由指标结构（例如黎曼张量的分量可能是 `{Null,Null,Null,Null}`、`{Null,a,Null,b}`、`{a,b,c,d}` 等），加法、缩并、求迹都能正确处理；
 - 同一个框架也能描述 Kaluza–Klein 式的乘积空间、以及"某一块用另一套数值/符号表示"的情形。
 
-`DiffGeo.wlt` 里有一个对应的完整验证：在角度块上补上内禀曲率 $k\hat R_{abcd}$ 之后，任意 `dimx` 下的 Ricci 标量公式成立。
+`DiffGeo.wlt` 里有一个对应的完整验证：把 `cdd` 的曲率张量 $k\hat R_{abcd}$ 交给 `"RiemannPd"` 之后，任意 `dimx` 下的 Ricci 标量公式成立。
 
 ### 5.4 使用限制
 
@@ -546,6 +574,16 @@ ITensorReduce[cd[T[a, b], c]]
 
 用 `DefScalarFunction[f, "f"]` 可以把 `f` 标记为标量函数并设置显示名。
 
+`LeviCivitaChristoffel[cd, metric]` 返回联系给定导数算符 `cd` 与度规的 Levi-Civita 联络的 Christoffel（差）张量。设 $\nabla = cd$、$\nabla_{LC} = \nabla + \Gamma(\nabla_{LC}, \nabla)$，则
+
+$$
+\Gamma(\nabla_{LC}, \nabla)_{bc}{}^a
+= \frac12 g^{ad}\left(\nabla_b g_{dc} + \nabla_c g_{bd} - \nabla_d g_{bc}\right)
+= \mathring\Gamma_{bc}{}^a - \bar\Gamma_{bc}{}^a ,
+$$
+
+其中 $\mathring\Gamma$ 是 Levi-Civita 联络的 Christoffel 符号，$\bar\Gamma$ 是 `cd` 的 Christoffel 符号。**该公式只对无挠的 `cd` 成立**；`cd` 有挠时它不再等于完整的联络差张量 $\Gamma(\nabla_{LC}, \nabla_{cd})$（还差与挠率有关的项）。`LeviCivitaChristoffelDer` 允许把普通导数换成参数导数，`LeviCivitaChristoffelValue` 返回分量数组。
+
 ### 7.2 曲率
 
 `DefRiemannCurvature[slot, R, Ric, Rs]` 一次性定义黎曼张量、Ricci 张量和 Ricci 标量，以及它们之间的缩并规则：
@@ -568,6 +606,17 @@ ITensorReduce[Ric[DI@a, a]]
 
 `ContractMetric[R[a, b, c, d] g[DI@b, DI@d]]` 也会得到 `Ric[a, c]`。
 
+`RiemannDifference[cd, chris]` 计算两个导数算符的黎曼张量之差。设 `cd` 表示参考导数算符 $\nabla$，`chris` 表示联络差 $\Gamma(\nabla', \nabla)$（即 $\nabla' = \nabla + \Gamma$），则返回
+
+$$
+R_{\mu\nu\rho}{}^\sigma(\nabla') - R_{\mu\nu\rho}{}^\sigma(\nabla)
+= -\nabla_\mu\Gamma_{\nu\rho}{}^\sigma + \nabla_\nu\Gamma_{\mu\rho}{}^\sigma
++ \Gamma_{\mu\rho}{}^\lambda\Gamma_{\nu\lambda}{}^\sigma
+- \Gamma_{\nu\rho}{}^\lambda\Gamma_{\mu\lambda}{}^\sigma .
+$$
+
+注意返回的是 **$R(\nabla') - R(\nabla)$**，不是反过来的差。**该函数要求参考导数 `cd` 无挠**；`chris` 通常来自与度规适配的无挠联络，例如 `LeviCivitaChristoffel`。`RiemannDifferenceValue[slot, cd, chris]` 返回分量数组；`ComputeCurvature` 中取 `cd = ∂`、`chris = Γ(∇_LC, ∂)`，因此得到的是 $R(\nabla_{LC}) - R(∂)$。
+
 ### 7.3 协变导数的交换子
 
 `SortCovD` 会把嵌套的协变导数按指标顺序整理；交换顺序时，用交换子替换：
@@ -585,11 +634,11 @@ ITensorReduce[SortCovD[cd[cd[T[a, b], d], c], cd, CovDCommutatorOfRiemann[R]]]
 (* => cd[cd[T[a, b], c], d] + R[b, e, c, d] T[a, DI[e]] + R[a, e, c, d] T[b, DI[e]] *)
 ```
 
-`CovDCommutatorNoTorsion[expr, a, b, R]` 是无挠情形下的交换子；`CovDCommutatorOfRiemann[R]` 是它的算子形式，适合直接传给 `SortCovD`。
+`CovDCommutatorNoTorsion[expr, a, b, R]` 是无挠情形下的交换子；`CovDCommutatorOfRiemann[R]` 是它的算子形式，适合直接传给 `SortCovD`。**这两个交换子都只适用于无挠导数算符**；如果 `cd` 有挠，需要自己提供包含挠率项的 `commutator`。
 
 ### 7.4 Bianchi 与交换子恒等式
 
-`RiemannBianchiRelations` 生成黎曼张量的 Bianchi 关系：
+`RiemannBianchiRelations` 生成黎曼张量的 Bianchi 关系（**假设 `cd` 无挠**）：
 
 ```mathematica
 RiemannBianchiRelations[R[a, b, c, d], cd, R]
@@ -738,8 +787,8 @@ Simplify[sphVals["Christoffel"][[2, 1, 2]][[1]]]
 
 `ComputeCurvature` 的输入还可以包含：
 
-- `"PdSpec"`：混合"纯坐标导数"和"已有协变导数"的坐标规范，值为 `{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；
-- `"RiemannPd"`：坐标导数部分的子黎曼张量（例如球面块的内禀曲率）；
+- `"PdSpec"`：混合"纯坐标导数"和"已有协变导数"的坐标规范，值为 `{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；`"Pd"` 与 `"CovD"` 混合的块会用两者之间的联络差（`LeviCivitaChristoffelDer`）作为曲率修正项；
+- `"RiemannPd"`：块导数算符的曲率张量（例如角度块用 `SymmetricRiemann` 表示的常曲率），与 `"PdSpec"` 二选一；
 - `PostCurvatureCompute`：每一步之后的化简函数，默认 `Simplify @* ITensorReduce @* ContractMetric`。
 
 ### 9.3 把抽象表达式代回具体分量

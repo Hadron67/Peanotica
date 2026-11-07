@@ -1470,14 +1470,15 @@ NITensorReduce[NITensor[A, {a}] NITensor[A, {b}], {}]
 
 **签名**：`LeviCivitaChristoffel[cd, metric]`、`LeviCivitaChristoffel[cd, metric, metricInv]`
 
-由度规和（可能非度规相容的）协变导数构造 Levi-Civita 联络：
+返回联系给定导数算符 `cd` 与度规的 Levi-Civita 联络的 Christoffel（差）张量 $\Gamma(\nabla_{LC}, \nabla)$，其中 $\nabla = cd$，$\nabla_{LC} = \nabla + \Gamma$：
 
 ~~~text
 LeviCivitaChristoffel[cd, metric][a, DI@b, DI@c]
-    = 1/2 g^{ad}(∇_b g_{dc} + ∇_c g_{bd} - ∇_d g_{bc})
+    = 1/2 g^{ad}(∇_b g_{dc} + ∇_c g_{bd} - ∇_d g_{bc})   (∇ = cd)
+    = ˚Γ_{bc}{}^a - Γ_{bc}{}^a
 ~~~
 
-`LeviCivitaChristoffelDer[cd, der, metric, metricInv]` 允许把普通导数 `der` 换成参数导数；`LeviCivitaChristoffelValue` 返回分量数组。
+其中 `˚Γ` 是 Levi-Civita 联络的 Christoffel 符号，`Γ` 是 `cd` 的 Christoffel 符号。**该公式只对无挠的 `cd` 成立**；`cd` 有挠时它不再等于完整的联络差张量 $\Gamma(\nabla_{LC}, \nabla_{cd})$（还差与挠率有关的项）。`LeviCivitaChristoffelDer[cd, der, metric, metricInv]` 允许把普通导数 `der` 换成参数导数；`LeviCivitaChristoffelValue` 返回分量数组。
 
 #### `RiemannDifference`
 
@@ -1485,9 +1486,16 @@ LeviCivitaChristoffel[cd, metric][a, DI@b, DI@c]
 
 **签名**：`RiemannDifference[cd, chris]`
 
-两个协变导数的黎曼张量之差：`RiemannDifference[cd, chris][a, b, c, d]` = 坐标导数项 + Christoffel 二次项。`chris` 是联络 `cd` 相对于 Levi-Civita 联络的差。
+两个导数算符的黎曼张量之差。设 `cd` 表示参考导数算符 $\nabla$，`chris` 表示联络差 $\Gamma(\nabla', \nabla)$（即 $\nabla' = \nabla + \Gamma$），则返回 **$R(\nabla') - R(\nabla)$**：
 
-`RiemannDifferenceValue[slot, cd, chris]` 返回分量数组。
+~~~text
+RiemannDifference[cd, chris][a, b, c, d]
+    = -∇_a chris[d, b, c] + ∇_b chris[d, a, c]
+      + chris[e, a, c] chris[d, b, DI@e]
+      - chris[e, b, c] chris[d, a, DI@e]
+~~~
+
+**该函数要求参考导数 `cd` 无挠**；`chris` 通常来自与度规适配的无挠联络，例如 `LeviCivitaChristoffel`。`RiemannDifferenceValue[slot, cd, chris]` 返回分量数组。
 
 #### `SortCovD`
 
@@ -1502,7 +1510,7 @@ SortCovD[cd[cd[T[a, b], d], c], cd, CovDCommutatorOfRiemann[R]]
     -> cd[cd[T[a, b], c], d] - R[c, d, DI[i], b] T[a, i] - R[c, d, DI[i], a] T[i, b]
 ~~~
 
-`CovDCommutatorOfRiemann[R]`、`CovDCommutatorNoTorsion[expr, a, b, R]` 提供常用的交换子；`CovDDefaultIndexOrderedQ` 是默认排序判据。
+`CovDCommutatorOfRiemann[R]`、`CovDCommutatorNoTorsion[expr, a, b, R]` 提供常用的交换子；**这两个交换子只适用于无挠导数算符**（如 `cd` 有挠，需要自己提供包含挠率项的 `commutator`）。`CovDDefaultIndexOrderedQ` 是默认排序判据。
 
 #### `DerConstantQ`
 
@@ -1593,7 +1601,7 @@ RiemannBianchiRelations[R[a, b, c, d], cd, R]
     -> {R[a, b, c, d] + R[a, c, d, b] + R[a, d, b, c]}
 ~~~
 
-对 `Plus`/`Times` 递归；对 `cd[R[...], e]` 生成第一 Bianchi 和导数 Bianchi。
+对 `Plus`/`Times` 递归；对 `cd[R[...], e]` 生成第一 Bianchi 和导数 Bianchi。**这些关系是无挠情形的 Bianchi 恒等式**。
 
 #### `PerturbationLeviCivitaRiemann`
 
@@ -1632,7 +1640,7 @@ ExpandMetricPerturbation[pert[g[a, b], 1], {pert, g, h}]
 
 公开 · 源码：[DiffGeo.wl:5](../DiffGeo.wl#L5)
 
-**用法**：LeviCivitaChristoffel[cd, der, metric]
+**用法**：LeviCivitaChristoffelDer[cd, der, metric, metricInv] (cd must be torsion-free)
 
 #### `CovDDifference`
 
@@ -1770,13 +1778,13 @@ ExpandMetricPerturbation[pert[g[a, b], 1], {pert, g, h}]
 
 公开 · 源码：[DiffGeo.wl:48](../DiffGeo.wl#L48)
 
-**用法**：LeviCivitaChristoffelValue[slot, cd, metric, metricInv]
+**用法**：LeviCivitaChristoffelValue[slot, cd, metric, metricInv] (cd must be torsion-free)
 
 #### `RiemannDifferenceValue`
 
 公开 · 源码：[DiffGeo.wl:49](../DiffGeo.wl#L49)
 
-**用法**：RiemannDifferenceValue[slot, cd, chris]
+**用法**：RiemannDifferenceValue[slot, cd, chris] (cd must be torsion-free)
 
 #### `CoRiemannValue`
 
@@ -1872,7 +1880,7 @@ ExpandMetricPerturbation[pert[g[a, b], 1], {pert, g, h}]
 
 公开 · 源码：[DiffGeo.wl:78](../DiffGeo.wl#L78)
 
-**用法**：PerturbationLeviCivitaChristoffel[cd, metric, n]
+**用法**：PerturbationLeviCivitaChristoffel[cd, metric, metricPert, n]
 
 #### `PerturbationCovD`
 
@@ -2157,8 +2165,8 @@ AlgDRiemannList[{0, 0}]  (* R ⊗ R *)
 |---|---|
 | `"Metric"`, `"InverseMetric"` | 度规和逆度规（数组，分量通常为 `ETensor`） |
 | `"Pd"` | 坐标导数算子数组；每个分量是 `ETensor[pd, {Null}]` 或 `ETensor[cd[Null, DI@a], {a}]` |
-| `"PdSpec"` | 混合导数规范：`{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；与 `"Pd"` 二选一。`data` 可以是一个带 `"Metric"`/`"InverseMetric"`/`"Riemann"` 的 Association，也可以直接是该协变导数的黎曼张量（如 `k*SymmetricRiemann[g, #] &`）；未给度规时回退到 `MetricOfSlotType` |
-| `"RiemannPd"` | 坐标导数部分的子黎曼张量（例如球面块的内禀曲率） |
+| `"PdSpec"` | 混合导数规范：`{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；与 `"Pd"` 二选一。`data` 可以是一个带 `"Metric"`/`"InverseMetric"`/`"Riemann"` 的 Association，也可以直接是该协变导数的曲率张量（如 `k*SymmetricRiemann[g, #] &`）；未给度规时回退到 `MetricOfSlotType` |
+| `"RiemannPd"` | 块导数算符的曲率张量（例如角度块用 `SymmetricRiemann` 表示的常曲率），与 `"PdSpec"` 二选一 |
 
 返回 `Join[input, <|"Pd"->..., "RiemannPd"->..., "Christoffel"->..., "Riemann"->..., "Ricci"->..., "RicciScalar"->...|>]`。
 

@@ -606,6 +606,7 @@ DefTensorDerivativeOperator[sym, slots, symmetry, opts]
 - `RiemannDifferencePart1[cd, chris][a,b,c,d] = -cd[chris[d,b,c],a] + cd[chris[d,a,c],b]`；
   `RiemannDifferencePart2[chris][a,b,c,d] = chris[e,a,c] chris[d,b,DI@e] - chris[e,b,c] chris[d,a,DI@e]`；
   `RiemannDifference = Part1 + Part2`。
+- 上述 `LeviCivitaChristoffel` 公式和 `RiemannDifference` 的恒等式都要求作为参考的 `cd` 无挠；`cd` 有挠时 `LeviCivitaChristoffel` 不再等于联络差张量，`RiemannDifference` 也不再等于两个黎曼张量之差。本包不处理有挠的参考导数。
 - `CovDDifference[expr, inds, chrisProvider, a]`：对每个槽位，如果指标是下指标，减 `chris[d, a, ind]`；如果是上指标，加 `chris[ind, a, d]`；`CovDDifferenceDirect` 从表达式直接取槽位。
 - `NICovD[NITensor[t, inds], a -> type, value]`：在 `NITensor` 末尾追加一个槽位，并调用 `ITensorCovD`；
 - `ITensorCovD[expr, value, slots, ind]`：把协变导数拆成"普通导数"和"Christoffel 修正"两部分，Christoffel 部分用 `CovDDifference` 在 `NITensor` 层计算，再用 `NITensorReduce` 化简、`ExtractNITensor` 取回。
@@ -620,7 +621,7 @@ cd[cd[expr, a], b] :> cd[cd[expr, b], a] + commutator[expr, b, a]
 
 当 `!orderedQ[a, b, expr]` 时触发。`CovDDefaultIndexOrderedQ` 先比较指标是否出现在 `expr` 中（自由指标优先），再按 `SeparateIndexName` 的字典序。`SortCovD` 就是反复应用这条规则。
 
-`CovDCommutatorNoTorsion[expr, a, b, riemann]` 对 `expr` 的每个槽位生成 `±riemann[a,b,ind,d] * expr[..., d, ...]`；`CovDCommutatorOfRiemann[riemann]` 是它的算子形式。
+`CovDCommutatorNoTorsion[expr, a, b, riemann]` 对 `expr` 的每个槽位生成 `±riemann[a,b,ind,d] * expr[..., d, ...]`；`CovDCommutatorOfRiemann[riemann]` 是它的算子形式。两者都只适用于无挠导数算符。
 
 ### 9.6 曲率定义
 
@@ -652,7 +653,7 @@ cd[cd[expr, a], b] :> cd[cd[expr, b], a] + commutator[expr, b, a]
 
 ### 9.8 其他
 
-- `RiemannBianchiRelations[expr, cd, R]`：对 `Plus`/`Times` 递归；对 `cd[R[a,b,c,d], e]` 生成两条（第一 Bianchi 和导数 Bianchi）；对裸 `R[a,b,c,d]` 生成第一 Bianchi；
+- `RiemannBianchiRelations[expr, cd, R]`：对 `Plus`/`Times` 递归；对 `cd[R[a,b,c,d], e]` 生成两条（第一 Bianchi 和导数 Bianchi）；对裸 `R[a,b,c,d]` 生成第一 Bianchi；这些关系假设 `cd` 无挠；
 - `CovDCommutatorRelations`：对 `cd[cd[expr,a],b]` 生成 `expr0 - cd[cd[expr,b],a] - commu[expr,b,a]`；
 - `WeylToRiemann`：用 `dim = IndexScope[metric[a, DI@a]]` 和 Ricci 缩并表示外尔张量；
 - `LovelockDensity[riemann, n]`：用 `DoubleTransversalInSymmetricGroup` 枚举 `2n` 个指标的配对，`Signature` 给符号；
@@ -751,7 +752,7 @@ ricci   = post@ITensorSum[ITensorTranspose[riemann, {1, 3, 2, 3}], {3}]
 rs      = post@ITensorSum[ITensorTranspose[ITensorFixedContract[Times, metricInv, ricci, 1, 1], {1, 1}], {1}]
 ```
 
-`pd` 是一个"导数算子数组"：每个分量是 `ETensor[pd, {Null}]`（纯坐标导数）或 `ETensor[cd[Null, DI@a], {a}]`（已有协变导数）。`RiemannDifferenceValue` 计算这些导数的交换子，`subRiemann` 是坐标导数部分本身的曲率（例如球面块的内禀曲率）。
+`pd` 是一个"导数算子数组"：每个分量是 `ETensor[pd, {Null}]`（纯坐标导数）或 `ETensor[cd[Null, DI@a], {a}]`（已有协变导数）。`RiemannDifferenceValue` 计算块导数算符相对于基准导数算符的黎曼张量之差（`RiemannDifference`）；`subRiemann` 收集它表现不了的项：属于同一协变导数的块给出该导数的曲率张量，`"Pd"` 与 `"CovD"` 混合的块给出两者之间的联络差（`LeviCivitaChristoffelDer`，符号取决于块的顺序）。
 
 `LeviCivitaChristoffelValue[slot, cd, metric, metricInv]` 用 `NICovD` 把协变导数作用于度规，再 `NITensorReduce` + `ExtractNITensor` 得到分量数组。`RiemannDifferenceValue` 同理。
 
@@ -759,13 +760,13 @@ rs      = post@ITensorSum[ITensorTranspose[ITensorFixedContract[Times, metricInv
 
 - 两个 `"Pd"` → 0；
 - `"Pd"` 与 `"CovD"` → `LeviCivitaChristoffelDer[cd, pd, metric, metricInv]` 的 ETensor；
-- 两个相同的 `"CovD"` → 该坐标的黎曼 ETensor，由 `ApplyRiemannTensor[data, {DI@a, DI@b, DI@c, d}]` 得到；
+- 两个相同的 `"CovD"` → 该协变导数的曲率 ETensor，由 `ApplyRiemannTensor[data, {DI@a, DI@b, DI@c, d}]` 得到；
 - 其他 → 0。
 
 规范里的 `data` 有两种写法：
 
 - Association：键 `"Metric"`、`"InverseMetric"`（可选）、`"Riemann"`；`"Riemann"` 可以是张量头（如 `R`），也可以是算子（如 `SymmetricRiemann[gd]`）；
-- 直接给黎曼张量：`Function` 按指标列表调用（如 `k*SymmetricRiemann[gd, #] &`），其他形式按 `riemann[i1, i2, i3, i4]` 调用。
+- 直接给曲率张量：`Function` 按指标列表调用（如 `k*SymmetricRiemann[gd, #] &`），其他形式按 `riemann[i1, i2, i3, i4]` 调用。
 
 块度规由 `PdSpecMetric[cd, data]` 决定：优先取 Association 的 `"Metric"`，否则取 `cd` 的槽位类型对应的 `MetricOfSlotType`（槽位类型由 `FindIndicesSlots` 从 `cd` 得到；无法唯一确定时发 `PdSpecMetric::nometric` 消息并按缺省值处理）。
 

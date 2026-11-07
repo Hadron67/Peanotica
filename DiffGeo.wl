@@ -2,11 +2,11 @@ BeginPackage["Peanotica`DiffGeo`", {"Peanotica`Perm`", "Peanotica`Core`"}];
 
 Scan[Unprotect@#; ClearAll@#; &, Names@{$Context <> "*"}];
 
-LeviCivitaChristoffelDer::usage = "LeviCivitaChristoffel[cd, der, metric]";
-LeviCivitaChristoffel::usage = "LeviCivitaChristoffel[cd, metric] represents the Christoffel tensor relating the possibly non-metric compatible covariant derivative cd and the Levi-Civita connection. LeviCivitaChristoffel[...][a, DI@b, DI@c] gives the expression.";
+LeviCivitaChristoffelDer::usage = "LeviCivitaChristoffelDer[cd, der, metric, metricInv] (cd must be torsion-free)";
+LeviCivitaChristoffel::usage = "LeviCivitaChristoffel[cd, metric] returns the Christoffel tensor Γ(∇_LC, cd) relating the Levi-Civita connection of metric and the torsion-free covariant derivative cd; LeviCivitaChristoffel[...][a, DI@b, DI@c] gives the components.";
 RiemannDifferencePart1;
 RiemannDifferencePart2;
-RiemannDifference::usage = "RiemannDifference[cd, christoffel] represents the difference of the Riemann tensors of cd and cd1, where christoffel is the Christoffel tensor relation cd and cd1.";
+RiemannDifference::usage = "RiemannDifference[cd, chris] returns R(∇') - R(∇), where cd is the torsion-free reference derivative operator ∇ and chris is the Christoffel tensor Γ(∇', ∇) (so ∇' = ∇ + chris).";
 CovDDifference::usage = "CovDDifference[expr, inds, chrisProvider, a] gives the difference ";
 CovDDifferenceDirect::usage = "CovDDifferenceDirect[expr, chrisProvider, a]";
 CovDCommutatorNoTorsion::usage = "CovDCommutatorNoTorsion[expr, a, b, riemann]";
@@ -45,8 +45,8 @@ MetricAdapter::usage = "MetricAdapter[{slot1 -> {metric, invMetric}, ...}]";
 AdaptNITensor::usage = "AdaptNITensor[value, slots, inds, metricProvider]";
 AdaptNITensorCovD::usage = "AdaptNITensorCovD[NITensor[...], ind, slot, covdValue, metricProvider]";
 
-LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric, metricInv]";
-RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris]";
+LeviCivitaChristoffelValue::usage = "LeviCivitaChristoffelValue[slot, cd, metric, metricInv] (cd must be torsion-free)";
+RiemannDifferenceValue::usage = "RiemannDifferenceValue[slot, cd, chris] (cd must be torsion-free)";
 CoRiemannValue::usage = "CoRiemannValue[]";
 SymmetricRiemann::usage = "SymmetricRiemann[metric, a, b, c, d]";
 SymmetricRiemannETensor::usage = "SymmetricRiemannETensor[metric]";
@@ -75,7 +75,7 @@ PredefinedMetric;
 ShiftedMetric;
 ShiftedInverseMetric;
 PerturbShiftedMetric::usage = "PerturbShiftedMetric[expr, n]";
-PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd, metric, n]";
+PerturbationLeviCivitaChristoffel::usage = "PerturbationLeviCivitaChristoffel[cd, metric, metricPert, n]";
 PerturbationLeviCivitaRiemann::usage = "PerturbationLeviCivitaRiemann[covd, metric, metricPert, n]";
 PerturbationCovD::usage = "PerturbationCovD[covd[expr, a], covdPert, metric, n]";
 ExpandMetricPerturbation::usage = "ExpandMetricPerturbation[expr, {pert, metric, metricPert}]";
