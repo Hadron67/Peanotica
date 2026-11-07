@@ -575,7 +575,7 @@ AlgDRiemannList[{0, 0}]  (* R ⊗ R *)
 |---|---|
 | `"Metric"`, `"InverseMetric"` | 度规和逆度规（数组，分量通常为 `ETensor`） |
 | `"Pd"` | 坐标导数算子数组；每个分量是 `ETensor[pd, {Null}]` 或 `ETensor[cd[Null, DI@a], {a}]` |
-| `"PdSpec"` | 混合导数规范：`{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；与 `"Pd"` 二选一 |
+| `"PdSpec"` | 混合导数规范：`{"Pd", pd}` 或 `{"CovD", cd, data}` 的列表；与 `"Pd"` 二选一。`data` 可以是一个带 `"Metric"`/`"InverseMetric"`/`"Riemann"` 的 Association，也可以直接是该协变导数的黎曼张量（如 `k*SymmetricRiemann[g, #] &`）；未给度规时回退到 `MetricOfSlotType` |
 | `"RiemannPd"` | 坐标导数部分的子黎曼张量（例如球面块的内禀曲率） |
 
 返回 `Join[input, <|"Pd"->..., "RiemannPd"->..., "Christoffel"->..., "Riemann"->..., "Ricci"->..., "RicciScalar"->...|>]`。

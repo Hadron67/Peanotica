@@ -759,8 +759,15 @@ rs      = post@ITensorSum[ITensorTranspose[ITensorFixedContract[Times, metricInv
 
 - 两个 `"Pd"` → 0；
 - `"Pd"` 与 `"CovD"` → `LeviCivitaChristoffelDer[cd, pd, metric, metricInv]` 的 ETensor；
-- 两个相同的 `"CovD"` → 该坐标的 `riemann` ETensor；
+- 两个相同的 `"CovD"` → 该坐标的黎曼 ETensor，由 `ApplyRiemannTensor[data, {DI@a, DI@b, DI@c, d}]` 得到；
 - 其他 → 0。
+
+规范里的 `data` 有两种写法：
+
+- Association：键 `"Metric"`、`"InverseMetric"`（可选）、`"Riemann"`；`"Riemann"` 可以是张量头（如 `R`），也可以是算子（如 `SymmetricRiemann[gd]`）；
+- 直接给黎曼张量：`Function` 按指标列表调用（如 `k*SymmetricRiemann[gd, #] &`），其他形式按 `riemann[i1, i2, i3, i4]` 调用。
+
+块度规由 `PdSpecMetric[cd, data]` 决定：优先取 Association 的 `"Metric"`，否则取 `cd` 的槽位类型对应的 `MetricOfSlotType`（槽位类型由 `FindIndicesSlots` 从 `cd` 得到；无法唯一确定时发 `PdSpecMetric::nometric` 消息并按缺省值处理）。
 
 `PdArrayFromPdSpec` 生成 `pd` 数组；`DeltaTensorFromPdSpec` 生成度规/δ 块矩阵。
 

@@ -532,7 +532,7 @@ RiemannDifferenceValue[slot_, cd_, chris_] := RiemannDifference[
 SyntaxInformation@RiemannDifferenceValue = {"ArgumentsPattern" -> {_, _, _}};
 
 SymmetricRiemann[metric_, {a_, b_, c_, d_}] := metric[a, c]metric[b, d] - metric[a, d]metric[b, c];
-SymmetricRiemann[metric][inds__] := SymmetricRiemann[metric, {inds}];
+SymmetricRiemann[metric_][inds__] := SymmetricRiemann[metric, {inds}];
 SyntaxInformation@SymmetricRiemann = {"ArgumentsPattern" -> {_, _}};
 
 SymmetricRiemannETensor[metric_] := ETensor[SymmetricRiemann[metric, {DI@a, DI@b, DI@c, d}], {a, b, c, d}];

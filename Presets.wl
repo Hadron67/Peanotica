@@ -88,30 +88,65 @@ ExpandAllPerturbations[pert_, info_][expr_] := ExpandAllPerturbations[expr, pert
 ExpandAllPerturbations[pert_, info_, action_][expr_] := ExpandAllPerturbations[expr, pert, info, action];
 SyntaxInformation@ExpandAllPerturbations = {"ArgumentsPattern" -> {_, _, _., _.}};
 
+PdSpecMetric::nometric = "Cannot determine the metric of the block whose covariant derivative is `1`; supply an Association with key \"Metric\" in the corresponding PdSpec entry.";
+SyntaxInformation@PdSpecMetric = {"ArgumentsPattern" -> {_, _}};
+
+PdSpecMetric[cd_, data_] := With[{
+    metric = If[AssociationQ@data,
+        Lookup[data, "Metric", Missing["KeyAbsent", "Metric"]],
+        Missing["KeyAbsent", "Metric"]
+    ]
+}, If[Head@metric =!= Missing,
+    metric,
+    With[{
+        types = Union@Values@FindIndicesSlots[cd[Null, DI@GetUniqueIndexOfSlotType@Null]]
+    }, If[Length@types === 1,
+        MetricOfSlotType[types[[1]]]
+    ,
+        (Message[PdSpecMetric::nometric, cd]; Missing["KeyAbsent", "Metric"])
+    ]]
+]];
+
+PdSpecRiemannTensor[data_] := If[AssociationQ@data,
+    Lookup[data, "Riemann", Missing["KeyAbsent", "Riemann"]],
+    data];
+SyntaxInformation@PdSpecRiemannTensor = {"ArgumentsPattern" -> {_}};
+
+ApplyRiemannTensor[riemann_, inds_] := If[Head@riemann === Function, riemann[inds], riemann @@ inds];
+SyntaxInformation@ApplyRiemannTensor = {"ArgumentsPattern" -> {_, _}};
+
 RiemannPdFromPdSpec$One[length_, pos_, {"Pd", _}, {"Pd", _}] := ConstantArray[0, {length, length}];
 RiemannPdFromPdSpec$One[length_, pos_, {"Pd", pd_}, {"CovD", cd_, data_}] := With[{
-    metric = data["Metric"],
+    metric = PdSpecMetric[cd, data],
+    metricInv = If[AssociationQ@data, Lookup[data, "InverseMetric", metric], metric],
     pos2 = pos[[2]]
 }, SparseArray[{
     {pos2, pos2} -> If[Head@metric =!= Missing,
-        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {Null, a, b, c}]
+        ETensor[-LeviCivitaChristoffelDer[cd, pd, metric, metricInv][c, DI@a, DI@b], {Null, a, b, c}]
     ,
         0
     ]
 }, {length, length}]];
 RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"Pd", pd_}] := With[{
-    metric = data["Metric"],
+    metric = PdSpecMetric[cd, data],
+    metricInv = If[AssociationQ@data, Lookup[data, "InverseMetric", metric], metric],
     pos2 = pos[[1]]
 }, SparseArray[{
     {pos2, pos2} -> If[Head@metric =!= Missing,
-        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, Lookup[data, "InverseMetric", metric]][c, DI@a, DI@b], {a, Null, b, c}]
+        ETensor[LeviCivitaChristoffelDer[cd, pd, metric, metricInv][c, DI@a, DI@b], {a, Null, b, c}]
     ,
         0
     ]
 }, {length, length}]];
 RiemannPdFromPdSpec$One[length_, pos_, {"CovD", cd_, data_}, {"CovD", cd_, __}] := With[{
-    riemann = data["Riemann"]
-}, SparseArray[{pos -> If[Head@riemann =!= Missing, ETensor[riemann[DI@a, DI@b, DI@c, d], {a, b, c, d}], 0]}, {length, length}]];
+    riemann = PdSpecRiemannTensor@data
+}, SparseArray[{
+    pos -> If[Head@riemann =!= Missing,
+        ETensor[ApplyRiemannTensor[riemann, {DI@a, DI@b, DI@c, d}], {a, b, c, d}]
+    ,
+        0
+    ]
+}, {length, length}]];
 RiemannPdFromPdSpec$One[length_, pos_, _, _] := ConstantArray[0, {length, length}];
 RiemannPdFromPdSpec[pds_] := With[{
     arr = MapIndexed[{#1, #2[[1]]} &, pds],
@@ -127,7 +162,13 @@ SyntaxInformation@PdArrayFromPdSpec = {"ArgumentsPattern" -> {_}};
 
 DeltaTensorFromPdSpec[pds_, sign_] := DiagonalMatrix[Replace@{
     {"Pd", _} :> ETensor[1, {Null, Null}],
-    {"CovD", cd_, data_} :> ETensor[data["Metric"][a, DI@b], Switch[sign, 1, {a, b}, -1, {b, a}]]
+    {"CovD", cd_, data_} :> With[{
+        metric = PdSpecMetric[cd, data]
+    }, If[Head@metric =!= Missing,
+        ETensor[metric[a, DI@b], Switch[sign, 1, {a, b}, -1, {b, a}]]
+    ,
+        0
+    ]]
 } /@ pds];
 SyntaxInformation@DeltaTensorFromPdSpec = {"ArgumentsPattern" -> {_}};
 

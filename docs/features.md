@@ -359,13 +359,13 @@ Peanotica 允许把**数组的每个分量写成 `ETensor`**。外层数组的�
 
 `ETensor` 的加法会按位置合并不同的自由指标结构，这正是"不同块的分量可以相加"的关键。
 
-### 5.2 例子：任意维球对称时空
+### 5.2 例子：任意维球对称（含平面、双曲）时空
 
 考虑度规
 
 $$ds^2 = -h(r)dt^2 + \frac{dr^2}{f(r)} + r^2 \hat g_{ab}\,d\theta^a d\theta^b,$$
 
-其中 $\hat g_{ab}$ 是 $\dim_x$ 维球面的度规，$\dim_x$ 保持为符号。把 $(t, r, \text{角度})$ 当作三个块坐标，度规就是一个 3×3 的分块对角矩阵：
+其中 $\hat g_{ab}$ 是 $\dim_x$ 维常曲率空间的度规，曲率因子 $k$ 可取 $1$（单位球面）、$0$（平面）或 $-1$（双曲平面），$\dim_x$ 保持为符号。于是这个 ansatz 不只描述球对称，也涵盖平面对称（膜）和双曲对称的时空。把 $(t, r, \text{角度})$ 当作三个块坐标，度规就是一个 3×3 的分块对角矩阵：
 
 <!-- setup -->
 ```mathematica
@@ -406,24 +406,30 @@ gBlockInv = SparseArray[{
     {3, 3} -> ETensor[r^-2 gd[a, b], {a, b}]
 }];
 pds = {
-    ETensor[paramd[Null, t], {Null}],
-    ETensor[paramd[Null, r], {Null}],
-    ETensor[cdd[Null, DI@a], {a}]
+    {"Pd", paramd[Null, t]},
+    {"Pd", paramd[Null, r]},
+    {"CovD", cdd, k*SymmetricRiemann[gd, #] &}
 };
 ```
 
 - 块 `(1,1)`、`(2,2)` 是标量块，`frees = {Null, Null}` 表示这两个槽位没有剩余自由指标；
-- 块 `(3,3)` 是二维球面块，`frees = {a, b}` 表示这个分量还带两个角度指标；
-- 外层的 3×3 位置分别标记 $t$、$r$、角度三个方向。
+- 块 `(3,3)` 是角度块，`frees = {a, b}` 表示这个分量还带两个角度指标；
+- 外层的 3×3 位置分别标记 $t$、$r$、角度三个方向；
+- `pds` 是 `"PdSpec"` 形式：每一项描述一个块方向的导数。`{"Pd", ∂}` 是纯（参数）导数；`{"CovD", ∇, R̂}` 是协变导数，第三个元素给出该协变导数的**内禀黎曼张量**（也可以写成带 `"Metric"`/`"Riemann"` 键的 Association，不写度规时回退到 `MetricOfSlotType`）。角度块的 `cdd` 在 `gd` 上是零联络，所以它自身的曲率只能由这个元素补上——$k$ 倍的 `SymmetricRiemann[gd, ...]` 正是常曲率空间的曲率张量 $\hat R_{abcd} = \hat g_{ac}\hat g_{bd} - \hat g_{ad}\hat g_{bc}$；$k$ 也可以换成半径 $R$ 时的 $1/R^2$。
 
 现在可以像普通度规一样计算曲率：
 
 ```mathematica
-res = ComputeCurvature[<|"Metric" -> gBlock, "InverseMetric" -> gBlockInv, "Pd" -> pds|>];
+res = ComputeCurvature[<|"Metric" -> gBlock, "InverseMetric" -> gBlockInv, "PdSpec" -> pds|>];
 
 Simplify[res["Christoffel"][[2, 3, 3]][[1]]]
 (* => -r f[r] gd[DI[a], DI[b]] *)
+
+Simplify@ITensorReduce[res["Riemann"][[3, 3, 3, 3]][[1]] - (k - f[r]) SymmetricRiemann[gd, {DI@a, DI@b, DI@c, d}]]
+(* => 0 *)
 ```
+
+角度块的分量因此带上了纤维的内禀曲率：$R_{abcd} = (k - f)\hat R_{abcd}$。例如 $k = 1$、$h = f = 1$ 时这个时空就是球坐标下的平坦 Minkowski 时空，校验行给出 0。注意 `"PdSpec"` 的第三个元素不能省：`RiemannDifferenceValue` 只看块坐标之间的导数，漏掉内禀曲率时角度分量会算成 $-f\hat R$ 而不是 $(k - f)\hat R$，`RicciScalar` 会少掉 $\dim_x(\dim_x-1)k/r^2$。也可以不用 `"PdSpec"`，而是传 `"Pd"` 数组并额外给出 `"RiemannPd" -> SparseArray[{{3, 3, 3, 3} -> ETensor[k*SymmetricRiemann[gd, {DI@a, DI@b, DI@c, d}], {a, b, c, d}]}]`，两者等价。
 
 注意 `[[2,3,3]]` 取到的是块分量，`[[1]]` 取到 `ETensor` 里的表达式。角度指标 `a, b` 原样保留在结果里，所以这一个分量仍然是一个二维张量。
 
@@ -440,7 +446,7 @@ ETensor[A[a], {a, Null}] + ETensor[A[b], {Null, b}]
 - 计算过程中不同块会自然产生不同的自由指标结构（例如黎曼张量的分量可能是 `{Null,Null,Null,Null}`、`{Null,a,Null,b}`、`{a,b,c,d}` 等），加法、缩并、求迹都能正确处理；
 - 同一个框架也能描述 Kaluza–Klein 式的乘积空间、以及"某一块用另一套数值/符号表示"的情形。
 
-`DiffGeo.wlt` 里有一个完整的球对称例子：它在角度块上额外加入球面的内禀曲率 $k$，并验证了任意 `dimx` 下的 Ricci 标量公式。
+`DiffGeo.wlt` 里有一个对应的完整验证：在角度块上补上内禀曲率 $k\hat R_{abcd}$ 之后，任意 `dimx` 下的 Ricci 标量公式成立。
 
 ### 5.4 使用限制
 
